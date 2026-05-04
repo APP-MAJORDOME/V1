@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+# Secrets VPS / prod (clés API, OAuth) — ne pas pousser sur GitHub
+config/.env.ec2
+.venv/
+node_modules/
+.next/
+*.tsbuildinfo
+dist/
+build/
+backend/data/*.db
+# Fichiers utilisateurs (coffre / pièces jointes) — jamais dans le dépôt
+backend/data/uploads/
+backend/tests/*.db
+backend/tests/tmp_uploads/

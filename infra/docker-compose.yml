@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: majordome
+      POSTGRES_USER: majordome
+      POSTGRES_PASSWORD: majordome
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ../backend
+    env_file:
+      - ../.env
+    environment:
+      MAJORDOME_UPLOAD_DIR: /data/uploads
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - majordome_uploads:/data/uploads
+
+  worker:
+    build:
+      context: ../backend
+    env_file:
+      - ../.env
+    depends_on:
+      - postgres
+      - redis
+    command: ["python", "-m", "app.worker_main"]
+
+  frontend:
+    build:
+      context: ../frontend
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+    environment:
+      # Valeur runtime (principalement utile en dev) ; le bundle client utilise la valeur du build ci-dessus.
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  majordome_uploads:

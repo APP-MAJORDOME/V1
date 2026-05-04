@@ -1,0 +1,8 @@
+Migrations Alembic pour MajorDome (URL DB = `MAJORDOME_DATABASE_URL`, même que l’API).
+
+Depuis le dossier `backend/` :
+
+  python3.12 -m alembic upgrade head
+  python3.12 -m alembic current
+
+La révision `20260203_01` ajoute l’index `ix_tasks_household_status_updated` s’il manque (idempotent).

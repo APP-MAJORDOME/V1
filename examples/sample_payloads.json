@@ -1,0 +1,11 @@
+{
+  "create_household": {"name": "Famille Chapelet"},
+  "create_member": {"display_name": "Emma", "role": "child", "birth_year": 2018},
+  "create_event": {
+    "title": "Médecin Emma",
+    "category": "medical",
+    "starts_at": "2026-04-24T08:30:00",
+    "ends_at": "2026-04-24T09:00:00"
+  },
+  "agent_command": {"command": "Prépare un mail pour relancer Jardin Loisir au sujet de la tondeuse"}
+}

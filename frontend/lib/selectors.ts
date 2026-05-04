@@ -1,0 +1,100 @@
+/**
+ * Calculs dérivés purs (tâches, membres, équité locale) — réutilisables et testables hors composants.
+ */
+
+export type TaskLike = {
+  id: number;
+  title: string;
+  status: string;
+  due_at?: string | null;
+  assigned_member_id?: number | null;
+  updated_at?: string;
+};
+
+export type HouseholdMemberLike = { id: number; display_name: string; role: string };
+
+export function selectOpenTasks(tasks: TaskLike[]): TaskLike[] {
+  return tasks.filter((t) => t.status.toLowerCase() !== 'done');
+}
+
+export function selectDoneTasks(tasks: TaskLike[]): TaskLike[] {
+  return tasks.filter((t) => t.status.toLowerCase() === 'done');
+}
+
+export function sortAgendaOpenTasks(openTasks: TaskLike[]): TaskLike[] {
+  return [...openTasks].sort((a, b) => {
+    if (!a.due_at && !b.due_at) return a.id - b.id;
+    if (!a.due_at) return 1;
+    if (!b.due_at) return -1;
+    return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+  });
+}
+
+export function sortDoneTasksRecent(doneTasks: TaskLike[]): TaskLike[] {
+  return [...doneTasks].sort((a, b) => {
+    const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+    const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+    if (tb !== ta) return tb - ta;
+    return b.id - a.id;
+  });
+}
+
+/** Résout un membre par rôle canonique puis par correspondance de nom affiché. */
+export function resolveHouseholdMemberId(
+  members: HouseholdMemberLike[],
+  role: string,
+  nameHint: string
+): number | null {
+  const byRole = members.find((m) => m.role === role);
+  if (byRole) return byRole.id;
+  const target = nameHint.trim().toLowerCase();
+  if (!target) return null;
+  return (
+    members.find((m) => m.display_name.trim().toLowerCase() === target)?.id ??
+    members.find((m) => {
+      const d = m.display_name.trim().toLowerCase();
+      return d.includes(target) || target.includes(d);
+    })?.id ??
+    null
+  );
+}
+
+export type EquityShare = { name: string; pct: number; color: string };
+
+export function computeDemoEquityShares(
+  openTasksLen: number,
+  doneTasksLen: number,
+  names: { prenom: string; partenaire: string; enfant: string },
+  colors: { terra: string; alex: string; mint: string }
+): EquityShare[] {
+  const j = Math.max(openTasksLen, 1);
+  const a = Math.max(doneTasksLen, 1);
+  const l = Math.max(Math.round(openTasksLen / 3), 1);
+  const total = j + a + l;
+  return [
+    { name: names.prenom, pct: Math.round((j / total) * 100), color: colors.terra },
+    { name: names.partenaire, pct: Math.round((a / total) * 100), color: colors.alex },
+    { name: names.enfant, pct: Math.round((l / total) * 100), color: colors.mint },
+  ];
+}
+
+export type FridgeRow = { expires_at: string };
+
+/** Aliments dont la date de péremption tombe dans les prochaines `hoursAhead` heures. */
+export function selectFridgeAlertsWithinHours(fridge: FridgeRow[], hoursAhead: number): FridgeRow[] {
+  const cutoff = Date.now() + hoursAhead * 60 * 60 * 1000;
+  return fridge.filter((f) => new Date(f.expires_at).getTime() <= cutoff);
+}
+
+/** Pourcentage de tâches terminées (plancher 10 % pour l’affichage démo). */
+export function computeTaskCompletionPct(openCount: number, totalCount: number): number {
+  return Math.max(10, Math.round(((totalCount - openCount) / Math.max(totalCount, 1)) * 100));
+}
+
+export type BudgetLine = { spent: number; budget: number };
+
+export function computeBudgetUsedPct(lines: BudgetLine[]): number {
+  const spent = lines.reduce((acc, b) => acc + b.spent, 0);
+  const cap = lines.reduce((acc, b) => acc + b.budget, 0);
+  return Math.round((spent / Math.max(1, cap)) * 100);
+}
