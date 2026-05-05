@@ -1,0 +1,81 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        env:
+          MAJORDOME_DATABASE_URL: sqlite:////tmp/majordome-ci.db
+          MAJORDOME_AUTO_CREATE_TABLES: "true"
+        run: |
+          cd backend
+          python -m pytest -q
+
+      - name: Alembic upgrade (smoke)
+        env:
+          MAJORDOME_DATABASE_URL: sqlite:////tmp/majordome-ci-alembic.db
+        run: |
+          cd backend
+          python -c "import os; from sqlalchemy import create_engine; from app.models.models import Base; e=create_engine(os.environ['MAJORDOME_DATABASE_URL']); Base.metadata.create_all(e)"
+          python -m alembic upgrade head
+
+  script-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate shell scripts
+        run: |
+          bash -n scripts/alembic-upgrade.sh
+          bash -n scripts/migrate.sh
+          bash -n scripts/smoke-test-api.sh
+          bash -n scripts/deploy.sh
+          bash -n scripts/deploy-remote.sh
+          bash -n scripts/deploy-public-remote.sh
+          bash -n scripts/backup-uploads.sh
+          bash -n scripts/restore-uploads.sh
+          bash -n scripts/maintain-uploads.sh
+          bash -n scripts/run-maintenance-uploads.sh
+          bash -n scripts/install-maintenance-cron.sh
+          bash -n scripts/install-maintenance-systemd.sh
+          bash -n scripts/uninstall-maintenance-uploads.sh
+          bash -n scripts/status-maintenance-uploads.sh
+          bash -n scripts/check-deployment.sh
+          bash -n scripts/check-deployment-exit-code.sh
+          bash -n scripts/check-deployment-alert.sh
+          bash -n scripts/maintenance-remote.sh
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install, typecheck and build
+        run: |
+          cd frontend
+          npm ci
+          npm run typecheck
+          npm run build
