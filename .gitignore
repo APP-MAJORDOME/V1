@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
+# Variables locales Next (souvent IP LAN pour tests mobile)
+frontend/.env.local
 # Secrets VPS / prod (clés API, OAuth) — ne pas pousser sur GitHub
 config/.env.ec2
 .venv/
