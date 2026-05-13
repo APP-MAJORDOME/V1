@@ -2357,7 +2357,9 @@ export default function HomePage() {
                   {clientTodayLabel || '\u00a0'}
                 </p>
                 <h1 style={{ fontSize: 25, margin: 0, color: C.text }}>Bonjour {familyProfile.prenom}</h1>
-                <p style={{ fontSize: 14, color: C.text2, marginTop: 6 }}>Tu as <strong style={{ color: C.terra }}>{urgentCount} urgence(s)</strong> aujourd hui.</p>
+                <p style={{ fontSize: 14, color: C.text2, marginTop: 6, whiteSpace: 'nowrap' }}>
+                  Tu as <strong style={{ color: C.terra }}>{urgentCount} urgence(s)</strong> aujourd&apos;hui.
+                </p>
                 <div style={{ marginTop: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
                     <strong>CHARGE MENTALE</strong>
