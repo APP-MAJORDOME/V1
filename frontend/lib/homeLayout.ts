@@ -23,8 +23,7 @@ export type HomeSectionId =
   | 'recent_done'
   | 'opportunities'
   | 'child_tracking'
-  | 'relief_checklist'
-  | 'integrations_home';
+  | 'relief_checklist';
 
 export const HOME_SECTION_LABELS: Record<HomeSectionId, string> = {
   hero_banner: 'En-tête (bonjour · charge mentale)',
@@ -44,7 +43,6 @@ export const HOME_SECTION_LABELS: Record<HomeSectionId, string> = {
   opportunities: 'Opportunités utiles',
   child_tracking: `Suivi enfant`,
   relief_checklist: 'Ce qui manque pour soulager 100%',
-  integrations_home: 'Intégrations tierces',
 };
 
 /** Raccourcis Univers sur l’accueil : défaut équilibré. */
@@ -68,7 +66,6 @@ export const DEFAULT_HOME_SECTIONS: Record<HomeSectionId, boolean> = {
   opportunities: true,
   child_tracking: true,
   relief_checklist: true,
-  integrations_home: true,
 };
 
 export type HomeLayoutConfig = {
@@ -81,13 +78,19 @@ export const DEFAULT_HOME_LAYOUT: HomeLayoutConfig = {
   sections: { ...DEFAULT_HOME_SECTIONS },
 };
 
+/** Slug email pour clés localStorage par compte (disposition, personnalisation…). */
+export function userEmailStorageSlug(email: string): string {
+  return (
+    email
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9@._-]/g, '')
+      .slice(0, 72) || 'anonymous'
+  );
+}
+
 function storageKeyForEmail(email: string): string {
-  const slug = email
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9@._-]/g, '')
-    .slice(0, 72);
-  return `${STORAGE_PREFIX}:${slug || 'anonymous'}`;
+  return `${STORAGE_PREFIX}:${userEmailStorageSlug(email)}`;
 }
 
 export function normalizeHubShortcuts(shortcuts: HubKey[]): HubKey[] {
@@ -105,7 +108,12 @@ export function normalizeHubShortcuts(shortcuts: HubKey[]): HubKey[] {
 export function mergeHomeLayout(raw: unknown): HomeLayoutConfig {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_HOME_LAYOUT, sections: { ...DEFAULT_HOME_SECTIONS } };
   const p = raw as Partial<HomeLayoutConfig>;
-  const sections = { ...DEFAULT_HOME_SECTIONS, ...(p.sections && typeof p.sections === 'object' ? p.sections : {}) };
+  const rawSec = p.sections && typeof p.sections === 'object' ? (p.sections as Partial<Record<string, boolean>>) : {};
+  const sections = { ...DEFAULT_HOME_SECTIONS };
+  for (const key of Object.keys(sections) as HomeSectionId[]) {
+    const v = rawSec[key];
+    if (typeof v === 'boolean') sections[key] = v;
+  }
   const hubRaw = Array.isArray(p.hubShortcuts) ? (p.hubShortcuts as HubKey[]) : DEFAULT_HOME_HUB_SHORTCUTS;
   const hubShortcuts = normalizeHubShortcuts(hubRaw.length ? hubRaw : DEFAULT_HOME_HUB_SHORTCUTS);
   return { sections, hubShortcuts };

@@ -61,7 +61,20 @@ export function GlobalSearchPalette({
   if (!open) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 72 }}>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: 'max(72px, calc(env(safe-area-inset-top, 0px) + 52px))',
+        paddingLeft: 'max(16px, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(16px, env(safe-area-inset-right, 0px))',
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom, 0px))',
+      }}
+    >
       <button
         type="button"
         aria-label="Fermer la recherche"

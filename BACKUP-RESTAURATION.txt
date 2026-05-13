@@ -1,0 +1,11 @@
+Archive de sauvegarde MAJORDOME (sources + historique Git)
+==========================================================
+
+Contenu typique de l’archive : code, infra, scripts, .git (historique).
+Exclus pour limiter la taille (régénérables sur machine cible) :
+  - frontend/node_modules  → après dézip : cd frontend && npm ci
+  - backend/.venv         → après dézip : cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+  - frontend/.next        → npm run build ou npm run dev
+  - __pycache__ / .pytest_cache
+
+Variables d’environnement : copier .env.example vers .env (frontend/backend) selon la doc du projet ; ne jamais commiter de secrets.

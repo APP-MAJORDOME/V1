@@ -17,6 +17,7 @@ import {
   IconMail,
   IconCamera,
   IconMessageBubble,
+  IconLink,
 } from './md-icons';
 
 export type HubKey =
@@ -32,7 +33,8 @@ export type HubKey =
   | 'recettes'
   | 'routines'
   | 'courrier'
-  | 'albums';
+  | 'albums'
+  | 'integrations';
 
 /** Catalogue hub (partagé avec la personnalisation de l’accueil). */
 export const PLUS_HUB_ITEMS: {
@@ -54,6 +56,7 @@ export const PLUS_HUB_ITEMS: {
   { id: 'poubelles', label: 'Poubelles', hint: 'Collecte · rappels', Icon: IconTrash },
   { id: 'albums', label: 'Souvenirs', hint: 'Albums famille', Icon: IconCamera },
   { id: 'notifs', label: 'Notifications', hint: 'Centre alertes', Icon: IconBellRing },
+  { id: 'integrations', label: 'Intégrations', hint: 'Doctolib, ENT, connexions', Icon: IconLink },
 ];
 
 export const ALL_HUB_KEYS: HubKey[] = PLUS_HUB_ITEMS.map((i) => i.id);

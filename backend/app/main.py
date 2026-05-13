@@ -76,7 +76,8 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    # Keep geolocation/camera disabled but allow microphone for voice features.
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=()"
     if settings.app_env != "local":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response

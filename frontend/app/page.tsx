@@ -55,7 +55,6 @@ import {
   IconMoon,
   IconPenLine,
   IconChart,
-  IconLink,
   IconMeal,
   IconBrainOutline,
   IconGift,
@@ -67,7 +66,6 @@ import {
   IconMail,
   IconSchoolBag,
   IconLeaf,
-  IconFlowerOutline,
   IconPeopleOutline,
   IconTarget,
   IconHeartOutline,
@@ -95,6 +93,7 @@ import { RoutinesPanel } from '../components/RoutinesPanel';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
+import { WelcomeSetupWizard } from '../components/WelcomeSetupWizard';
 import { PLUS_HUB_ITEMS, type HubKey } from '../components/PlusHub';
 import { useAppUiStore } from '../lib/store/appUiStore';
 import {
@@ -105,6 +104,12 @@ import {
   type HomeLayoutConfig,
   type HomeSectionId,
 } from '../lib/homeLayout';
+import {
+  buildHomeLayoutFromPostLoginChoices,
+  isWelcomeWizardV2Complete,
+  markPostLoginPersonalizationComplete,
+  markWelcomeWizardV2Complete,
+} from '../lib/postLoginPersonalization';
 
 type EventItem = { id: number; title: string; starts_at: string; ends_at?: string; updated_at?: string; source_provider?: string | null };
 type TaskItem = {
@@ -139,6 +144,8 @@ type SpeechRecognitionLike = {
 };
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
+const ASSISTANT_HISTORY_KEY = 'majordome_assistant_history';
+
 function mergeTasksById(prev: TaskItem[], incoming: TaskItem[]): TaskItem[] {
   const map = new Map<number, TaskItem>();
   for (const t of prev) {
@@ -156,6 +163,7 @@ type ConflictItem = { event_a: number; event_b: number; title_a: string; title_b
 type ConnectedAccount = { id: number; provider: string; status: string };
 type LoginResponse = { access_token: string; refresh_token: string };
 type AgentInterpretResponse = { intent: string; mode: string; explanation: string; proposal?: Record<string, unknown> };
+type AgentExecutionResult = { done: boolean; message?: string };
 type DebordeeApiResponse = { critique: string[]; deleguer: string[]; supprimer: string[]; message: string };
 type FamilyProfile = { prenom: string; partenaire: string; enfant: string; ageEnfant: string; objectif: string };
 type DocVaultItem = {
@@ -293,7 +301,8 @@ type OverlayId =
   | 'recettes'
   | 'routines'
   | 'courrier'
-  | 'albums';
+  | 'albums'
+  | 'integrations';
 
 const MAIN_NAV = [
   { id: 'home' as const, label: 'Accueil', NavIcon: IconHome },
@@ -584,51 +593,68 @@ function StatusBar({ onOpenSearch }: { onOpenSearch?: () => void }) {
   const mm = now ? now.getMinutes().toString().padStart(2, '0') : '–';
   const ink = C.text;
   const dim = C.text3;
+  /** La pastille « encoche » décorative est centrée en haut : ne pas mettre la recherche au centre (elle passerait dessous). */
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px 4px', color: ink, gap: 8 }}>
-      <span style={{ fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{hh}:{mm}</span>
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0 }}>
-        {onOpenSearch ? (
+    <div
+      style={{
+        position: 'relative',
+        zIndex: 2,
+        paddingTop: 'max(10px, env(safe-area-inset-top, 0px))',
+        paddingLeft: 'max(16px, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(16px, env(safe-area-inset-right, 0px))',
+        paddingBottom: 0,
+        color: ink,
+        background: C.bg,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, minHeight: 22 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{hh}:{mm}</span>
+        <span style={{ display: 'flex', alignItems: 'flex-end', gap: 5, flexShrink: 0 }} aria-hidden>
+          <svg width={17} height={11} viewBox="0 0 17 11" fill="none">
+            <rect x={1} y={7} width={3} height={4} rx={1} fill={dim} />
+            <rect x={6} y={5} width={3} height={6} rx={1} fill={dim} />
+            <rect x={11} y={2} width={3} height={9} rx={1} fill={ink} />
+          </svg>
+          <svg width={16} height={11} viewBox="0 0 16 11" fill="none">
+            <path d="M2 8c2.5-4 9.5-4 12 0" stroke={dim} strokeWidth={1.2} strokeLinecap="round" />
+            <path d="M4 5c2-2 6-2 8 0" stroke={ink} strokeWidth={1.2} strokeLinecap="round" />
+            <circle cx={8} cy={9} r={1} fill={ink} />
+          </svg>
+          <svg width={22} height={11} viewBox="0 0 22 11" fill="none">
+            <rect x={2} y={2} width={18} height={8} rx={2} stroke={dim} strokeWidth={1.2} />
+            <rect x={17} y={4} width={4} height={4} rx={1} fill={ink} />
+          </svg>
+        </span>
+      </div>
+      {onOpenSearch ? (
+        <div style={{ padding: '10px 0 12px' }}>
           <button
             type="button"
             onClick={onOpenSearch}
             aria-label="Recherche globale"
             title="Recherche (⌘K ou Ctrl+K)"
             style={{
+              width: '100%',
+              minHeight: 44,
               border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              padding: '5px 12px',
+              borderRadius: 14,
+              padding: '0 14px',
               background: C.white,
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 10,
               cursor: 'pointer',
-              maxWidth: 200,
+              WebkitTapHighlightColor: 'transparent',
+              boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
             }}
           >
-            <IconSearch size={14} color={C.text2} strokeWidth={1.65} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: C.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Rechercher…
-            </span>
+            <IconSearch size={18} color={C.text2} strokeWidth={1.65} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: C.text2, textAlign: 'left', flex: 1 }}>Rechercher…</span>
           </button>
-        ) : null}
-      </div>
-      <span style={{ display: 'flex', alignItems: 'flex-end', gap: 5, flexShrink: 0 }} aria-hidden>
-        <svg width={17} height={11} viewBox="0 0 17 11" fill="none">
-          <rect x={1} y={7} width={3} height={4} rx={1} fill={dim} />
-          <rect x={6} y={5} width={3} height={6} rx={1} fill={dim} />
-          <rect x={11} y={2} width={3} height={9} rx={1} fill={ink} />
-        </svg>
-        <svg width={16} height={11} viewBox="0 0 16 11" fill="none">
-          <path d="M2 8c2.5-4 9.5-4 12 0" stroke={dim} strokeWidth={1.2} strokeLinecap="round" />
-          <path d="M4 5c2-2 6-2 8 0" stroke={ink} strokeWidth={1.2} strokeLinecap="round" />
-          <circle cx={8} cy={9} r={1} fill={ink} />
-        </svg>
-        <svg width={22} height={11} viewBox="0 0 22 11" fill="none">
-          <rect x={2} y={2} width={18} height={8} rx={2} stroke={dim} strokeWidth={1.2} />
-          <rect x={17} y={4} width={4} height={4} rx={1} fill={ink} />
-        </svg>
-      </span>
+        </div>
+      ) : (
+        <div style={{ height: 8 }} />
+      )}
     </div>
   );
 }
@@ -647,6 +673,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [homeLayout, setHomeLayout] = useState<HomeLayoutConfig>(() => mergeHomeLayout(null));
   const [homeLayoutEditorOpen, setHomeLayoutEditorOpen] = useState(false);
+  const [layoutUserEmail, setLayoutUserEmail] = useState('');
+  const [postLoginSetupResolved, setPostLoginSetupResolved] = useState(false);
+  const [postLoginSetupDone, setPostLoginSetupDone] = useState(false);
 
   const [events, setEvents] = useState<EventItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -718,10 +747,6 @@ export default function HomePage() {
   const [familyProfile, setFamilyProfile] = useState<FamilyProfile>(() => defaultFamily());
   /** Toujours false au 1er rendu pour matcher le SSR ; useEffect applique localStorage. */
   const [onboardingDone, setOnboardingDone] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [onboardingDraft, setOnboardingDraft] = useState<FamilyProfile>(() => defaultFamily());
-  const [onboardingFinishing, setOnboardingFinishing] = useState(false);
-  const [showOnboardingSplash, setShowOnboardingSplash] = useState(false);
   const [alfredMemory, setAlfredMemory] = useState<string[]>([]);
   const [modalDebordee, setModalDebordee] = useState<'closed' | 'confirm' | 'loading' | 'result'>('closed');
   const [debordeeResult, setDebordeeResult] = useState<DebordeeApiResponse | null>(null);
@@ -1111,15 +1136,36 @@ export default function HomePage() {
     const stored = localStorage.getItem('majordome_access_token');
     if (stored) setToken(stored);
     const layoutEmail = localStorage.getItem(LAYOUT_USER_EMAIL_KEY);
+    if (layoutEmail) setLayoutUserEmail(layoutEmail);
     if (stored && layoutEmail) setHomeLayout(loadHomeLayoutForUser(layoutEmail));
     const storedAiName = localStorage.getItem('majordome_ai_name');
-    if (!storedAiName) {
-      localStorage.setItem('majordome_ai_name', 'Alfred');
-      setAiName('Alfred');
-      setAssistantHistory([{ who: 'ai', text: "Coucou, je suis Alfred. Dis-moi ce que je dois gerer pour toi." }]);
-    } else {
-      const cleanName = storedAiName.trim() || 'Alfred';
-      setAiName(cleanName);
+    const cleanName = storedAiName?.trim() || 'Alfred';
+    if (!storedAiName) localStorage.setItem('majordome_ai_name', cleanName);
+    setAiName(cleanName);
+    try {
+      const rawHistory = localStorage.getItem(ASSISTANT_HISTORY_KEY);
+      if (rawHistory) {
+        const parsed = JSON.parse(rawHistory);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed
+            .filter(
+              (x: unknown): x is { who: 'ai' | 'user'; text: string } =>
+                !!x &&
+                typeof x === 'object' &&
+                (((x as { who?: string }).who === 'ai') || (x as { who?: string }).who === 'user') &&
+                typeof (x as { text?: unknown }).text === 'string'
+            )
+            .slice(-200);
+          if (cleaned.length > 0) {
+            setAssistantHistory(cleaned);
+          } else {
+            setAssistantHistory([{ who: 'ai', text: `Coucou, je suis ${cleanName}. Dis-moi ce que je dois gerer pour toi.` }]);
+          }
+        }
+      } else {
+        setAssistantHistory([{ who: 'ai', text: `Coucou, je suis ${cleanName}. Dis-moi ce que je dois gerer pour toi.` }]);
+      }
+    } catch {
       setAssistantHistory([{ who: 'ai', text: `Coucou, je suis ${cleanName}. Dis-moi ce que je dois gerer pour toi.` }]);
     }
     try {
@@ -1130,8 +1176,9 @@ export default function HomePage() {
         setFamilyProfile(fam);
       }
       const ob = localStorage.getItem('majordome_onboarding_done');
-      setOnboardingDone(ob === '1' || Boolean(famRaw));
-      setOnboardingDraft(fam);
+      const doneOb = ob === '1' || Boolean(famRaw);
+      const wizV2 = layoutEmail ? isWelcomeWizardV2Complete(layoutEmail) : false;
+      setOnboardingDone(doneOb || wizV2);
 
       const memRaw = localStorage.getItem('majordome_alfred_memory');
       if (memRaw) {
@@ -1164,6 +1211,24 @@ export default function HomePage() {
       // keep defaults
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!token) {
+      setPostLoginSetupResolved(false);
+      setPostLoginSetupDone(false);
+      return;
+    }
+    const em = localStorage.getItem(LAYOUT_USER_EMAIL_KEY);
+    if (!em) {
+      setPostLoginSetupDone(true);
+      setPostLoginSetupResolved(true);
+      return;
+    }
+    setLayoutUserEmail(em);
+    setPostLoginSetupDone(isWelcomeWizardV2Complete(em));
+    setPostLoginSetupResolved(true);
+  }, [token]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -1206,6 +1271,14 @@ export default function HomePage() {
       // ignore
     }
   }, [alfredMemory]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(assistantHistory.slice(-200)));
+    } catch {
+      // ignore
+    }
+  }, [assistantHistory]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1283,12 +1356,12 @@ export default function HomePage() {
     const onKey = (ev: KeyboardEvent) => {
       if (!(ev.metaKey || ev.ctrlKey) || ev.key.toLowerCase() !== 'k') return;
       ev.preventDefault();
-      if (!token || !onboardingDone) return;
+      if (!token || !onboardingDone || !postLoginSetupDone) return;
       toggleGlobalSearch();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [token, onboardingDone, toggleGlobalSearch]);
+  }, [token, onboardingDone, postLoginSetupDone, toggleGlobalSearch]);
 
   async function loadData(accessToken: string) {
     setLoading(true);
@@ -1441,16 +1514,6 @@ export default function HomePage() {
     if (!modalCoffre) setDocEdit(null);
   }, [modalCoffre]);
 
-  useEffect(() => {
-    if (!token || onboardingDone) {
-      setShowOnboardingSplash(false);
-      return;
-    }
-    setShowOnboardingSplash(true);
-    const id = window.setTimeout(() => setShowOnboardingSplash(false), 2800);
-    return () => window.clearTimeout(id);
-  }, [token, onboardingDone]);
-
   async function login() {
     setLoading(true);
     setError('');
@@ -1461,6 +1524,7 @@ export default function HomePage() {
       const emLogin = email.trim().toLowerCase();
       if (emLogin) {
         localStorage.setItem(LAYOUT_USER_EMAIL_KEY, emLogin);
+        setLayoutUserEmail(emLogin);
         setHomeLayout(loadHomeLayoutForUser(emLogin));
       }
       setToken(res.access_token);
@@ -1480,6 +1544,9 @@ export default function HomePage() {
     localStorage.removeItem('majordome_access_token');
     localStorage.removeItem('majordome_refresh_token');
     localStorage.removeItem(LAYOUT_USER_EMAIL_KEY);
+    setLayoutUserEmail('');
+    setPostLoginSetupResolved(false);
+    setPostLoginSetupDone(false);
     setHomeLayout(mergeHomeLayout(null));
     setMainTab('home');
     setOverlay(null);
@@ -1501,6 +1568,113 @@ export default function HomePage() {
     pushToast('info', 'Déconnexion effectuée');
   }
 
+  async function executeAgentIntent(
+    rawCommand: string,
+    interpreted: AgentInterpretResponse
+  ): Promise<AgentExecutionResult> {
+    if (!token) return { done: false };
+    const proposal = interpreted.proposal ?? {};
+    const toStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+    const command = rawCommand.trim();
+    const lowered = command.toLowerCase();
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+    const commandNormalized = normalize(command);
+    const titleFromProposal = toStr((proposal as { title?: unknown }).title);
+    const title = titleFromProposal || command;
+    const findTaskByTitle = (hint: string): TaskItem | null => {
+      const h = normalize(hint);
+      if (!h) return null;
+      return (
+        openTasks.find((t) => normalize(t.title) === h) ??
+        openTasks.find((t) => normalize(t.title).includes(h) || h.includes(normalize(t.title))) ??
+        null
+      );
+    };
+    const findAssigneeMemberId = (hint: string): number | null => {
+      const name = normalize(hint);
+      if (!name) return null;
+      if (familyProfile.prenom && name.includes(normalize(familyProfile.prenom))) return primaryMemberId;
+      if (familyProfile.partenaire && name.includes(normalize(familyProfile.partenaire))) return partnerMemberId;
+      if (familyProfile.enfant && name.includes(normalize(familyProfile.enfant))) return childMemberId;
+      return (
+        householdMembers.find((m: HouseholdMemberRow) => {
+          const n = normalize(m.display_name);
+          return n === name || n.includes(name) || name.includes(n);
+        })?.id ?? null
+      );
+    };
+    const assigneeHint =
+      toStr((proposal as { assignee?: unknown }).assignee) ||
+      toStr((proposal as { member_name?: unknown }).member_name) ||
+      toStr((proposal as { assigned_to?: unknown }).assigned_to);
+
+    if (interpreted.intent === 'task_create' || lowered.startsWith('ajoute ') || lowered.includes('rajoute')) {
+      const created = await postJson<TaskItem>('/api/v1/tasks', { title, task_type: 'manual_task' }, token);
+      setTasks((prev) => mergeTasksById(prev, [created]));
+      void refreshTaskSummary({ trackBusy: false });
+      return { done: true, message: `C'est fait. Tâche créée : ${created.title}` };
+    }
+
+    const shouldAssign =
+      interpreted.intent.includes('assign') ||
+      interpreted.intent.includes('delegate') ||
+      commandNormalized.includes('assigne');
+    if (shouldAssign) {
+      const idFromProposal = Number((proposal as { task_id?: unknown }).task_id || 0);
+      const taskHint = toStr((proposal as { task_title?: unknown }).task_title) || title;
+      const task = (idFromProposal > 0 ? openTasks.find((t) => t.id === idFromProposal) : null) ?? findTaskByTitle(taskHint);
+      const extractedName =
+        assigneeHint ||
+        (() => {
+          const m = commandNormalized.match(/(?:assigne|attribue).+?(?:a|à)\s+([a-z0-9 _-]{2,40})/i);
+          return m?.[1]?.trim() ?? '';
+        })();
+      const memberId = findAssigneeMemberId(extractedName);
+      if (task && memberId) {
+        const updated = await patchJson<TaskItem>(`/api/v1/tasks/${task.id}`, { assigned_member_id: memberId }, token);
+        setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, ...updated } : x)));
+        return { done: true, message: `Ok, j'ai assigné « ${task.title} ».` };
+      }
+    }
+
+    const shouldComplete = interpreted.intent.includes('complete') || commandNormalized.includes('termine');
+    if (shouldComplete) {
+      const idFromProposal = Number((proposal as { task_id?: unknown }).task_id || 0);
+      const taskHint = toStr((proposal as { task_title?: unknown }).task_title) || title;
+      const task = (idFromProposal > 0 ? openTasks.find((t) => t.id === idFromProposal) : null) ?? findTaskByTitle(taskHint);
+      if (task) {
+        const updated = await postJson<TaskItem>(`/api/v1/tasks/${task.id}/complete`, {}, token);
+        setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, ...updated } : x)));
+        void refreshTaskSummary({ trackBusy: false });
+        return { done: true, message: `Terminé. « ${task.title} » est marquée faite.` };
+      }
+    }
+
+    const shouldCreateEvent =
+      interpreted.intent.includes('event') || interpreted.intent.includes('schedule') || commandNormalized.includes('emploi du temps');
+    if (shouldCreateEvent) {
+      const now = new Date();
+      const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
+      const startsAt = toStr((proposal as { starts_at?: unknown }).starts_at) || now.toISOString();
+      const endsAt = toStr((proposal as { ends_at?: unknown }).ends_at) || inOneHour.toISOString();
+      const eventTitle = titleFromProposal || command.slice(0, 120);
+      const created = await postJson<EventItem>(
+        '/api/v1/events/create-and-sync',
+        { title: eventTitle, starts_at: startsAt, ends_at: endsAt, provider: 'google_calendar' },
+        token
+      );
+      setEvents((prev) => [created, ...prev.filter((e) => e.id !== created.id)]);
+      return { done: true, message: `C'est noté. Événement ajouté : ${eventTitle}` };
+    }
+
+    return { done: false };
+  }
+
   async function sendAssistant() {
     if (!token || !assistantInput.trim()) return;
     const text = assistantInput.trim();
@@ -1514,16 +1688,20 @@ export default function HomePage() {
         : '';
     try {
       const res = await postJson<AgentInterpretResponse>('/api/v1/agent/interpret', { command: `${memoryBlock}${text}` }, token);
+      const execution = await executeAgentIntent(text, res).catch(() => ({ done: false } as AgentExecutionResult));
       let aiText = res.explanation || '';
       if (res.proposal && typeof res.proposal === 'object' && 'title' in res.proposal) {
         const t = (res.proposal as { title?: string }).title;
         if (t) aiText = `${aiText}\n\nTâche proposée : ${t}`;
       }
+      if (execution.done && execution.message) {
+        aiText = `${aiText}\n\n${execution.message}`.trim();
+      }
       if (!aiText.trim()) aiText = `${res.intent} (${res.mode})`;
       setAssistantHistory((m) => [...m, { who: 'ai', text: aiText }]);
       if (memNote) {
         setAlfredMemory((prev) => (prev.includes(memNote) ? prev : [...prev, memNote]));
-        pushToast('info', 'Alfred a mémorisé une note');
+      pushToast('info', 'Alfred a mémorisé une note');
       }
       if (autoSpeak && typeof window !== 'undefined' && 'speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(aiText);
@@ -1558,6 +1736,9 @@ export default function HomePage() {
       pushToast('error', 'Lecteur audio indisponible. Réessaie après avoir rouvert Alfred.');
       return;
     }
+    audioSink.muted = false;
+    audioSink.volume = 1;
+    audioSink.autoplay = true;
     setOpenAiRealtimeBusy(true);
     try {
       const pc = new RTCPeerConnection({
@@ -1567,7 +1748,12 @@ export default function HomePage() {
 
       pc.ontrack = (e) => {
         const [stream] = e.streams;
-        if (stream && realtimeAudioElRef.current) realtimeAudioElRef.current.srcObject = stream;
+        if (stream && realtimeAudioElRef.current) {
+          realtimeAudioElRef.current.srcObject = stream;
+          void realtimeAudioElRef.current.play().catch(() => {
+            pushToast('info', 'Touchez le bouton vagues pour activer le son.');
+          });
+        }
       };
 
       const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1702,19 +1888,51 @@ export default function HomePage() {
     }
   }
 
-  function completeOnboarding() {
-    setOnboardingFinishing(true);
-    window.setTimeout(() => {
+  function completeWelcomeWizard(next: HomeLayoutConfig, profile: FamilyProfile) {
+    const em =
+      layoutUserEmail || (typeof window !== 'undefined' ? localStorage.getItem(LAYOUT_USER_EMAIL_KEY) : null);
+    if (em) {
+      saveHomeLayoutForUser(em, next);
+      markPostLoginPersonalizationComplete(em);
+      markWelcomeWizardV2Complete(em);
+    }
+    setHomeLayout(mergeHomeLayout(next));
+    setFamilyProfile(profile);
+    try {
+      localStorage.setItem('majordome_family_profile', JSON.stringify(profile));
       localStorage.setItem('majordome_onboarding_done', '1');
-      localStorage.setItem('majordome_family_profile', JSON.stringify(onboardingDraft));
-      setFamilyProfile(onboardingDraft);
-      setOnboardingDone(true);
-      setOnboardingFinishing(false);
-      setInfo('Bienvenue — ta famille est configurée.');
-      pushToast('success', 'Configuration enregistrée');
-      const t = localStorage.getItem('majordome_access_token');
-      if (t) void loadData(t);
-    }, 900);
+    } catch {
+      /* ignore */
+    }
+    setOnboardingDone(true);
+    setPostLoginSetupDone(true);
+    pushToast('success', 'Parcours terminé — bienvenue dans MajorDome');
+    const t = localStorage.getItem('majordome_access_token');
+    if (t) void loadData(t);
+  }
+
+  function skipWelcomeWizard(profile: FamilyProfile) {
+    const em =
+      layoutUserEmail || (typeof window !== 'undefined' ? localStorage.getItem(LAYOUT_USER_EMAIL_KEY) : null);
+    const defaultLayout = buildHomeLayoutFromPostLoginChoices([], 'balanced');
+    if (em) {
+      saveHomeLayoutForUser(em, defaultLayout);
+      markPostLoginPersonalizationComplete(em);
+      markWelcomeWizardV2Complete(em);
+    }
+    setHomeLayout(mergeHomeLayout(defaultLayout));
+    setFamilyProfile(profile);
+    try {
+      localStorage.setItem('majordome_family_profile', JSON.stringify(profile));
+      localStorage.setItem('majordome_onboarding_done', '1');
+    } catch {
+      /* ignore */
+    }
+    setOnboardingDone(true);
+    setPostLoginSetupDone(true);
+    pushToast('info', 'Tu pourras tout retrouver dans l’app et dans « Personnaliser l’accueil ».');
+    const t = localStorage.getItem('majordome_access_token');
+    if (t) void loadData(t);
   }
 
   function toggleVoiceListening() {
@@ -2173,6 +2391,37 @@ export default function HomePage() {
             </div>
           </div>
           ) : null}
+          {sec('stats_pair') ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <GlassCard style={{ padding: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 12, background: C.terraXL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                <IconCalendar size={20} color={C.terra} strokeWidth={1.65} />
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: C.terra }}>{nextEvents.length}</div>
+              <div style={{ fontSize: 11 }}>Evenements aujourd hui</div>
+            </GlassCard>
+            <GlassCard style={{ padding: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 12, background: C.greenL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                <IconCheckSmall size={22} color={C.green} strokeWidth={2} />
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: C.sage }}>{openTasks.length}</div>
+              <div style={{ fontSize: 11 }}>Tâches ouvertes (app)</div>
+              {taskSummary != null ? (
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: taskSummary.open_count === openTasks.length ? C.text3 : C.sun,
+                    marginTop: 5,
+                    lineHeight: 1.35,
+                  }}
+                >
+                  Foyer : {taskSummary.open_count} ouverte(s)
+                  {taskSummary.open_count !== openTasks.length ? ' — recharge si tu vois un décalage.' : ''}
+                </div>
+              ) : null}
+            </GlassCard>
+          </div>
+          ) : null}
           {sec('hub_shortcuts_row') && homeLayout.hubShortcuts.length > 0 ? (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.3, marginBottom: 8 }}>MES MODULES</div>
@@ -2216,37 +2465,6 @@ export default function HomePage() {
                 })}
               </div>
             </div>
-          ) : null}
-          {sec('stats_pair') ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-            <GlassCard style={{ padding: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 12, background: C.terraXL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
-                <IconCalendar size={20} color={C.terra} strokeWidth={1.65} />
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: C.terra }}>{nextEvents.length}</div>
-              <div style={{ fontSize: 11 }}>Evenements aujourd hui</div>
-            </GlassCard>
-            <GlassCard style={{ padding: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 12, background: C.greenL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
-                <IconCheckSmall size={22} color={C.green} strokeWidth={2} />
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: C.sage }}>{openTasks.length}</div>
-              <div style={{ fontSize: 11 }}>Tâches ouvertes (app)</div>
-              {taskSummary != null ? (
-                <div
-                  style={{
-                    fontSize: 9,
-                    color: taskSummary.open_count === openTasks.length ? C.text3 : C.sun,
-                    marginTop: 5,
-                    lineHeight: 1.35,
-                  }}
-                >
-                  Foyer : {taskSummary.open_count} ouverte(s)
-                  {taskSummary.open_count !== openTasks.length ? ' — recharge si tu vois un décalage.' : ''}
-                </div>
-              ) : null}
-            </GlassCard>
-          </div>
           ) : null}
           {sec('coffre_strip') ? (
           <GlassCard
@@ -2711,25 +2929,6 @@ export default function HomePage() {
               <li>Automatiser notifications partenaire WhatsApp natif (À venir)</li>
               <li>Bridge vocal Alexa / Google Home / Siri (À venir)</li>
             </ul>
-          </GlassCard>
-          ) : null}
-          {sec('integrations_home') ? (
-          <GlassCard style={{ padding: 14, marginBottom: 18 }}>
-            <strong style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <IconLink size={17} color={C.text} strokeWidth={1.65} />
-              Integrations tierces
-            </strong>
-            <p style={{ margin: '6px 0 0', fontSize: 11, color: C.text2, lineHeight: 1.45 }}>
-              Connexion API native : <strong>À venir</strong>. Les raccourcis ci-dessous ouvrent le web ou préparent un message pour Alfred.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-              <button onClick={() => window.open('https://www.doctolib.fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Doctolib (web)</button>
-              <button onClick={() => window.open('https://www.pronote.com/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Pronote / ENT (web)</button>
-              <button onClick={() => window.open('https://www.picnic.app/fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Picnic / Instacart</button>
-              <button onClick={() => setAssistantInput(`Prépare un message WhatsApp pour ${familyProfile.partenaire} pour répartir les tâches de ce soir`)} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Msg WhatsApp (Alfred)</button>
-              <button onClick={() => setAssistantInput('Crée une routine vocale Alexa et Google Home pour rappel tâches')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Alexa/Home/Siri</button>
-              <button onClick={() => window.location.href = '/settings'} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.terraXL, color: C.terra, fontSize: 11, fontWeight: 700 }}>Configurer connexions</button>
-            </div>
           </GlassCard>
           ) : null}
         </div>
@@ -3491,6 +3690,31 @@ export default function HomePage() {
       return wrapOv('Notifications', <NotifsStubPanel C={C} />);
     }
 
+    if (layer === 'integrations') {
+      return wrapOv(
+        'Intégrations tierces',
+        <div>
+          <p style={{ margin: '0 0 10px', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
+            Connexion API native : <strong>À venir</strong>. Les raccourcis ci-dessous ouvrent le web ou préparent un message pour Alfred.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button type="button" onClick={() => window.open('https://www.doctolib.fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Doctolib (web)</button>
+            <button type="button" onClick={() => window.open('https://www.pronote.com/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Pronote / ENT (web)</button>
+            <button type="button" onClick={() => window.open('https://www.picnic.app/fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Picnic / Instacart</button>
+            <button
+              type="button"
+              onClick={() => setAssistantInput(`Prépare un message WhatsApp pour ${familyProfile.partenaire} pour répartir les tâches de ce soir`)}
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}
+            >
+              Msg WhatsApp (Alfred)
+            </button>
+            <button type="button" onClick={() => setAssistantInput('Crée une routine vocale Alexa et Google Home pour rappel tâches')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Alexa/Home/Siri</button>
+            <button type="button" onClick={() => { window.location.href = '/settings'; }} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.terraXL, color: C.terra, fontSize: 11, fontWeight: 700 }}>Configurer connexions</button>
+          </div>
+        </div>,
+      );
+    }
+
     if (layer === 'plus') {
       return (
         <PlusHub
@@ -3566,152 +3790,11 @@ export default function HomePage() {
                 Oublier les notes
               </button>
             ) : null}
-            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => void toggleOpenAiRealtimeVoice()}
-                disabled={
-                  openAiRealtimeBusy ||
-                  (!openAiRealtimeOn &&
-                    !realtimePcRef.current &&
-                    (!token || realtimeVoiceOk !== true))
-                }
-                title="Speech-to-speech OpenAI Realtime, voix Cedar"
-                style={{
-                  border: 'none',
-                  borderRadius: 999,
-                  padding: '6px 10px',
-                  background: openAiRealtimeOn ? C.redL : C.surface2,
-                  color: openAiRealtimeOn ? C.red : C.text,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  opacity:
-                    openAiRealtimeOn || realtimePcRef.current
-                      ? 1
-                      : !token || realtimeVoiceOk !== true
-                        ? 0.45
-                        : 1,
-                  cursor:
-                    openAiRealtimeOn || realtimePcRef.current
-                      ? 'pointer'
-                      : !token || realtimeVoiceOk !== true
-                        ? 'not-allowed'
-                        : 'pointer',
-                }}
-              >
-                {openAiRealtimeBusy
-                  ? 'Connexion…'
-                  : openAiRealtimeOn
-                    ? 'Raccrocher OpenAI'
-                    : realtimeVoiceOk === null
-                      ? 'Realtime…'
-                      : 'OpenAI Realtime'}
-              </button>
-              <button
-                onClick={toggleVoiceListening}
-                disabled={!voiceSupported || openAiRealtimeOn}
-                style={{
-                  border: 'none',
-                  borderRadius: 999,
-                  padding: '6px 10px',
-                  background: isListening ? C.redL : C.terraXL,
-                  color: isListening ? C.red : C.terra,
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <IconMic size={14} color={isListening ? C.red : C.terra} strokeWidth={1.65} />
-                  {!voiceSupported ? 'Micro non supporté' : openAiRealtimeOn ? 'Micro navigateur (off)' : isListening ? 'Stop micro' : 'Parler'}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPushToTalk((v) => !v)}
-                disabled={openAiRealtimeOn}
-                style={{
-                  border: 'none',
-                  borderRadius: 999,
-                  padding: '6px 10px',
-                  background: pushToTalk ? C.lilacL : C.surface2,
-                  color: pushToTalk ? C.lilac : C.text2,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  opacity: openAiRealtimeOn ? 0.45 : 1,
-                  cursor: openAiRealtimeOn ? 'not-allowed' : 'pointer',
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <IconTarget size={14} color={pushToTalk ? C.lilac : C.text2} strokeWidth={1.65} />
-                  {pushToTalk ? 'Push-to-talk ON' : 'Push-to-talk OFF'}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAutoSpeak((v) => !v)}
-                style={{
-                  border: 'none',
-                  borderRadius: 999,
-                  padding: '6px 10px',
-                  background: autoSpeak ? C.sageL : C.surface2,
-                  color: autoSpeak ? C.sage : C.text2,
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <IconSpeaker size={14} color={autoSpeak ? C.sage : C.text2} strokeWidth={1.65} />
-                  {autoSpeak ? 'Voix ON (navigateur)' : 'Voix OFF'}
-                </span>
-              </button>
-            </div>
+            <div style={{ marginTop: 8 }} />
             {openAiRealtimeOn ? (
               <div style={{ marginTop: 6, fontSize: 10, color: C.text2, lineHeight: 1.35 }}>
-                Tu parles au micro ; {aiName} répond avec la voix Cedar via OpenAI. Coupe « Voix ON (navigateur) » pour éviter un doublon si tu envoies aussi du texte.
+                Tu parles au micro ; {aiName} répond en voix Realtime (Cedar).
               </div>
-            ) : null}
-            {liveTranscript ? <div style={{ marginTop: 6, fontSize: 10, color: C.text2 }}>Transcription live: {liveTranscript}</div> : null}
-            {pushToTalk ? (
-              <button
-                disabled={!voiceSupported || openAiRealtimeOn}
-                onMouseDown={() => {
-                  if (!voiceSupported || openAiRealtimeOn || isListening) return;
-                  setLiveTranscript('');
-                  speechRecognitionRef.current?.start();
-                  setIsListening(true);
-                }}
-                onMouseUp={() => {
-                  void stopListeningAndSend();
-                }}
-                onTouchStart={() => {
-                  if (!voiceSupported || openAiRealtimeOn || isListening) return;
-                  setLiveTranscript('');
-                  speechRecognitionRef.current?.start();
-                  setIsListening(true);
-                }}
-                onTouchEnd={() => {
-                  void stopListeningAndSend();
-                }}
-                style={{
-                  marginTop: 8,
-                  width: '100%',
-                  border: 'none',
-                  borderRadius: 12,
-                  padding: '10px 12px',
-                  background: isListening ? C.red : C.terra,
-                  color: '#fff',
-                  fontSize: 12,
-                  fontWeight: 800,
-                }}
-              >
-                {!voiceSupported
-                  ? 'Micro non supporté'
-                  : openAiRealtimeOn
-                    ? 'Push-to-talk désactivé (Realtime actif)'
-                    : isListening
-                      ? 'Relâche pour envoyer'
-                      : 'Maintiens pour parler'}
-              </button>
             ) : null}
             </div>
           </div>
@@ -3726,8 +3809,50 @@ export default function HomePage() {
             {assistantTyping ? <div style={{ fontSize: 12, color: C.text2 }}>{aiName} ecrit...</div> : null}
             <div ref={endRef} />
           </div>
-          <div style={{ padding: 12, display: 'flex', gap: 8 }}>
+          <div style={{ padding: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
             <input value={assistantInput} onChange={(e) => setAssistantInput(e.target.value)} placeholder="Dis-moi ce que je dois faire..." style={{ flex: 1, borderRadius: 12, border: `1px solid ${C.border}`, padding: 10 }} />
+            <button
+              type="button"
+              onClick={toggleVoiceListening}
+              disabled={!voiceSupported || openAiRealtimeOn}
+              title={!voiceSupported ? 'Micro indisponible' : isListening ? 'Stop micro' : 'Activer micro'}
+              aria-label={!voiceSupported ? 'Micro indisponible' : isListening ? 'Stop micro' : 'Activer micro'}
+              style={{
+                width: 40,
+                height: 40,
+                border: 'none',
+                borderRadius: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: isListening ? C.redL : C.terraXL,
+                opacity: !voiceSupported || openAiRealtimeOn ? 0.45 : 1,
+                cursor: !voiceSupported || openAiRealtimeOn ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <IconMic size={18} color={isListening ? C.red : C.terra} strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={() => void toggleOpenAiRealtimeVoice()}
+              disabled={openAiRealtimeBusy || (!openAiRealtimeOn && !realtimePcRef.current && (!token || realtimeVoiceOk !== true))}
+              title={openAiRealtimeOn ? 'Couper realtime voice' : 'Démarrer realtime voice'}
+              aria-label={openAiRealtimeOn ? 'Couper realtime voice' : 'Démarrer realtime voice'}
+              style={{
+                width: 40,
+                height: 40,
+                border: 'none',
+                borderRadius: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: openAiRealtimeOn ? C.redL : C.surface2,
+                opacity: openAiRealtimeOn || realtimePcRef.current ? 1 : !token || realtimeVoiceOk !== true ? 0.45 : 1,
+                cursor: openAiRealtimeOn || realtimePcRef.current ? 'pointer' : !token || realtimeVoiceOk !== true ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <IconSpeaker size={18} color={openAiRealtimeOn ? C.red : C.text2} strokeWidth={1.8} />
+            </button>
             <button onClick={sendAssistant} style={{ border: 'none', borderRadius: 12, background: C.terra, color: '#fff', padding: '0 14px' }}>Envoyer</button>
           </div>
         </div>
@@ -3765,14 +3890,33 @@ export default function HomePage() {
             textDecoration: 'none',
             lineHeight: 1,
           }}
-          aria-label="MAJORDOME — accueil"
+                          aria-label="MAJORDOME — accueil"
         >
           <MajordomeWordmarkLogo maxHeight={36} />
         </a>
         <div style={{ width: 390, height: 844, background: C.bg, borderRadius: 52, overflow: 'hidden', border: '10px solid #D4C8C2', boxShadow: '0 40px 80px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <div style={{ position: 'relative' }}>
-            <StatusBar onOpenSearch={token && onboardingDone ? () => setGlobalSearchOpen(true) : undefined} />
-            <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 110, height: 30, background: '#D4C8C2', borderBottomLeftRadius: 18, borderBottomRightRadius: 18 }} />
+            <StatusBar
+              onOpenSearch={
+                token && onboardingDone && postLoginSetupDone ? () => setGlobalSearchOpen(true) : undefined
+              }
+            />
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: 'max(0px, env(safe-area-inset-top, 0px))',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 110,
+                height: 30,
+                background: '#D4C8C2',
+                borderBottomLeftRadius: 18,
+                borderBottomRightRadius: 18,
+                zIndex: 1,
+                pointerEvents: 'none',
+              }}
+            />
           </div>
 
           {!token ? (
@@ -3802,170 +3946,32 @@ export default function HomePage() {
               </div>
               </div>
             </div>
-          ) : !onboardingDone ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, background: `linear-gradient(160deg, ${C.terraXL} 0%, ${C.lilacL} 100%)`, position: 'relative' }}>
-              {showOnboardingSplash ? (
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    zIndex: 8,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 28,
-                    background: `linear-gradient(165deg, ${C.terraXL} 0%, ${C.lilacL} 55%, ${C.bg} 100%)`,
-                  }}
-                >
-                  <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-                    <MajordomeWordmarkLogo maxHeight={48} />
-                  </div>
-                  <p style={{ margin: 0, fontSize: 13, color: C.text2, textAlign: 'center', maxWidth: 280 }}>Préparons ton profil famille…</p>
-                </div>
-              ) : null}
-              {!showOnboardingSplash ? (
-                <>
-              <div
-                style={{
-                  flexShrink: 0,
-                  padding: '8px 14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  background: C.white,
-                  borderBottom: `1px solid ${C.border}`,
-                }}
-              >
-                <MajordomeWordmarkLogo maxHeight={24} />
-                <button type="button" onClick={logout} style={{ border: 'none', background: 'transparent', color: C.text2, fontSize: 12 }}>Déconnexion</button>
-              </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 22px', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 28 }}>
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <div key={i} style={{ width: onboardingStep === i ? 24 : 7, height: 7, borderRadius: 4, background: i <= onboardingStep ? C.terra : C.surface3, transition: 'all 0.35s' }} />
-                  ))}
-                </div>
-                {onboardingStep === 0 ? (
-                  <>
-                    <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
-                      <IconPeopleOutline size={56} color={C.terra} strokeWidth={1.5} />
-                    </div>
-                    <h2 style={{ fontSize: 22, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px', lineHeight: 1.3 }}>Bienvenue !</h2>
-                    <p style={{ fontSize: 14, color: C.text2, textAlign: 'center', lineHeight: 1.6, margin: 0 }}>
-                      Je suis Alfred. En une minute, on configure tout pour ta famille : prénoms, enfant, objectif principal.
-                    </p>
-                  </>
-                ) : null}
-                {onboardingStep === 1 ? (
-                  <>
-                    <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
-                      <IconFlowerOutline size={52} color={C.terra} strokeWidth={1.5} />
-                    </div>
-                    <h2 style={{ fontSize: 20, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 16px' }}>Comment tu t&apos;appelles ?</h2>
-                    <input
-                      value={onboardingDraft.prenom}
-                      onChange={(e) => setOnboardingDraft((d) => ({ ...d, prenom: e.target.value }))}
-                      placeholder="Ton prénom"
-                      style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 16, color: C.text }}
-                    />
-                  </>
-                ) : null}
-                {onboardingStep === 2 ? (
-                  <>
-                    <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
-                      <IconPeopleOutline size={52} color={C.alex} strokeWidth={1.5} />
-                    </div>
-                    <h2 style={{ fontSize: 20, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 16px' }}>Et votre foyer ?</h2>
-                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <input value={onboardingDraft.partenaire} onChange={(e) => setOnboardingDraft((d) => ({ ...d, partenaire: e.target.value }))} placeholder="Prénom du partenaire" style={{ padding: '12px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 15 }} />
-                      <input value={onboardingDraft.enfant} onChange={(e) => setOnboardingDraft((d) => ({ ...d, enfant: e.target.value }))} placeholder="Prénom de l'enfant" style={{ padding: '12px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 15 }} />
-                      <input value={onboardingDraft.ageEnfant} onChange={(e) => setOnboardingDraft((d) => ({ ...d, ageEnfant: e.target.value }))} placeholder="Âge de l'enfant" style={{ padding: '12px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 15 }} />
-                    </div>
-                  </>
-                ) : null}
-                {onboardingStep === 3 ? (
-                  <>
-                    <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
-                      <IconTarget size={52} color={C.terra} strokeWidth={1.5} />
-                    </div>
-                    <h2 style={{ fontSize: 20, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 16px' }}>Ton objectif principal ?</h2>
-                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {[
-                        'Répartir équitablement les tâches',
-                        'Gagner du temps au quotidien',
-                        "Arrêter d'oublier des choses",
-                        'S’appuyer sur Alfred pour les rappels et le tri',
-                        'Mieux prendre soin de moi',
-                      ].map((c) => (
-                        <button
-                          type="button"
-                          key={c}
-                          onClick={() => setOnboardingDraft((d) => ({ ...d, objectif: c }))}
-                          style={{
-                            padding: '12px 14px',
-                            borderRadius: 14,
-                            border: `1.5px solid ${onboardingDraft.objectif === c ? C.terra : C.border}`,
-                            background: onboardingDraft.objectif === c ? C.terraXL : C.white,
-                            fontSize: 14,
-                            color: C.text,
-                            fontWeight: onboardingDraft.objectif === c ? 700 : 500,
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            {onboardingDraft.objectif === c ? <IconCheckSmall size={14} color={C.terra} strokeWidth={2.5} /> : null}
-                            {c}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                ) : null}
-                {onboardingStep === 4 ? (
-                  <>
-                    <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
-                      <IconSparkleAI size={48} color={C.terra} strokeWidth={1.45} />
-                    </div>
-                    <h2 style={{ fontSize: 20, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 10px' }}>Tout est prêt !</h2>
-                    <p style={{ fontSize: 14, color: C.text2, textAlign: 'center', lineHeight: 1.6, margin: 0 }}>
-                      Bonjour {onboardingDraft.prenom || 'toi'} — ton espace est configuré pour {onboardingDraft.partenaire} et {onboardingDraft.enfant}. Alfred t&apos;accompagne partout dans l&apos;app.
-                    </p>
-                  </>
-                ) : null}
-              </div>
-              <div style={{ flexShrink: 0, padding: '0 22px 28px', display: 'flex', gap: 10 }}>
-                {onboardingStep > 0 && onboardingStep < 4 ? (
-                  <button type="button" onClick={() => setOnboardingStep((s) => s - 1)} style={{ flex: 1, padding: 14, borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, color: C.text2, fontWeight: 700, fontSize: 13 }}>
-                    ← Retour
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={onboardingFinishing}
-                  onClick={() => {
-                    if (onboardingStep === 4) completeOnboarding();
-                    else setOnboardingStep((s) => s + 1);
-                  }}
-                  style={{
-                    flex: onboardingStep > 0 && onboardingStep < 4 ? 2 : 1,
-                    padding: 14,
-                    borderRadius: 14,
-                    border: 'none',
-                    background: C.terra,
-                    color: '#fff',
-                    fontWeight: 800,
-                    fontSize: 14,
-                    opacity: onboardingFinishing ? 0.7 : 1,
-                  }}
-                >
-                  {onboardingFinishing ? 'Configuration…' : onboardingStep === 4 ? 'C’est parti !' : onboardingStep === 0 ? 'Commencer →' : 'Suivant →'}
-                </button>
-              </div>
-                </>
-              ) : null}
+          ) : !postLoginSetupResolved ? (
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                minHeight: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: C.bg,
+                padding: 24,
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 14, color: C.text2, textAlign: 'center' }}>Préparation de ton espace…</p>
             </div>
+          ) : !postLoginSetupDone ? (
+            <WelcomeSetupWizard
+              C={C}
+              userEmail={layoutUserEmail || email.trim() || '…'}
+              initialProfile={familyProfile}
+              onComplete={completeWelcomeWizard}
+              onSkipAll={skipWelcomeWizard}
+              onLogout={logout}
+              Wordmark={MajordomeWordmarkLogo}
+            />
           ) : (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
               <div
@@ -4927,7 +4933,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {token && onboardingDone && overlay === null ? (
+          {token && onboardingDone && postLoginSetupDone && overlay === null ? (
             <div style={{ position: 'relative', paddingTop: 12, background: C.white, borderTop: `1px solid ${C.border}` }}>
               <button
                 type="button"
