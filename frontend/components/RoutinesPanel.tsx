@@ -109,7 +109,7 @@ export function RoutinesPanel({ C }: { C: Record<string, string> }) {
         <div>
           <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.5 }}>ROUTINES</p>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
-            Persistance locale — les routines « Maison » détaillées restent dans l&apos;overlay Maison.
+            Coche chaque routine au fil de la journée pour suivre ta progression.
           </p>
         </div>
       </div>

@@ -51,7 +51,7 @@ export function CourrierPanel({
         <div>
           <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.5 }}>COURRIER IA</p>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
-            Exemples — extraction réelle = Gmail / IMAP / upload pièce jointe côté API.
+            Aperçu : connecte ta boîte mail dans Paramètres pour analyser ton courrier réel.
           </p>
         </div>
       </div>

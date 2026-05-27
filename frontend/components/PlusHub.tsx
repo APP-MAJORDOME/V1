@@ -80,7 +80,7 @@ export function PlusHub({
         <div>
           <h2 style={{ margin: 0, fontSize: 22, color: C.text }}>Tout l&apos;univers</h2>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
-            Navigation type V8 (4 tabs + hub) enrichie modules V9 — données serveur quand tu es connecté·e.
+            Tous les modules du foyer — agenda, courses, documents, bien-être et plus.
           </p>
         </div>
       </div>

@@ -38,7 +38,7 @@ function StatusBar() {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 24px 4px', color: C.text }}>
       <span style={{ fontSize: 15, fontWeight: 700 }}>{hh}:{mm}</span>
-      <span style={{ fontSize: 11, color: C.text2 }}>Parametres</span>
+      <span style={{ fontSize: 11, color: C.text2 }}>Paramètres</span>
     </div>
   );
 }
@@ -315,7 +315,7 @@ export default function SettingsPage() {
 
           <div style={{ flex: 1, height: '100%', overflowY: 'auto', padding: '8px 14px 0', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
             <div style={{ background: C.white, borderRadius: 18, padding: 12, marginBottom: 10 }}>
-              <strong style={{ color: C.text }}>Parametres et connexions</strong>
+              <strong style={{ color: C.text }}>Paramètres et connexions</strong>
               <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 <span style={{ fontSize: 10, background: C.terraXL, color: C.terra, padding: '4px 8px', borderRadius: 14 }}>
                   {readyServicesCount}/4 services prets (agendas + Alfred serveur)
@@ -327,7 +327,7 @@ export default function SettingsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
               {(['connexions', 'compte', 'securite'] as const).map((tab) => (
                 <button key={tab} onClick={() => setActiveTab(tab)} style={{ border: 'none', borderRadius: 12, padding: '8px 6px', background: activeTab === tab ? C.terra : C.white, color: activeTab === tab ? '#fff' : C.text2, fontSize: 11, fontWeight: 700 }}>
-                  {tab === 'connexions' ? 'Connexions' : tab === 'compte' ? 'Compte' : 'Securite'}
+                  {tab === 'connexions' ? 'Connexions' : tab === 'compte' ? 'Compte' : 'Sécurité'}
                 </button>
               ))}
             </div>
@@ -355,9 +355,7 @@ export default function SettingsPage() {
                     </p>
                   ) : (
                     <p style={{ fontSize: 10, color: C.text3, margin: '0 0 8px', lineHeight: 1.45 }}>
-                      {
-                        'Self-hébergement : le paquet « caldav » est requis côté serveur (requirements.txt du backend).'
-                      }
+                      Saisis ton Apple ID et un mot de passe d&apos;application pour synchroniser ton calendrier.
                     </p>
                   )}
                   <div style={{ display: 'grid', gap: 6 }}>
@@ -407,7 +405,7 @@ export default function SettingsPage() {
 
             {activeTab === 'compte' ? (
               <>
-                <Card title="Etat du compte">
+                <Card title="État du compte">
                   <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text2 }}>
                     <li>Session: active</li>
                     <li>Refresh token: {refreshToken ? 'present' : 'absent'}</li>
@@ -480,10 +478,10 @@ export default function SettingsPage() {
             ) : null}
 
             {activeTab === 'securite' ? (
-              <Card title="Securite session">
+              <Card title="Sécurité session">
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Btn light onClick={refreshSessionNow} disabled={refreshingSession}>{refreshingSession ? '...' : 'Renouveler'}</Btn>
-                  <Btn light onClick={logoutEverywhere} disabled={loggingOut}>{loggingOut ? '...' : 'Deconnexion'}</Btn>
+                  <Btn light onClick={logoutEverywhere} disabled={loggingOut}>{loggingOut ? '...' : 'Déconnexion'}</Btn>
                 </div>
               </Card>
             ) : null}
@@ -493,7 +491,7 @@ export default function SettingsPage() {
 
           <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '10px 6px 24px', background: C.white, borderTop: `1px solid ${C.border}` }}>
             <a href="/" style={{ textDecoration: 'none', fontSize: 11, color: C.text3 }}>☀️ Accueil</a>
-            <span style={{ fontSize: 11, color: C.terra, fontWeight: 700 }}>⚙️ Parametres</span>
+            <span style={{ fontSize: 11, color: C.terra, fontWeight: 700 }}>⚙️ Paramètres</span>
             <a href="/settings#connexions" style={{ textDecoration: 'none', fontSize: 11, color: C.text3 }}>🔌 Connexions</a>
           </div>
 

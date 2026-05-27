@@ -81,7 +81,7 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
         <div>
           <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.5 }}>FOYER</p>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: C.text2, lineHeight: 1.45 }}>
-            Stocké sur cet appareil pour l’instant — sync foyer à brancher côté API plus tard.
+            Les dates sont enregistrées pour ton foyer sur cet appareil.
           </p>
         </div>
       </div>

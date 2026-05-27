@@ -19,6 +19,13 @@ import {
   INITIAL_DONE_TASKS_LIMIT,
   DONE_HISTORY_FETCH_LIMIT,
 } from '../lib/constants';
+import { defaultDemoCoupons, defaultDemoFridge } from '../lib/demoData';
+import {
+  fridgeExpiryTone,
+  isExpired,
+  partitionCoupons,
+  sortFridgeByExpiry,
+} from '../lib/expiry';
 import {
   computeBudgetUsedPct,
   computeDemoEquityShares,
@@ -724,19 +731,12 @@ export default function HomePage() {
   ]);
   const [journal, setJournal] = useState('');
   const [cycleDay, setCycleDay] = useState(18);
-  const [fridge, setFridge] = useState<FridgeItem[]>([
-    { id: 1, label: 'Lait entier', expires_at: '2026-05-01', qty: 1 },
-    { id: 2, label: 'Poulet cru', expires_at: '2026-04-30', qty: 1 },
-    { id: 3, label: 'Yaourts Léa', expires_at: '2026-05-04', qty: 6 },
-  ]);
+  const [fridge, setFridge] = useState<FridgeItem[]>([]);
   const [walletCards, setWalletCards] = useState<WalletCard[]>([
     { id: 1, brand: 'Carrefour', points: 420, color: '#2B7A4B' },
     { id: 2, brand: 'Monoprix', points: 180, color: '#B23A48' },
   ]);
-  const [coupons, setCoupons] = useState<Coupon[]>([
-    { id: 1, label: '10% produits bébé', expires_at: '2026-05-03', discount: '-10%' },
-    { id: 2, label: '5€ dès 40€ courses', expires_at: '2026-05-06', discount: '-5€' },
-  ]);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
   const defaultFamily = (): FamilyProfile => ({
     prenom: 'Joanne',
     partenaire: 'Alexandre',
@@ -744,7 +744,16 @@ export default function HomePage() {
     ageEnfant: '8',
     objectif: 'Répartir équitablement les tâches',
   });
-  const [familyProfile, setFamilyProfile] = useState<FamilyProfile>(() => defaultFamily());
+  const emptyFamily = (): FamilyProfile => ({
+    prenom: '',
+    partenaire: '',
+    enfant: '',
+    ageEnfant: '',
+    objectif: '',
+  });
+  const [familyProfile, setFamilyProfile] = useState<FamilyProfile>(() => emptyFamily());
+  /** Évite mismatch SSR/client tant que localStorage n’est pas lu. */
+  const [clientReady, setClientReady] = useState(false);
   /** Toujours false au 1er rendu pour matcher le SSR ; useEffect applique localStorage. */
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [alfredMemory, setAlfredMemory] = useState<string[]>([]);
@@ -1173,8 +1182,8 @@ export default function HomePage() {
       let fam: FamilyProfile = defaultFamily();
       if (famRaw) {
         fam = { ...defaultFamily(), ...JSON.parse(famRaw) };
-        setFamilyProfile(fam);
       }
+      setFamilyProfile(fam);
       const ob = localStorage.getItem('majordome_onboarding_done');
       const doneOb = ob === '1' || Boolean(famRaw);
       const wizV2 = layoutEmail ? isWelcomeWizardV2Complete(layoutEmail) : false;
@@ -1203,14 +1212,34 @@ export default function HomePage() {
       const savedJournal = localStorage.getItem('majordome_journal');
       const savedCycle = localStorage.getItem('majordome_cycle_day');
       if (savedFridge) setFridge(JSON.parse(savedFridge));
+      else setFridge(defaultDemoFridge());
       if (savedWalletCards) setWalletCards(JSON.parse(savedWalletCards));
       if (savedCoupons) setCoupons(JSON.parse(savedCoupons));
+      else setCoupons(defaultDemoCoupons());
       if (savedJournal) setJournal(savedJournal);
       if (savedCycle) setCycleDay(Number(savedCycle));
     } catch {
       // keep defaults
+    } finally {
+      setClientReady(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!clientReady) return;
+    const title = !token
+      ? 'Connexion — MajorDome'
+      : overlay
+        ? `${overlay} — MajorDome`
+        : mainTab === 'home'
+          ? "Aujourd'hui — MajorDome"
+          : mainTab === 'agenda'
+            ? 'Agenda — MajorDome'
+            : mainTab === 'moi'
+              ? 'Moi — MajorDome'
+              : 'Modules — MajorDome';
+    document.title = title;
+  }, [clientReady, token, overlay, mainTab]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1513,6 +1542,22 @@ export default function HomePage() {
   useEffect(() => {
     if (!modalCoffre) setDocEdit(null);
   }, [modalCoffre]);
+
+  type GoogleOAuthStartResponse = { authorization_url: string };
+
+  async function connectGoogleCalendar() {
+    if (!token) {
+      pushToast('info', 'Connecte-toi d’abord pour lier Google Calendar.');
+      return;
+    }
+    try {
+      const res = await postJson<GoogleOAuthStartResponse>('/api/v1/integrations/google/oauth/start', {}, token);
+      window.location.href = res.authorization_url;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Connexion Google impossible';
+      pushToast('error', msg);
+    }
+  }
 
   async function login() {
     setLoading(true);
@@ -2137,9 +2182,18 @@ export default function HomePage() {
   const selectedMeal = mealPlans[selectedMealDay] || { lunch: '', dinner: '', missing: [] };
   const weekEvents = useMemo(() => events.slice(0, 8), [events]);
   const selfDoneCount = useMemo(() => selfMoments.filter((m) => m.done).length, [selfMoments]);
+  const fridgeSorted = useMemo(() => sortFridgeByExpiry(fridge), [fridge]);
   const fridgeAlerts = useMemo(
     () => selectFridgeAlertsWithinHours(fridge, FRIDGE_ALERT_HOURS_AHEAD),
-    [fridge]
+    [fridge],
+  );
+  const fridgeExpiredCount = useMemo(
+    () => fridge.filter((f) => isExpired(f.expires_at)).length,
+    [fridge],
+  );
+  const { active: activeCoupons, expired: expiredCoupons } = useMemo(
+    () => partitionCoupons(coupons),
+    [coupons],
   );
   const equity = useMemo(
     () =>
@@ -2314,6 +2368,10 @@ export default function HomePage() {
       setOverlay('courses');
       return;
     }
+    if (hubKey === 'integrations') {
+      setOverlay('integrations');
+      return;
+    }
     setOverlay(hubKey as OverlayId);
   }
 
@@ -2356,7 +2414,9 @@ export default function HomePage() {
                 <p style={{ fontSize: 12, color: C.text2, margin: '0 0 2px' }} suppressHydrationWarning>
                   {clientTodayLabel || '\u00a0'}
                 </p>
-                <h1 style={{ fontSize: 25, margin: 0, color: C.text }}>Bonjour {familyProfile.prenom}</h1>
+                <h1 style={{ fontSize: 25, margin: 0, color: C.text }} suppressHydrationWarning>
+                  Bonjour {familyProfile.prenom || 'toi'}
+                </h1>
                 <p style={{ fontSize: 14, color: C.text2, marginTop: 6, whiteSpace: 'nowrap' }}>
                   Tu as <strong style={{ color: C.terra }}>{urgentCount} urgence(s)</strong> aujourd&apos;hui.
                 </p>
@@ -2720,7 +2780,7 @@ export default function HomePage() {
             <div style={{ fontSize: 11, color: C.text2, marginBottom: 8, fontWeight: 700 }}>COMMENT TU TE SENS CE MATIN ?</div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               {['😴', '😟', '😐', '🙂', '😄'].map((m, i) => (
-                <button key={m} onClick={() => setHomeMood(i)} style={{ border: 'none', background: homeMood === i ? C.white : 'transparent', borderRadius: 10, padding: '6px 8px' }}>
+                <button key={m} type="button" aria-label={`Humeur ${i + 1} sur 5`} onClick={() => setHomeMood(i)} style={{ border: 'none', background: homeMood === i ? C.white : 'transparent', borderRadius: 10, padding: '6px 8px' }}>
                   {m}
                 </button>
               ))}
@@ -2947,19 +3007,31 @@ export default function HomePage() {
           <GlassCard style={{ padding: 12, marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Ajouter depuis l application</div>
             <div style={{ display: 'grid', gap: 6 }}>
-              <input value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} placeholder="Titre evenement" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-              <input value={newEventStart} onChange={(e) => setNewEventStart(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-              <input value={newEventEnd} onChange={(e) => setNewEventEnd(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
+              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
+                Titre
+                <input id="event-title" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} placeholder="Ex. RDV pédiatre" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
+              </label>
+              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
+                Début
+                <input id="event-start" value={newEventStart} onChange={(e) => setNewEventStart(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
+              </label>
+              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
+                Fin
+                <input id="event-end" value={newEventEnd} onChange={(e) => setNewEventEnd(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
+              </label>
               {appleConnected && appleCaldavAvailable === false ? (
                 <div style={{ fontSize: 11, color: C.sun, lineHeight: 1.4, padding: '6px 8px', borderRadius: 10, background: '#FFF8E6', border: `1px solid ${C.border}` }}>
                   Apple : ce serveur n’a pas le module « caldav » — événements seulement dans l’app (voir Paramètres → Connexions).
                 </div>
               ) : null}
-              <select value={newEventProvider} onChange={(e) => setNewEventProvider(e.target.value as 'none' | 'google_calendar' | 'apple_calendar')} style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}>
-                <option value="google_calendar" disabled={!googleConnected}>Sync Google Calendar</option>
-                <option value="apple_calendar" disabled={!appleSyncPossible}>Sync Apple Calendar</option>
-                <option value="none">App seulement</option>
-              </select>
+              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
+                Synchroniser avec
+                <select id="event-provider" value={newEventProvider} onChange={(e) => setNewEventProvider(e.target.value as 'none' | 'google_calendar' | 'apple_calendar')} style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}>
+                  <option value="google_calendar" disabled={!googleConnected}>Google Calendar</option>
+                  <option value="apple_calendar" disabled={!appleSyncPossible}>Apple Calendar</option>
+                  <option value="none">Application seulement</option>
+                </select>
+              </label>
               <button onClick={createEventFromApp} disabled={creatingEvent} style={{ borderRadius: 10, border: 'none', background: C.terra, color: '#fff', padding: 8, fontWeight: 700 }}>
                 {creatingEvent ? 'Creation...' : 'Creer evenement'}
               </button>
@@ -3147,8 +3219,13 @@ export default function HomePage() {
             <>
           <GlassCard style={{ padding: 12, marginBottom: 10 }}>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={newCourse} onChange={(e) => setNewCourse(e.target.value)} placeholder="Ajouter un article..." style={{ flex: 1, borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
+              <label htmlFor="new-course-input" className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>
+                Ajouter un article
+              </label>
+              <input id="new-course-input" value={newCourse} onChange={(e) => setNewCourse(e.target.value)} placeholder="Ajouter un article…" style={{ flex: 1, borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, fontSize: 16 }} />
               <button
+                type="button"
+                aria-label="Ajouter à la liste de courses"
                 onClick={() => {
                   if (!newCourse.trim()) return;
                   setCourses((v) => [...v, { id: newLocalNumericId(), label: newCourse.trim(), done: false }]);
@@ -3176,24 +3253,52 @@ export default function HomePage() {
           ) : null}
           {coursesTab === 'frigo' ? (
             <>
-              <GlassCard style={{ padding: 12, marginBottom: 10, background: fridgeAlerts.length > 0 ? C.redL : C.greenL }}>
-                <strong style={{ fontSize: 12, color: fridgeAlerts.length > 0 ? C.red : C.green }}>
-                  {fridgeAlerts.length > 0 ? `${fridgeAlerts.length} alerte(s) DLC` : 'Aucune alerte DLC'}
+              <GlassCard
+                style={{
+                  padding: 12,
+                  marginBottom: 10,
+                  background: fridgeExpiredCount > 0 ? C.redL : fridgeAlerts.length > 0 ? '#FFF4E8' : C.greenL,
+                }}
+              >
+                <strong style={{ fontSize: 12, color: fridgeExpiredCount > 0 ? C.red : fridgeAlerts.length > 0 ? C.sun : C.green }}>
+                  {fridgeExpiredCount > 0
+                    ? `${fridgeExpiredCount} produit(s) périmé(s)`
+                    : fridgeAlerts.length > 0
+                      ? `${fridgeAlerts.length} alerte(s) DLC`
+                      : 'Aucune alerte DLC'}
                 </strong>
               </GlassCard>
-              {fridge.map((f) => (
-                <GlassCard key={f.id} style={{ padding: 12, marginBottom: 8 }}>
+              {fridgeSorted.map((f) => {
+                const tone = fridgeExpiryTone(f.expires_at);
+                const toneColor = tone === 'expired' ? C.red : tone === 'urgent' ? C.red : tone === 'soon' ? C.sun : C.green;
+                return (
+                <GlassCard key={f.id} style={{ padding: 12, marginBottom: 8, border: tone === 'expired' ? `1.5px solid ${C.red}` : undefined }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700 }}>{f.label}</div>
-                      <div style={{ fontSize: 11, color: C.text2 }}>DLC: {new Date(f.expires_at).toLocaleDateString('fr-FR')} · Qté: {f.qty}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>
+                        {tone === 'expired' ? '⚠️ ' : ''}{f.label}
+                      </div>
+                      <div style={{ fontSize: 11, color: toneColor }}>
+                        DLC: {new Date(f.expires_at).toLocaleDateString('fr-FR')} · Qté: {f.qty}
+                        {tone === 'expired' ? ' · Périmé' : ''}
+                      </div>
                     </div>
-                    <button onClick={() => setFridge((prev) => prev.filter((x) => x.id !== f.id))} style={{ border: 'none', background: C.terraXL, color: C.terra, borderRadius: 8, padding: '4px 8px' }}>
+                    <button
+                      type="button"
+                      aria-label={`Retirer ${f.label} du frigo`}
+                      onClick={() => {
+                        if (!window.confirm(`Retirer « ${f.label} » du frigo ?`)) return;
+                        setFridge((prev) => prev.filter((x) => x.id !== f.id));
+                        pushToast('info', `${f.label} retiré du frigo`);
+                      }}
+                      style={{ border: 'none', background: C.terraXL, color: C.terra, borderRadius: 8, padding: '4px 8px' }}
+                    >
                       Retirer
                     </button>
                   </div>
                 </GlassCard>
-              ))}
+              );
+              })}
             </>
           ) : null}
           {coursesTab === 'wallet' ? (
@@ -3213,17 +3318,34 @@ export default function HomePage() {
               <GlassCard style={{ padding: 12, marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <IconCoupon size={15} color={C.text} strokeWidth={1.65} />
-                  Coupons actifs
+                  Coupons actifs ({activeCoupons.length})
                 </div>
-                {coupons.map((c) => (
-                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${C.border}`, padding: '8px 0' }}>
-                    <div>
-                      <div style={{ fontSize: 12 }}>{c.label}</div>
-                      <div style={{ fontSize: 10, color: C.text2 }}>Expire: {new Date(c.expires_at).toLocaleDateString('fr-FR')}</div>
+                {activeCoupons.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>Aucun coupon actif.</p>
+                ) : (
+                  activeCoupons.map((c) => (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${C.border}`, padding: '8px 0' }}>
+                      <div>
+                        <div style={{ fontSize: 12 }}>{c.label}</div>
+                        <div style={{ fontSize: 10, color: C.text2 }}>Expire: {new Date(c.expires_at).toLocaleDateString('fr-FR')}</div>
+                      </div>
+                      <Pill bg={C.terraXL} color={C.terra}>{c.discount}</Pill>
                     </div>
-                    <Pill bg={C.terraXL} color={C.terra}>{c.discount}</Pill>
-                  </div>
-                ))}
+                  ))
+                )}
+                {expiredCoupons.length > 0 ? (
+                  <details style={{ marginTop: 10 }}>
+                    <summary style={{ fontSize: 11, color: C.text2, cursor: 'pointer' }}>
+                      {expiredCoupons.length} coupon(s) expiré(s)
+                    </summary>
+                    {expiredCoupons.map((c) => (
+                      <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', opacity: 0.65 }}>
+                        <div style={{ fontSize: 11 }}>{c.label}</div>
+                        <span style={{ fontSize: 10, color: C.text3 }}>{new Date(c.expires_at).toLocaleDateString('fr-FR')}</span>
+                      </div>
+                    ))}
+                  </details>
+                ) : null}
               </GlassCard>
             </>
           ) : null}
@@ -3693,11 +3815,25 @@ export default function HomePage() {
     }
 
     if (layer === 'integrations') {
+      const googleConnected = accounts.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
       return wrapOv(
         'Intégrations tierces',
         <div>
+          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Google Calendar</div>
+            <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
+              {googleConnected ? 'Connecté — tes événements se synchronisent.' : 'Connecte ton agenda pour remplir automatiquement ton planning.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void connectGoogleCalendar()}
+              style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.terra, color: '#fff', fontWeight: 700, fontSize: 12 }}
+            >
+              {googleConnected ? 'Reconnecter Google' : 'Connecter Google Calendar'}
+            </button>
+          </GlassCard>
           <p style={{ margin: '0 0 10px', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
-            Connexion API native : <strong>À venir</strong>. Les raccourcis ci-dessous ouvrent le web ou préparent un message pour Alfred.
+            Raccourcis web et messages Alfred pour les autres services.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <button type="button" onClick={() => window.open('https://www.doctolib.fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Doctolib (web)</button>
@@ -3727,6 +3863,10 @@ export default function HomePage() {
             if (id === 'wallet') {
               setCoursesTab('wallet');
               setOverlay('courses');
+              return;
+            }
+            if (id === 'integrations') {
+              setOverlay('integrations');
               return;
             }
             setOverlay(id as OverlayId);
@@ -3921,7 +4061,19 @@ export default function HomePage() {
             />
           </div>
 
-          {!token ? (
+          {!clientReady ? (
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 24,
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 14, color: C.text2 }}>Chargement…</p>
+            </div>
+          ) : !token ? (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', minHeight: 0 }}>
               <div
                 style={{
@@ -3938,14 +4090,47 @@ export default function HomePage() {
               </div>
               <div style={{ flex: 1, padding: 18, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', touchAction: 'pan-y' }}>
               <h2 style={{ margin: 0, color: C.text }}>Connexion</h2>
-              <p style={{ color: C.text2, fontSize: 13 }}>Connecte-toi pour utiliser MajorDome v2.</p>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }} />
-                <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="mot de passe" style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }} />
-                <button onClick={login} disabled={loading} style={{ padding: 12, borderRadius: 12, border: 'none', background: C.terra, color: '#fff', fontWeight: 700 }}>
-                  {loading ? 'Connexion...' : 'Se connecter'}
+              <p style={{ color: C.text2, fontSize: 13 }}>Connecte-toi pour utiliser MajorDome.</p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void login();
+                }}
+                style={{ display: 'grid', gap: 10 }}
+                autoComplete="on"
+              >
+                <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 600, color: C.text2 }}>
+                  Adresse e-mail
+                  <input
+                    name="email"
+                    type="email"
+                    autoComplete="username"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="vous@exemple.fr"
+                    style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 600, color: C.text2 }}>
+                  Mot de passe
+                  <input
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{ padding: 12, borderRadius: 12, border: 'none', background: C.terra, color: '#fff', fontWeight: 700 }}
+                >
+                  {loading ? 'Connexion…' : 'Se connecter'}
                 </button>
-              </div>
+              </form>
               </div>
             </div>
           ) : !postLoginSetupResolved ? (
@@ -4367,7 +4552,7 @@ export default function HomePage() {
                         </div>
                       ) : null}
                       {docAddedFlash ? (
-                        <div style={{ background: C.greenL, borderRadius: 12, padding: '8px 10px', marginBottom: 8, fontSize: 12, color: C.green, fontWeight: 600 }}>Référence créée — pièce jointe / OCR à brancher plus tard</div>
+                        <div style={{ background: C.greenL, borderRadius: 12, padding: '8px 10px', marginBottom: 8, fontSize: 12, color: C.green, fontWeight: 600 }}>Référence enregistrée — tu pourras ajouter une pièce jointe ensuite.</div>
                       ) : null}
                       <div style={{ background: C.surface, borderRadius: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <IconSearch size={18} color={C.text3} strokeWidth={1.65} />

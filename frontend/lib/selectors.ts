@@ -80,10 +80,14 @@ export function computeDemoEquityShares(
 
 export type FridgeRow = { expires_at: string };
 
-/** Aliments dont la date de péremption tombe dans les prochaines `hoursAhead` heures. */
+/** Aliments périmés ou dont la DLC tombe dans les `hoursAhead` prochaines heures. */
 export function selectFridgeAlertsWithinHours(fridge: FridgeRow[], hoursAhead: number): FridgeRow[] {
-  const cutoff = Date.now() + hoursAhead * 60 * 60 * 1000;
-  return fridge.filter((f) => new Date(f.expires_at).getTime() <= cutoff);
+  const now = Date.now();
+  const cutoff = now + hoursAhead * 60 * 60 * 1000;
+  return fridge.filter((f) => {
+    const t = new Date(f.expires_at.includes('T') ? f.expires_at : `${f.expires_at}T23:59:59`).getTime();
+    return t <= cutoff;
+  });
 }
 
 /** Pourcentage de tâches terminées (plancher 10 % pour l’affichage démo). */

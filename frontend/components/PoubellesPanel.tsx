@@ -53,6 +53,9 @@ export function PoubellesPanel({ C }: { C: Record<string, string> }) {
   }
 
   function removeSlot(id: string) {
+    const slot = slots.find((s) => s.id === id);
+    const label = slot ? `${slot.weekday} — ${slot.types}` : 'ce créneau';
+    if (!window.confirm(`Supprimer ${label} ?`)) return;
     persist(slots.filter((s) => s.id !== id));
   }
 
