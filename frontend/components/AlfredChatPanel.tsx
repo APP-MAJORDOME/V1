@@ -180,6 +180,10 @@ export function AlfredChatPanel({
 
       <div
         ref={chatScrollRef}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Conversation avec Alfred"
         style={{
           flex: 1,
           overflowY: 'auto',

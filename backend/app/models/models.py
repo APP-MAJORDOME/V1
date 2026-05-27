@@ -153,6 +153,25 @@ class HouseholdFridgeItem(Base, TimestampMixin):
     qty: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class HouseholdWalletCard(Base, TimestampMixin):
+    __tablename__ = "household_wallet_cards"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    brand: Mapped[str] = mapped_column(String(255))
+    points: Mapped[int] = mapped_column(Integer, default=0)
+    color: Mapped[str] = mapped_column(String(32), default="#2B7A4B")
+
+
+class HouseholdCoupon(Base, TimestampMixin):
+    __tablename__ = "household_coupons"
+    __table_args__ = (Index("ix_household_coupons_household_expires", "household_id", "expires_at"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    label: Mapped[str] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    discount: Mapped[str] = mapped_column(String(64))
+
+
 class TaskDelegation(Base, TimestampMixin):
     """Délégation notifiée au partenaire (tâches + lien d’accusé + relances worker)."""
 

@@ -353,6 +353,54 @@ class FridgeItemPatch(BaseModel):
     qty: int | None = Field(None, ge=1, le=999)
 
 
+class WalletCardRead(BaseModel):
+    id: int
+    household_id: int
+    brand: str
+    points: int
+    color: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WalletCardCreate(BaseModel):
+    brand: str = Field(min_length=1, max_length=255)
+    points: int = Field(default=0, ge=0, le=9_999_999)
+    color: str = Field(default="#2B7A4B", min_length=4, max_length=32)
+
+
+class WalletCardPatch(BaseModel):
+    brand: str | None = Field(None, min_length=1, max_length=255)
+    points: int | None = Field(None, ge=0, le=9_999_999)
+    color: str | None = Field(None, min_length=4, max_length=32)
+
+
+class CouponRead(BaseModel):
+    id: int
+    household_id: int
+    label: str
+    expires_at: datetime
+    discount: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CouponCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=512)
+    expires_at: datetime
+    discount: str = Field(min_length=1, max_length=64)
+
+
+class CouponPatch(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=512)
+    expires_at: datetime | None = None
+    discount: str | None = Field(None, min_length=1, max_length=64)
+
+
 class RoutineCreate(BaseModel):
     household_id: int | None = None
     name: str

@@ -54,6 +54,8 @@ from app.models.models import (
     TaskDelegation,
     GroceryItem,
     HouseholdFridgeItem,
+    HouseholdWalletCard,
+    HouseholdCoupon,
 )
 from app.schemas.schemas import (
     HouseholdCreate,
@@ -88,6 +90,12 @@ from app.schemas.schemas import (
     FridgeItemRead,
     FridgeItemCreate,
     FridgeItemPatch,
+    WalletCardRead,
+    WalletCardCreate,
+    WalletCardPatch,
+    CouponRead,
+    CouponCreate,
+    CouponPatch,
     RoutineRead,
     OpportunityRead,
     AccountSyncResponse,
@@ -1414,6 +1422,149 @@ def delete_fridge_item(
     row = db.get(HouseholdFridgeItem, item_id)
     if not row or row.household_id != auth.household_id:
         raise api_error("fridge_item_not_found", "Produit introuvable.", 404)
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/wallet/cards", response_model=list[WalletCardRead])
+def list_wallet_cards(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    return (
+        db.query(HouseholdWalletCard)
+        .filter(HouseholdWalletCard.household_id == auth.household_id)
+        .order_by(HouseholdWalletCard.brand.asc(), HouseholdWalletCard.id.asc())
+        .limit(100)
+        .all()
+    )
+
+
+@router.post("/wallet/cards", response_model=WalletCardRead)
+def create_wallet_card(
+    payload: WalletCardCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    brand = payload.brand.strip()
+    if not brand:
+        raise api_error("invalid_wallet_brand", "La marque est requise.", 400)
+    row = HouseholdWalletCard(
+        household_id=auth.household_id,
+        brand=brand,
+        points=payload.points,
+        color=payload.color,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/wallet/cards/{card_id}", response_model=WalletCardRead)
+def patch_wallet_card(
+    card_id: int,
+    payload: WalletCardPatch,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(HouseholdWalletCard, card_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("wallet_card_not_found", "Carte introuvable.", 404)
+    data = payload.model_dump(exclude_unset=True)
+    if "brand" in data and data["brand"] is not None:
+        data["brand"] = data["brand"].strip()
+        if not data["brand"]:
+            raise api_error("invalid_wallet_brand", "La marque est requise.", 400)
+    for key, value in data.items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/wallet/cards/{card_id}")
+def delete_wallet_card(
+    card_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(HouseholdWalletCard, card_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("wallet_card_not_found", "Carte introuvable.", 404)
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/wallet/coupons", response_model=list[CouponRead])
+def list_coupons(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    return (
+        db.query(HouseholdCoupon)
+        .filter(HouseholdCoupon.household_id == auth.household_id)
+        .order_by(HouseholdCoupon.expires_at.asc(), HouseholdCoupon.id.asc())
+        .limit(200)
+        .all()
+    )
+
+
+@router.post("/wallet/coupons", response_model=CouponRead)
+def create_coupon(
+    payload: CouponCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    label = payload.label.strip()
+    if not label:
+        raise api_error("invalid_coupon_label", "Le libellé est requis.", 400)
+    discount = payload.discount.strip()
+    if not discount:
+        raise api_error("invalid_coupon_discount", "La réduction est requise.", 400)
+    row = HouseholdCoupon(
+        household_id=auth.household_id,
+        label=label,
+        expires_at=payload.expires_at,
+        discount=discount,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/wallet/coupons/{coupon_id}", response_model=CouponRead)
+def patch_coupon(
+    coupon_id: int,
+    payload: CouponPatch,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(HouseholdCoupon, coupon_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("coupon_not_found", "Coupon introuvable.", 404)
+    data = payload.model_dump(exclude_unset=True)
+    if "label" in data and data["label"] is not None:
+        data["label"] = data["label"].strip()
+        if not data["label"]:
+            raise api_error("invalid_coupon_label", "Le libellé est requis.", 400)
+    if "discount" in data and data["discount"] is not None:
+        data["discount"] = data["discount"].strip()
+        if not data["discount"]:
+            raise api_error("invalid_coupon_discount", "La réduction est requise.", 400)
+    for key, value in data.items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/wallet/coupons/{coupon_id}")
+def delete_coupon(
+    coupon_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(HouseholdCoupon, coupon_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("coupon_not_found", "Coupon introuvable.", 404)
     db.delete(row)
     db.commit()
     return {"status": "deleted"}

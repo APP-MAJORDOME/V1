@@ -121,6 +121,25 @@ FRIDGE_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/fridge/items" \
 FRIDGE_ID="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); print(p["id"])' <<< "${FRIDGE_CREATED}")"
 curl -fsS -X DELETE "${API_BASE}/api/v1/fridge/items/${FRIDGE_ID}" -H "${AUTH_HEADER}" >/dev/null
 
+echo "[smoke] wallet cards"
+WALLET_LIST="$(curl -fsS "${API_BASE}/api/v1/wallet/cards" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${WALLET_LIST}"
+WALLET_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/wallet/cards" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d '{"brand":"Smoke test Carrefour","points":42,"color":"#2B7A4B"}')"
+WALLET_ID="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); print(p["id"])' <<< "${WALLET_CREATED}")"
+curl -fsS -X DELETE "${API_BASE}/api/v1/wallet/cards/${WALLET_ID}" -H "${AUTH_HEADER}" >/dev/null
+
+echo "[smoke] wallet coupons"
+COUPON_LIST="$(curl -fsS "${API_BASE}/api/v1/wallet/coupons" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${COUPON_LIST}"
+COUPON_EXPIRES="$(python3 -c 'from datetime import datetime,timedelta,timezone; print((datetime.now(timezone.utc)+timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
+COUPON_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/wallet/coupons" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d "{\"label\":\"Smoke test -10%\",\"expires_at\":\"${COUPON_EXPIRES}\",\"discount\":\"-10%\"}")"
+COUPON_ID="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); print(p["id"])' <<< "${COUPON_CREATED}")"
+curl -fsS -X DELETE "${API_BASE}/api/v1/wallet/coupons/${COUPON_ID}" -H "${AUTH_HEADER}" >/dev/null
+
 echo "[smoke] partner inbox"
 PARTNER_INBOX="$(curl -fsS "${API_BASE}/api/v1/tasks/partner-inbox" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${PARTNER_INBOX}"

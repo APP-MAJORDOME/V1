@@ -23,7 +23,6 @@ import {
 } from '../lib/constants';
 import { BottomTabBar, type AppTabId } from '../components/BottomTabBar';
 import { TodayHome, type TodayUrgency } from '../components/TodayHome';
-import { defaultDemoCoupons } from '../lib/demoData';
 import {
   fridgeExpiryTone,
   isExpired,
@@ -105,13 +104,14 @@ import { CoursesPanel } from '../components/CoursesPanel';
 import { AlfredChatPanel } from '../components/AlfredChatPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 import { AppLoader, MajordomeMark, MajordomeWordmark } from '../components/BrandLogo';
-import { LoginSplash } from '../components/LoginSplash';
+import { LoginAuthScreen } from '../components/LoginAuthScreen';
 import {
   executeAgentIntent as runAgentIntent,
   type AgentExecutionResult,
   type AgentInterpretResponse,
 } from '../lib/alfredAgent';
 import { useAlfredAssistant } from '../hooks/useAlfredAssistant';
+import { useAppDocumentTitle } from '../hooks/useAppDocumentTitle';
 import {
   clearDoneGroceryItems,
   createGroceryItem,
@@ -126,6 +126,16 @@ import {
   fetchFridgeItems,
   mapFridgeToUi,
 } from '../lib/fridge';
+import {
+  createCoupon,
+  createWalletCard,
+  fetchCoupons,
+  fetchWalletCards,
+  mapCouponToUi,
+  mapWalletCardToUi,
+  type Coupon,
+  type WalletCard,
+} from '../lib/wallet';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -266,8 +276,6 @@ function formatDocStorageShort(usedBytes: number, quotaBytes: number | null): st
 type BudgetItem = { id: string; label: string; spent: number; budget: number; color: string };
 type MealPlan = { lunch: string; dinner: string; missing: string[] };
 type FridgeItem = { id: number; label: string; expires_at: string; qty: number };
-type WalletCard = { id: number; brand: string; points: number; color: string };
-type Coupon = { id: number; label: string; expires_at: string; discount: string };
 type UiToast = { id: string; kind: 'success' | 'error' | 'info'; text: string };
 
 const C = {
@@ -712,10 +720,7 @@ export default function HomePage() {
   const [journal, setJournal] = useState('');
   const [cycleDay, setCycleDay] = useState(18);
   const [fridge, setFridge] = useState<FridgeItem[]>([]);
-  const [walletCards, setWalletCards] = useState<WalletCard[]>([
-    { id: 1, brand: 'Carrefour', points: 420, color: '#2B7A4B' },
-    { id: 2, brand: 'Monoprix', points: 180, color: '#B23A48' },
-  ]);
+  const [walletCards, setWalletCards] = useState<WalletCard[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const defaultFamily = (): FamilyProfile => ({
     prenom: 'Joanne',
@@ -1185,13 +1190,8 @@ export default function HomePage() {
       if (savedBudget) setBudget(JSON.parse(savedBudget));
       if (savedMeals) setMealPlans(JSON.parse(savedMeals));
       if (savedMoments) setSelfMoments(JSON.parse(savedMoments));
-      const savedWalletCards = localStorage.getItem('majordome_wallet_cards');
-      const savedCoupons = localStorage.getItem('majordome_wallet_coupons');
       const savedJournal = localStorage.getItem('majordome_journal');
       const savedCycle = localStorage.getItem('majordome_cycle_day');
-      if (savedWalletCards) setWalletCards(JSON.parse(savedWalletCards));
-      if (savedCoupons) setCoupons(JSON.parse(savedCoupons));
-      else setCoupons(defaultDemoCoupons());
       if (savedJournal) setJournal(savedJournal);
       if (savedCycle) setCycleDay(Number(savedCycle));
     } catch {
@@ -1226,23 +1226,7 @@ export default function HomePage() {
     }
   }, [clientReady, token, postLoginSetupDone]);
 
-  useEffect(() => {
-    if (!clientReady) return;
-    const title = !token
-      ? 'Connexion — MajorDome'
-      : overlay
-        ? `${overlay} — MajorDome`
-        : mainTab === 'home'
-          ? "Aujourd'hui — MajorDome"
-          : mainTab === 'alfred'
-            ? `${aiName} — MajorDome`
-            : mainTab === 'agenda'
-              ? 'Agenda — MajorDome'
-              : mainTab === 'moi'
-                ? 'Moi — MajorDome'
-                : 'Modules — MajorDome';
-    document.title = title;
-  }, [clientReady, token, overlay, mainTab, aiName]);
+  useAppDocumentTitle({ clientReady, token, overlay, mainTab, aiName });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1272,12 +1256,6 @@ export default function HomePage() {
     localStorage.setItem('majordome_self_moments', JSON.stringify(selfMoments));
   }, [selfMoments]);
   useEffect(() => {
-    localStorage.setItem('majordome_wallet_cards', JSON.stringify(walletCards));
-  }, [walletCards]);
-  useEffect(() => {
-    localStorage.setItem('majordome_wallet_coupons', JSON.stringify(coupons));
-  }, [coupons]);
-  useEffect(() => {
     localStorage.setItem('majordome_journal', journal);
   }, [journal]);
   useEffect(() => {
@@ -1301,30 +1279,6 @@ export default function HomePage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [token, onboardingDone, postLoginSetupDone, toggleGlobalSearch]);
-
-  useEffect(() => {
-    if (!clientReady) return;
-    const overlayTitles: Partial<Record<OverlayId, string>> = {
-      courses: 'Courses & Frigo',
-      documents: 'Coffre famille',
-      assistant: aiName,
-      plus: 'Modules',
-      routines: 'Routines',
-      recettes: 'Recettes',
-      courrier: 'Courrier IA',
-      famille: 'Famille & équité',
-      integrations: 'Intégrations',
-    };
-    const tabTitles: Record<MainTab, string> = {
-      home: "Aujourd'hui",
-      alfred: aiName,
-      modules: 'Modules',
-      moi: 'Moi',
-      agenda: 'Agenda',
-    };
-    const title = overlay ? overlayTitles[overlay] ?? 'MajorDome' : tabTitles[mainTab] ?? 'MajorDome';
-    document.title = `${title} — MajorDome`;
-  }, [clientReady, overlay, mainTab, aiName]);
 
   async function loadData(accessToken: string) {
     setLoading(true);
@@ -1546,6 +1500,92 @@ export default function HomePage() {
         }
       }
       setFridge(fridgeRows.map(mapFridgeToUi));
+
+      let walletCardRows = await fetchWalletCards(accessToken).catch(() => []);
+      let couponRows = await fetchCoupons(accessToken).catch(() => []);
+      if (
+        (walletCardRows.length === 0 || couponRows.length === 0) &&
+        typeof window !== 'undefined'
+      ) {
+        const legacyCardsRaw = localStorage.getItem('majordome_wallet_cards');
+        const legacyCouponsRaw = localStorage.getItem('majordome_wallet_coupons');
+        let cardsImported = 0;
+        let couponsImported = 0;
+        if (walletCardRows.length === 0 && legacyCardsRaw) {
+          try {
+            const arr = JSON.parse(legacyCardsRaw) as unknown[];
+            if (Array.isArray(arr)) {
+              for (const item of arr) {
+                if (!item || typeof item !== 'object') continue;
+                const brand =
+                  typeof (item as { brand?: string }).brand === 'string'
+                    ? (item as { brand: string }).brand.trim()
+                    : '';
+                if (!brand) continue;
+                const points =
+                  typeof (item as { points?: number }).points === 'number'
+                    ? (item as { points: number }).points
+                    : 0;
+                const color =
+                  typeof (item as { color?: string }).color === 'string'
+                    ? (item as { color: string }).color
+                    : '#2B7A4B';
+                try {
+                  await createWalletCard({ brand, points, color }, accessToken);
+                  cardsImported += 1;
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        if (couponRows.length === 0 && legacyCouponsRaw) {
+          try {
+            const arr = JSON.parse(legacyCouponsRaw) as unknown[];
+            if (Array.isArray(arr)) {
+              for (const item of arr) {
+                if (!item || typeof item !== 'object') continue;
+                const label =
+                  typeof (item as { label?: string }).label === 'string'
+                    ? (item as { label: string }).label.trim()
+                    : '';
+                const expires_at =
+                  typeof (item as { expires_at?: string }).expires_at === 'string'
+                    ? (item as { expires_at: string }).expires_at
+                    : '';
+                const discount =
+                  typeof (item as { discount?: string }).discount === 'string'
+                    ? (item as { discount: string }).discount.trim()
+                    : '';
+                if (!label || !expires_at || !discount) continue;
+                try {
+                  await createCoupon({ label, expires_at, discount }, accessToken);
+                  couponsImported += 1;
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        if (cardsImported > 0 || couponsImported > 0) {
+          if (cardsImported > 0) localStorage.removeItem('majordome_wallet_cards');
+          if (couponsImported > 0) localStorage.removeItem('majordome_wallet_coupons');
+          const parts: string[] = [];
+          if (cardsImported > 0) parts.push(`${cardsImported} carte(s) fidélité`);
+          if (couponsImported > 0) parts.push(`${couponsImported} coupon(s)`);
+          pushToast('success', `${parts.join(' · ')} importé(s) vers le wallet`);
+          walletCardRows = await fetchWalletCards(accessToken).catch(() => walletCardRows);
+          couponRows = await fetchCoupons(accessToken).catch(() => couponRows);
+        }
+      }
+      setWalletCards(walletCardRows.map(mapWalletCardToUi));
+      setCoupons(couponRows.map(mapCouponToUi));
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de chargement';
       setError(msg);
@@ -3807,128 +3847,23 @@ export default function HomePage() {
               <AppLoader label="Chargement de l'application…" />
             </div>
           ) : !token ? (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
-              {!loginSplashDone ? <LoginSplash onDone={() => setLoginSplashDone(true)} /> : null}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  height: '100%',
-                  opacity: loginSplashDone ? 1 : 0,
-                  transition: 'opacity 0.4s ease',
-                  pointerEvents: loginSplashDone ? 'auto' : 'none',
-                }}
-              >
-              <div
-                style={{
-                  flexShrink: 0,
-                  padding: '10px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 12,
-                  background: C.white,
-                  borderBottom: `1px solid ${C.border}`,
-                }}
-              >
-                <MajordomeWordmark maxHeight={32} />
-              </div>
-              <div style={{ flex: 1, padding: 18, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', touchAction: 'pan-y' }}>
-              <h2 style={{ margin: 0, color: C.text }}>{authMode === 'register' ? 'Créer un compte' : 'Connexion'}</h2>
-              <p style={{ color: C.text2, fontSize: 13 }}>
-                {authMode === 'register'
-                  ? 'Inscris ton foyer pour commencer avec MajorDome.'
-                  : 'Connecte-toi pour utiliser MajorDome.'}
-              </p>
-              {error ? (
-                <p role="alert" style={{ margin: '0 0 12px', padding: '10px 12px', borderRadius: 12, background: C.redL, color: C.red, fontSize: 13, fontWeight: 600 }}>
-                  {error}
-                </p>
-              ) : null}
-              {info && !error ? (
-                <p style={{ margin: '0 0 12px', fontSize: 13, color: C.green }}>{info}</p>
-              ) : null}
-              {loading ? (
-                <div style={{ marginBottom: 12 }}>
-                  <AppLoader label="Connexion en cours…" compact />
-                </div>
-              ) : null}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void submitAuth();
-                }}
-                style={{ display: 'grid', gap: 10 }}
-                autoComplete="on"
-              >
-                <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 600, color: C.text2 }}>
-                  Adresse e-mail
-                  <input
-                    name="email"
-                    type="email"
-                    autoComplete="username"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (error) setError('');
-                    }}
-                    placeholder="vous@exemple.fr"
-                    style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }}
-                  />
-                </label>
-                <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 600, color: C.text2 }}>
-                  Mot de passe
-                  <input
-                    name="password"
-                    type="password"
-                    autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (error) setError('');
-                    }}
-                    placeholder="••••••••"
-                    style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{ padding: 12, borderRadius: 12, border: 'none', background: C.terra, color: '#fff', fontWeight: 700 }}
-                >
-                  {loading
-                    ? authMode === 'register'
-                      ? 'Création…'
-                      : 'Connexion…'
-                    : authMode === 'register'
-                      ? 'Créer mon compte'
-                      : 'Se connecter'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode((m) => (m === 'login' ? 'register' : 'login'));
-                    setError('');
-                    setInfo('');
-                  }}
-                  style={{
-                    padding: 10,
-                    borderRadius: 12,
-                    border: `1px solid ${C.border}`,
-                    background: C.white,
-                    color: C.text2,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  {authMode === 'login'
-                    ? 'Pas encore de compte ? Créer un compte'
-                    : 'Déjà inscrit ? Se connecter'}
-                </button>
-              </form>
-              </div>
-              </div>
-            </div>
+            <LoginAuthScreen
+              C={C}
+              authMode={authMode}
+              setAuthMode={setAuthMode}
+              email={email}
+              setEmail={setEmail}
+              password={password}
+              setPassword={setPassword}
+              error={error}
+              setError={setError}
+              info={info}
+              setInfo={setInfo}
+              loading={loading}
+              onSubmit={submitAuth}
+              loginSplashDone={loginSplashDone}
+              onSplashDone={() => setLoginSplashDone(true)}
+            />
           ) : !postLoginSetupResolved ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
               <AppLoader label="Préparation de ton espace…" />
