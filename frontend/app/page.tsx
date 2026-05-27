@@ -106,6 +106,15 @@ import { AppLoader, MajordomeMark, MajordomeWordmark } from '../components/Brand
 import { LoginSplash } from '../components/LoginSplash';
 import { inferAlfredActions } from '../lib/alfredSuggestions';
 import { realtimeToolToInterpret } from '../lib/alfredRealtimeTools';
+import {
+  agentNeedsConfirm,
+  clearAlfredMemoryServer,
+  confirmLabelForIntent,
+  executeAgentIntent as runAgentIntent,
+  tryExtractAlfredMemory,
+  type AgentExecutionResult,
+  type AgentInterpretResponse,
+} from '../lib/alfredAgent';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -178,8 +187,6 @@ type OpportunityItem = { id: number; title: string; score: number };
 type ConflictItem = { event_a: number; event_b: number; title_a: string; title_b: string; severity?: string };
 type ConnectedAccount = { id: number; provider: string; status: string };
 type LoginResponse = { access_token: string; refresh_token: string };
-type AgentInterpretResponse = { intent: string; mode: string; explanation: string; proposal?: Record<string, unknown> };
-type AgentExecutionResult = { done: boolean; message?: string };
 type DebordeeApiResponse = { critique: string[]; deleguer: string[]; supprimer: string[]; message: string };
 type FamilyProfile = { prenom: string; partenaire: string; enfant: string; ageEnfant: string; objectif: string };
 type DocVaultItem = {
@@ -879,17 +886,6 @@ export default function HomePage() {
     ];
   }
 
-  function tryExtractAlfredMemory(userText: string): string | null {
-    const t = userText.trim();
-    if (!t) return null;
-    if (/^(souviens-toi|note que|rappelle-toi)\s*:/i.test(t)) {
-      const rest = t.replace(/^[^:]+:\s*/i, '').trim();
-      return rest.length > 3 ? rest.slice(0, 220) : null;
-    }
-    if (/\b(allergi|intolérance|numéro de sécu|notre adresse|code porte)\b/i.test(t) && t.length > 12) return t.slice(0, 220);
-    return null;
-  }
-
   async function refreshTaskSummary(opts?: { trackBusy?: boolean }) {
     if (!token) return;
     const track = opts?.trackBusy ?? false;
@@ -1230,6 +1226,27 @@ export default function HomePage() {
   useEffect(() => {
     if (token) setLoginSplashDone(true);
   }, [token]);
+
+  useEffect(() => {
+    if (!clientReady || !token || !postLoginSetupDone || typeof window === 'undefined') return;
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab === 'alfred') {
+      setMainTab('alfred');
+      setOverlay('assistant');
+    } else if (tab === 'agenda') {
+      setMainTab('agenda');
+      setOverlay(null);
+    } else if (tab === 'modules') {
+      setMainTab('modules');
+      setOverlay('plus');
+    } else if (tab === 'moi') {
+      setMainTab('moi');
+      setOverlay(null);
+    }
+    if (tab) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [clientReady, token, postLoginSetupDone]);
 
   useEffect(() => {
     if (!clientReady) return;
@@ -1662,174 +1679,36 @@ export default function HomePage() {
 
   async function executeAgentIntent(
     rawCommand: string,
-    interpreted: AgentInterpretResponse
+    interpreted: AgentInterpretResponse,
   ): Promise<AgentExecutionResult> {
     if (!token) return { done: false };
-    const proposal = interpreted.proposal ?? {};
-    const toStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
-    const command = rawCommand.trim();
-    const lowered = command.toLowerCase();
-    const normalize = (s: string) =>
-      s
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .trim();
-    const commandNormalized = normalize(command);
-    const titleFromProposal = toStr((proposal as { title?: unknown }).title);
-    const title = titleFromProposal || command;
-    const findTaskByTitle = (hint: string): TaskItem | null => {
-      const h = normalize(hint);
-      if (!h) return null;
-      return (
-        openTasks.find((t) => normalize(t.title) === h) ??
-        openTasks.find((t) => normalize(t.title).includes(h) || h.includes(normalize(t.title))) ??
-        null
-      );
-    };
-    const findAssigneeMemberId = (hint: string): number | null => {
-      const name = normalize(hint);
-      if (!name) return null;
-      if (familyProfile.prenom && name.includes(normalize(familyProfile.prenom))) return primaryMemberId;
-      if (familyProfile.partenaire && name.includes(normalize(familyProfile.partenaire))) return partnerMemberId;
-      if (familyProfile.enfant && name.includes(normalize(familyProfile.enfant))) return childMemberId;
-      return (
-        householdMembers.find((m: HouseholdMemberRow) => {
-          const n = normalize(m.display_name);
-          return n === name || n.includes(name) || name.includes(n);
-        })?.id ?? null
-      );
-    };
-    const assigneeHint =
-      toStr((proposal as { assignee?: unknown }).assignee) ||
-      toStr((proposal as { member_name?: unknown }).member_name) ||
-      toStr((proposal as { assigned_to?: unknown }).assigned_to);
-
-    const isGrocery =
-      interpreted.intent === 'grocery_add' ||
-      lowered.includes('liste de courses') ||
-      lowered.includes('liste courses') ||
-      (lowered.includes('courses') && (lowered.includes('ajoute') || lowered.includes('rajoute'))) ||
-      (lowered.includes('liste') && (lowered.includes('ajoute') || lowered.includes('rajoute')));
-
-    if (interpreted.intent === 'memory_store') {
-      const note =
-        toStr((proposal as { note?: unknown }).note) ||
-        toStr((proposal as { title?: unknown }).title) ||
-        command.slice(0, 220);
-      if (note.length >= 3) {
-        setAlfredMemory((prev) => (prev.includes(note) ? prev : [...prev, note]));
-        void postJson('/api/v1/memory/facts', { fact_text: note }, token).catch(() => undefined);
-        return { done: true, message: "C'est noté, je m'en souviendrai." };
-      }
-    }
-
-    if (isGrocery) {
-      const itemLabel =
-        toStr((proposal as { label?: unknown }).label) ||
-        titleFromProposal ||
-        (() => {
-          const m = command.match(/ajoute(?:r)?\s+(.+?)(?:\s+(?:à|a)\s+la\s+liste|\s*$)/i);
-          return m?.[1]?.trim() ?? '';
-        })() ||
-        command.replace(/^(ajoute|rajoute)\s+/i, '').trim().slice(0, 80);
-      if (itemLabel.length >= 2) {
-        setCourses((prev) => {
-          if (prev.some((c) => c.label.toLowerCase() === itemLabel.toLowerCase())) return prev;
-          return [...prev, { id: newLocalNumericId(), label: itemLabel, done: false }];
-        });
-        return { done: true, message: `« ${itemLabel} » ajouté à ta liste de courses.` };
-      }
-    }
-
-    if (interpreted.intent === 'task_create' || (lowered.startsWith('ajoute ') && !isGrocery) || (lowered.includes('rajoute') && !isGrocery)) {
-      const created = await postJson<TaskItem>('/api/v1/tasks', { title, task_type: 'manual_task' }, token);
-      setTasks((prev) => mergeTasksById(prev, [created]));
-      void refreshTaskSummary({ trackBusy: false });
-      return { done: true, message: `C'est fait. Tâche créée : ${created.title}` };
-    }
-
-    const shouldAssign =
-      interpreted.intent === 'task_assign' ||
-      interpreted.intent.includes('assign') ||
-      interpreted.intent.includes('delegate') ||
-      commandNormalized.includes('assigne');
-    if (shouldAssign) {
-      const idFromProposal = Number((proposal as { task_id?: unknown }).task_id || 0);
-      const taskHint = toStr((proposal as { task_title?: unknown }).task_title) || title;
-      const task = (idFromProposal > 0 ? openTasks.find((t) => t.id === idFromProposal) : null) ?? findTaskByTitle(taskHint);
-      const extractedName =
-        assigneeHint ||
-        (() => {
-          const m = commandNormalized.match(/(?:assigne|attribue).+?(?:a|à)\s+([a-z0-9 _-]{2,40})/i);
-          return m?.[1]?.trim() ?? '';
-        })();
-      const memberId = findAssigneeMemberId(extractedName);
-      if (task && memberId) {
-        const updated = await patchJson<TaskItem>(`/api/v1/tasks/${task.id}`, { assigned_member_id: memberId }, token);
-        setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, ...updated } : x)));
-        return { done: true, message: `Ok, j'ai assigné « ${task.title} ».` };
-      }
-    }
-
-    const shouldComplete =
-      interpreted.intent === 'task_complete' ||
-      interpreted.intent.includes('complete') ||
-      commandNormalized.includes('termine');
-    if (shouldComplete) {
-      const idFromProposal = Number((proposal as { task_id?: unknown }).task_id || 0);
-      const taskHint = toStr((proposal as { task_title?: unknown }).task_title) || title;
-      const task = (idFromProposal > 0 ? openTasks.find((t) => t.id === idFromProposal) : null) ?? findTaskByTitle(taskHint);
-      if (task) {
-        const updated = await postJson<TaskItem>(`/api/v1/tasks/${task.id}/complete`, {}, token);
-        setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, ...updated } : x)));
-        void refreshTaskSummary({ trackBusy: false });
-        return { done: true, message: `Terminé. « ${task.title} » est marquée faite.` };
-      }
-    }
-
-    if (interpreted.intent === 'email_draft' && typeof window !== 'undefined') {
-      const subject = toStr((proposal as { subject?: unknown }).subject) || 'Message';
-      const body = toStr((proposal as { body?: unknown }).body) || '';
-      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      return { done: true, message: 'Brouillon email ouvert dans ton application mail.' };
-    }
-
-    if (interpreted.intent === 'call_prepare') {
-      const script = toStr((proposal as { script?: unknown }).script) || command;
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        void navigator.clipboard.writeText(script);
-      }
-      return { done: true, message: `Script d’appel copié :\n${script.slice(0, 200)}` };
-    }
-
-    const shouldCreateEvent =
-      interpreted.intent === 'event_create' ||
-      interpreted.intent.includes('event') ||
-      interpreted.intent.includes('schedule') ||
-      commandNormalized.includes('emploi du temps') ||
-      commandNormalized.includes('rendez-vous') ||
-      commandNormalized.includes('agenda');
-    if (shouldCreateEvent) {
-      const now = new Date();
-      const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
-      const startsAt = toStr((proposal as { starts_at?: unknown }).starts_at) || now.toISOString();
-      const endsAt = toStr((proposal as { ends_at?: unknown }).ends_at) || inOneHour.toISOString();
-      const eventTitle = titleFromProposal || command.slice(0, 120);
-      const googleConnected = accounts.some(
-        (a) => a.provider === 'google_calendar' && a.status === 'connected',
-      );
-      const eventProvider = googleConnected ? 'google_calendar' : 'none';
-      const created = await postJson<EventItem>(
-        '/api/v1/events/create-and-sync',
-        { title: eventTitle, starts_at: startsAt, ends_at: endsAt, provider: eventProvider },
-        token,
-      );
-      setEvents((prev) => [created, ...prev.filter((e) => e.id !== created.id)]);
-      return { done: true, message: `C'est noté. Événement ajouté : ${eventTitle}` };
-    }
-
-    return { done: false };
+    return runAgentIntent({
+      token,
+      rawCommand,
+      interpreted,
+      openTasks,
+      householdMembers,
+      familyProfile,
+      primaryMemberId,
+      partnerMemberId,
+      childMemberId,
+      accounts,
+      callbacks: {
+        onAddCourse: (label) => {
+          setCourses((prev) => {
+            if (prev.some((c) => c.label.toLowerCase() === label.toLowerCase())) return prev;
+            return [...prev, { id: newLocalNumericId(), label, done: false }];
+          });
+        },
+        onTaskCreated: (task) => setTasks((prev) => mergeTasksById(prev, [task as TaskItem])),
+        onTaskUpdated: (task) =>
+          setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, ...(task as TaskItem) } : x))),
+        onEventCreated: (event) =>
+          setEvents((prev) => [event as EventItem, ...prev.filter((e) => e.id !== event.id)]),
+        onMemoryNote: (note) => setAlfredMemory((prev) => (prev.includes(note) ? prev : [...prev, note])),
+        refreshTaskSummary: () => void refreshTaskSummary({ trackBusy: false }),
+      },
+    });
   }
 
   async function processVoiceCommand(transcript: string) {
@@ -1858,18 +1737,6 @@ export default function HomePage() {
     } finally {
       setAssistantTyping(false);
     }
-  }
-
-  function agentNeedsConfirm(res: AgentInterpretResponse): boolean {
-    if (res.mode === 'confirm' || res.mode === 'suggest') return true;
-    return ['email_draft', 'call_prepare', 'event_create'].includes(res.intent);
-  }
-
-  function confirmLabelForIntent(intent: string): string {
-    if (intent === 'event_create') return "Ajouter à l'agenda";
-    if (intent === 'email_draft') return 'Ouvrir le brouillon';
-    if (intent === 'call_prepare') return 'Copier le script';
-    return 'Confirmer';
   }
 
   async function confirmAlfredAction(
@@ -1903,8 +1770,7 @@ export default function HomePage() {
     if (!token) return;
     if (!window.confirm('Effacer toutes les notes mémorisées par Alfred (app + serveur) ?')) return;
     try {
-      const facts = await getJson<{ id: number }[]>('/api/v1/memory/facts', token);
-      await Promise.all(facts.map((f) => deleteJson(`/api/v1/memory/facts/${f.id}`, token)));
+      await clearAlfredMemoryServer(token);
     } catch {
       /* ignore */
     }
