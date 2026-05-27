@@ -159,6 +159,13 @@ curl -fsS -X PUT "${API_BASE}/api/v1/meal-plans/2026-05-27" \
   -d '{"lunch":"Smoke salade","dinner":"Smoke pâtes","missing":["Basilic"]}' >/dev/null
 curl -fsS -X DELETE "${API_BASE}/api/v1/meal-plans/2026-05-27" -H "${AUTH_HEADER}" >/dev/null
 
+echo "[smoke] moi wellness"
+MOI_GET="$(curl -fsS "${API_BASE}/api/v1/moi/wellness" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert "journal" in p and "cycle_day" in p and isinstance(p.get("moments"),list), p' <<< "${MOI_GET}"
+curl -fsS -X PUT "${API_BASE}/api/v1/moi/wellness" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d '{"journal":"Smoke journal","cycle_day":10,"moments":[{"id":"m1","label":"Marche","done":true}]}' >/dev/null
+
 echo "[smoke] partner inbox"
 PARTNER_INBOX="$(curl -fsS "${API_BASE}/api/v1/tasks/partner-inbox" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${PARTNER_INBOX}"

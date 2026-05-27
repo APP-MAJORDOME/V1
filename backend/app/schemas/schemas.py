@@ -449,6 +449,28 @@ class MealPlanUpsert(BaseModel):
     missing: list[str] = Field(default_factory=list)
 
 
+class MoiMomentItem(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=512)
+    done: bool = False
+
+
+class MoiWellnessRead(BaseModel):
+    household_id: int
+    journal: str
+    cycle_day: int
+    moments: list[MoiMomentItem]
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MoiWellnessPut(BaseModel):
+    journal: str = Field(default="", max_length=8000)
+    cycle_day: int = Field(default=18, ge=1, le=28)
+    moments: list[MoiMomentItem] = Field(default_factory=list)
+
+
 class RoutineCreate(BaseModel):
     household_id: int | None = None
     name: str

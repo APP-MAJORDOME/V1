@@ -195,6 +195,17 @@ class HouseholdMealPlan(Base, TimestampMixin):
     missing_json: Mapped[str] = mapped_column(Text, default="[]")
 
 
+class HouseholdMoiWellness(Base, TimestampMixin):
+    """Journal, cycle et moments « pour toi » partagés au niveau du foyer."""
+
+    __tablename__ = "household_moi_wellness"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), unique=True, index=True)
+    journal_text: Mapped[str] = mapped_column(Text, default="")
+    cycle_day: Mapped[int] = mapped_column(Integer, default=18)
+    moments_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
 class TaskDelegation(Base, TimestampMixin):
     """Délégation notifiée au partenaire (tâches + lien d’accusé + relances worker)."""
 

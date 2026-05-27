@@ -58,6 +58,7 @@ from app.models.models import (
     HouseholdCoupon,
     HouseholdBudgetEnvelope,
     HouseholdMealPlan,
+    HouseholdMoiWellness,
 )
 from app.schemas.schemas import (
     HouseholdCreate,
@@ -103,6 +104,8 @@ from app.schemas.schemas import (
     BudgetEnvelopePatch,
     MealPlanRead,
     MealPlanUpsert,
+    MoiWellnessRead,
+    MoiWellnessPut,
     RoutineRead,
     OpportunityRead,
     AccountSyncResponse,
@@ -1753,6 +1756,79 @@ def delete_meal_plan(
     db.delete(row)
     db.commit()
     return {"status": "deleted"}
+
+
+_DEFAULT_MOI_MOMENTS = [
+    {"id": "m1", "label": "20 min de marche sans téléphone", "done": False},
+    {"id": "m2", "label": "10 min respiration / méditation", "done": False},
+    {"id": "m3", "label": "Lire 15 pages ce soir", "done": False},
+]
+
+
+def _normalize_moments(raw: list) -> list[dict]:
+    out: list[dict] = []
+    for item in raw[:30]:
+        if not isinstance(item, dict):
+            continue
+        mid = str(item.get("id", "")).strip()
+        label = str(item.get("label", "")).strip()
+        if not mid or not label:
+            continue
+        out.append({"id": mid, "label": label, "done": bool(item.get("done"))})
+    return out or list(_DEFAULT_MOI_MOMENTS)
+
+
+def _moi_wellness_to_read(row: HouseholdMoiWellness) -> MoiWellnessRead:
+    try:
+        parsed = json.loads(row.moments_json or "[]")
+        moments = _normalize_moments(parsed if isinstance(parsed, list) else [])
+    except json.JSONDecodeError:
+        moments = list(_DEFAULT_MOI_MOMENTS)
+    return MoiWellnessRead(
+        household_id=row.household_id,
+        journal=row.journal_text or "",
+        cycle_day=row.cycle_day,
+        moments=moments,
+        updated_at=row.updated_at,
+    )
+
+
+def _get_or_create_moi_wellness(db: Session, household_id: int) -> HouseholdMoiWellness:
+    row = db.query(HouseholdMoiWellness).filter(HouseholdMoiWellness.household_id == household_id).first()
+    if row:
+        return row
+    row = HouseholdMoiWellness(
+        household_id=household_id,
+        journal_text="",
+        cycle_day=18,
+        moments_json=json.dumps(_DEFAULT_MOI_MOMENTS, ensure_ascii=False),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/moi/wellness", response_model=MoiWellnessRead)
+def get_moi_wellness(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    row = _get_or_create_moi_wellness(db, auth.household_id)
+    return _moi_wellness_to_read(row)
+
+
+@router.put("/moi/wellness", response_model=MoiWellnessRead)
+def put_moi_wellness(
+    payload: MoiWellnessPut,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = _get_or_create_moi_wellness(db, auth.household_id)
+    moments = _normalize_moments([m.model_dump() for m in payload.moments])
+    row.journal_text = payload.journal.strip()
+    row.cycle_day = payload.cycle_day
+    row.moments_json = json.dumps(moments, ensure_ascii=False)
+    db.commit()
+    db.refresh(row)
+    return _moi_wellness_to_read(row)
 
 
 @router.get("/documents", response_model=list[HouseholdDocumentRead])

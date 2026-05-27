@@ -149,6 +149,12 @@ import {
   upsertMealPlan,
   type MealPlan,
 } from '../lib/meals';
+import {
+  DEFAULT_SELF_MOMENTS,
+  fetchMoiWellness,
+  putMoiWellness,
+  type SelfMoment,
+} from '../lib/moiWellness';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -719,11 +725,7 @@ export default function HomePage() {
   /** Libellé date du jour uniquement côté client (évite hydratation #425 dans le hero). */
   const [clientTodayLabel, setClientTodayLabel] = useState('');
   const [mealPlans, setMealPlans] = useState<Record<string, MealPlan>>({});
-  const [selfMoments, setSelfMoments] = useState([
-    { id: 'm1', label: '20 min de marche sans téléphone', done: false },
-    { id: 'm2', label: '10 min respiration / méditation', done: false },
-    { id: 'm3', label: 'Lire 15 pages ce soir', done: false },
-  ]);
+  const [selfMoments, setSelfMoments] = useState<SelfMoment[]>(DEFAULT_SELF_MOMENTS);
   const [journal, setJournal] = useState('');
   const [cycleDay, setCycleDay] = useState(18);
   const [fridge, setFridge] = useState<FridgeItem[]>([]);
@@ -785,6 +787,7 @@ export default function HomePage() {
   const docPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const docAttachmentReplaceRef = useRef<HTMLInputElement | null>(null);
   const mealsHydratedRef = useRef(false);
+  const moiHydratedRef = useRef(false);
 
   function seedDocsForFamily(f: FamilyProfile): DocVaultItem[] {
     const J = f.prenom || 'Joanne';
@@ -1191,13 +1194,6 @@ export default function HomePage() {
 
       const pcontact = localStorage.getItem('majordome_partner_contact');
       if (pcontact) setPartnerContactDraft(pcontact);
-
-      const savedMoments = localStorage.getItem('majordome_self_moments');
-      if (savedMoments) setSelfMoments(JSON.parse(savedMoments));
-      const savedJournal = localStorage.getItem('majordome_journal');
-      const savedCycle = localStorage.getItem('majordome_cycle_day');
-      if (savedJournal) setJournal(savedJournal);
-      if (savedCycle) setCycleDay(Number(savedCycle));
     } catch {
       // keep defaults
     } finally {
@@ -1251,14 +1247,17 @@ export default function HomePage() {
   }, [token]);
 
   useEffect(() => {
-    localStorage.setItem('majordome_self_moments', JSON.stringify(selfMoments));
-  }, [selfMoments]);
+    moiHydratedRef.current = false;
+  }, [token]);
+
   useEffect(() => {
-    localStorage.setItem('majordome_journal', journal);
-  }, [journal]);
-  useEffect(() => {
-    localStorage.setItem('majordome_cycle_day', String(cycleDay));
-  }, [cycleDay]);
+    if (!token || !moiHydratedRef.current) return;
+    const t = window.setTimeout(() => {
+      void putMoiWellness({ journal, cycle_day: cycleDay, moments: selfMoments }, token).catch(() => {});
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [journal, cycleDay, selfMoments, token]);
+
   useEffect(() => {
     try {
       localStorage.setItem('majordome_alfred_memory', JSON.stringify(alfredMemory));
@@ -1684,6 +1683,71 @@ export default function HomePage() {
       setMealPlans(mapMealPlansToRecord(mealRows));
       window.setTimeout(() => {
         mealsHydratedRef.current = true;
+      }, 0);
+
+      moiHydratedRef.current = false;
+      let wellness = await fetchMoiWellness(accessToken).catch(() => null);
+      if (typeof window !== 'undefined') {
+        const legacyJournal = localStorage.getItem('majordome_journal');
+        const legacyCycle = localStorage.getItem('majordome_cycle_day');
+        const legacyMoments = localStorage.getItem('majordome_self_moments');
+        if (legacyJournal || legacyCycle || legacyMoments) {
+          let moments = wellness?.moments ?? DEFAULT_SELF_MOMENTS;
+          if (legacyMoments) {
+            try {
+              const parsed = JSON.parse(legacyMoments) as unknown[];
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const imported: SelfMoment[] = [];
+                for (const item of parsed) {
+                  if (!item || typeof item !== 'object') continue;
+                  const id =
+                    typeof (item as { id?: string }).id === 'string'
+                      ? (item as { id: string }).id.trim()
+                      : '';
+                  const label =
+                    typeof (item as { label?: string }).label === 'string'
+                      ? (item as { label: string }).label.trim()
+                      : '';
+                  if (!id || !label) continue;
+                  imported.push({
+                    id,
+                    label,
+                    done: Boolean((item as { done?: boolean }).done),
+                  });
+                }
+                if (imported.length > 0) moments = imported;
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+          try {
+            wellness = await putMoiWellness(
+              {
+                journal: legacyJournal ?? wellness?.journal ?? '',
+                cycle_day: legacyCycle
+                  ? Math.min(28, Math.max(1, Number(legacyCycle) || 18))
+                  : wellness?.cycle_day ?? 18,
+                moments,
+              },
+              accessToken,
+            );
+            if (legacyJournal) localStorage.removeItem('majordome_journal');
+            if (legacyCycle) localStorage.removeItem('majordome_cycle_day');
+            if (legacyMoments) localStorage.removeItem('majordome_self_moments');
+            pushToast('success', 'Espace Moi synchronisé avec le foyer');
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      if (wellness) {
+        setJournal(wellness.journal);
+        setCycleDay(wellness.cycle_day);
+        setSelfMoments(wellness.moments.length > 0 ? wellness.moments : DEFAULT_SELF_MOMENTS);
+      }
+      window.setTimeout(() => {
+        moiHydratedRef.current = true;
       }, 0);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de chargement';
