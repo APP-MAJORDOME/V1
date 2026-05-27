@@ -11,6 +11,8 @@ type RequestOptions = {
   token?: string;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
+  /** Internal: évite boucle infinie sur refresh. */
+  _retried?: boolean;
 };
 
 function logoutIfUnauthorized(code: string | undefined) {
@@ -34,8 +36,30 @@ function detailFromResponseBody(text: string): { code?: string; message: string 
   }
 }
 
+async function tryRefreshAccessToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  const refresh = localStorage.getItem('majordome_refresh_token');
+  if (!refresh?.trim()) return null;
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refresh }),
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string; refresh_token?: string };
+    if (!data.access_token) return null;
+    localStorage.setItem('majordome_access_token', data.access_token);
+    if (data.refresh_token) localStorage.setItem('majordome_refresh_token', data.refresh_token);
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { token, method = 'GET', body } = options;
+  const { token, method = 'GET', body, _retried = false } = options;
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -49,6 +73,16 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
   if (!res.ok) {
     const text = await res.text();
     const { code, message } = detailFromResponseBody(text);
+    if (
+      !_retried &&
+      token &&
+      (code === 'invalid_bearer_token' || code === 'missing_bearer_token')
+    ) {
+      const newToken = await tryRefreshAccessToken();
+      if (newToken) {
+        return requestJson<T>(path, { ...options, token: newToken, _retried: true });
+      }
+    }
     logoutIfUnauthorized(code);
     if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
       throw new Error('Session expiree. Merci de te reconnecter.');
@@ -74,19 +108,30 @@ export async function deleteJson<T>(path: string, token?: string): Promise<T> {
   return requestJson<T>(path, { method: 'DELETE', token });
 }
 
-export async function postFormData<T>(path: string, formData: FormData, token?: string): Promise<T> {
-  const headers: HeadersInit = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+async function authedFetch(path: string, init: RequestInit, token: string, retried = false): Promise<Response> {
   const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers,
-    body: formData,
+    ...init,
     cache: 'no-store',
+    headers: { ...init.headers, Authorization: `Bearer ${token}` },
   });
+  if (!res.ok && !retried) {
+    const text = await res.text();
+    const { code } = detailFromResponseBody(text);
+    if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
+      const newToken = await tryRefreshAccessToken();
+      if (newToken) return authedFetch(path, init, newToken, true);
+    }
+    logoutIfUnauthorized(code);
+  }
+  return res;
+}
+
+export async function postFormData<T>(path: string, formData: FormData, token?: string): Promise<T> {
+  if (!token) throw new Error('Token requis');
+  const res = await authedFetch(path, { method: 'POST', body: formData }, token);
   if (!res.ok) {
     const text = await res.text();
     const { code, message } = detailFromResponseBody(text);
-    logoutIfUnauthorized(code);
     if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
       throw new Error('Session expiree. Merci de te reconnecter.');
     }
@@ -96,14 +141,10 @@ export async function postFormData<T>(path: string, formData: FormData, token?: 
 }
 
 export async function downloadAuthed(path: string, token: string): Promise<{ blob: Blob; filename: string }> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
+  const res = await authedFetch(path, {}, token);
   if (!res.ok) {
     const text = await res.text();
     const { code, message } = detailFromResponseBody(text);
-    logoutIfUnauthorized(code);
     if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
       throw new Error('Session expiree. Merci de te reconnecter.');
     }
@@ -136,4 +177,10 @@ export function saveBlobAsFile(blob: Blob, filename: string): void {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Met à jour le token d’accès en localStorage (après refresh transparent). */
+export function syncStoredAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('majordome_access_token');
 }

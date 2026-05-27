@@ -7,7 +7,22 @@
   "background_color": "#F7F0E8",
   "theme_color": "#C96B4A",
   "lang": "fr",
-  "orientation": "portrait-primary",
+  "orientation": "any",
+  "shortcuts": [
+    {
+      "name": "Alfred",
+      "short_name": "Alfred",
+      "description": "Parler à ton assistant",
+      "url": "/?tab=alfred",
+      "icons": [{ "src": "/majordome-mark.png", "sizes": "512x512", "type": "image/png" }]
+    },
+    {
+      "name": "Agenda",
+      "short_name": "Agenda",
+      "url": "/?tab=agenda",
+      "icons": [{ "src": "/majordome-mark.png", "sizes": "512x512", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/majordome-mark.png",

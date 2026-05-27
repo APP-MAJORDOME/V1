@@ -97,6 +97,7 @@ export function TodayHome({
   onOpenHub,
   onOpenAgenda,
   onOpenTasks,
+  onOpenAlfred,
   onPersonalize,
   showPersonalize,
   showDebordee,
@@ -119,6 +120,7 @@ export function TodayHome({
   onOpenHub: (id: HubKey) => void;
   onOpenAgenda: () => void;
   onOpenTasks: () => void;
+  onOpenAlfred?: () => void;
   onPersonalize: () => void;
   showPersonalize?: boolean;
   showDebordee?: boolean;
@@ -277,35 +279,89 @@ export function TodayHome({
       ) : null}
 
       {/* KPI compact */}
-      <button
-        type="button"
-        onClick={onOpenAgenda}
-        style={{
-          width: '100%',
-          marginBottom: 16,
-          padding: '12px 14px',
-          borderRadius: 16,
-          border: `1.5px solid ${C.border}`,
-          background: C.white,
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontSize: 14,
-          color: eventsToday + openTasksCount + remindersCount === 0 ? C.text2 : C.text,
-        }}
-      >
-        <span style={{ marginRight: 8 }}>🗓</span>
-        <strong>{eventsToday}</strong> événement{eventsToday !== 1 ? 's' : ''}
-        <span style={{ margin: '0 10px', color: C.text3 }}>·</span>
-        <span style={{ marginRight: 8 }}>✓</span>
-        <strong>{openTasksCount}</strong> tâche{openTasksCount !== 1 ? 's' : ''}
-        {remindersCount > 0 ? (
-          <>
-            <span style={{ margin: '0 10px', color: C.text3 }}>·</span>
-            <span style={{ marginRight: 8 }}>⏰</span>
-            <strong>{remindersCount}</strong> rappel{remindersCount !== 1 ? 's' : ''}
-          </>
-        ) : null}
-      </button>
+      {eventsToday + openTasksCount + remindersCount === 0 ? (
+        <div
+          className="empty-state"
+          style={{
+            marginBottom: 16,
+            padding: '18px 16px',
+            borderRadius: 16,
+            border: `1.5px dashed ${C.border}`,
+            background: C.white,
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>Journée tranquille</div>
+          <div style={{ fontSize: 13, color: C.text2, lineHeight: 1.5, marginBottom: 12 }}>
+            Aucun événement ni tâche urgente pour l’instant.
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {onOpenAlfred ? (
+              <button
+                type="button"
+                onClick={onOpenAlfred}
+                style={{
+                  border: 'none',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  background: C.terra,
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                Parler à Alfred
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onOpenAgenda}
+              style={{
+                border: `1px solid ${C.border}`,
+                borderRadius: 12,
+                padding: '10px 14px',
+                background: C.white,
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              Voir l’agenda
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpenAgenda}
+          style={{
+            width: '100%',
+            marginBottom: 16,
+            padding: '12px 14px',
+            borderRadius: 16,
+            border: `1.5px solid ${C.border}`,
+            background: C.white,
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontSize: 14,
+            color: C.text,
+          }}
+        >
+          <span style={{ marginRight: 8 }}>🗓</span>
+          <strong>{eventsToday}</strong> événement{eventsToday !== 1 ? 's' : ''}
+          <span style={{ margin: '0 10px', color: C.text3 }}>·</span>
+          <span style={{ marginRight: 8 }}>✓</span>
+          <strong>{openTasksCount}</strong> tâche{openTasksCount !== 1 ? 's' : ''}
+          {remindersCount > 0 ? (
+            <>
+              <span style={{ margin: '0 10px', color: C.text3 }}>·</span>
+              <span style={{ marginRight: 8 }}>⏰</span>
+              <strong>{remindersCount}</strong> rappel{remindersCount !== 1 ? 's' : ''}
+            </>
+          ) : null}
+        </button>
+      )}
 
       {/* Modules favoris */}
       {shortcuts.length > 0 ? (
@@ -333,6 +389,34 @@ export function TodayHome({
               />
             ))}
           </div>
+        </div>
+      ) : showPersonalize ? (
+        <div
+          className="empty-state"
+          style={{
+            marginBottom: 16,
+            padding: 14,
+            borderRadius: 14,
+            background: C.terraXL,
+            fontSize: 13,
+            color: C.text2,
+            textAlign: 'center',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onPersonalize}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: C.terra,
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: 13,
+            }}
+          >
+            Personnaliser l’accueil →
+          </button>
         </div>
       ) : null}
 

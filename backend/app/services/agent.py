@@ -109,12 +109,31 @@ def interpret_command(command: str, memory_lines: list[str] | None = None) -> di
             },
             "explanation": "Commande orientée veille/opportunité détectée."
         }
+    if any(
+        k in lowered
+        for k in ("ajoute", "rajoute", "crée", "cree", "nouvelle tâche", "nouvelle tache", "rappelle")
+    ):
+        title = command
+        for prefix in ("ajoute ", "rajoute ", "crée ", "cree ", "nouvelle tâche ", "nouvelle tache "):
+            if lowered.startswith(prefix):
+                title = command[len(prefix) :].strip()
+                break
+        return {
+            "intent": "task_create",
+            "mode": "auto",
+            "proposal": {"title": title[:120] or command[:120], "task_type": "manual_task"},
+            "explanation": "Tâche créée.",
+        }
+    if any(k in lowered for k in ("rdv", "rendez-vous", "rendez vous", "agenda", "événement", "evenement")):
+        return {
+            "intent": "event_create",
+            "mode": "confirm",
+            "proposal": {"title": command[:120]},
+            "explanation": "Je peux ajouter cet événement à ton agenda si tu confirmes.",
+        }
     return {
-        "intent": "task_create",
-        "mode": "auto",
-        "proposal": {
-            "title": command,
-            "task_type": "manual_task"
-        },
-        "explanation": "Commande interprétée comme tâche."
+        "intent": "unknown",
+        "mode": "suggest",
+        "proposal": {},
+        "explanation": "Je n’ai pas bien compris. Reformule ou précise (tâche, agenda, courses…).",
     }

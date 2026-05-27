@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
 
 from app.core.config import settings
 from app.services.agent_tools import INTENT_SYSTEM_SUFFIX
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_json_payload(content: str) -> dict[str, Any] | None:
@@ -62,16 +65,22 @@ def interpret_with_openai(command: str, memory_facts: list[str] | None = None) -
             response = client.post(f"{settings.llm_base_url}/chat/completions", json=body, headers=headers)
             response.raise_for_status()
             payload = response.json()
-    except Exception:
+    except httpx.HTTPStatusError as exc:
+        logger.warning("OpenAI interpret HTTP %s: %s", exc.response.status_code, exc.response.text[:300])
+        return None
+    except Exception as exc:
+        logger.warning("OpenAI interpret failed: %s", exc)
         return None
 
     choices = payload.get("choices") or []
     if not choices:
+        logger.warning("OpenAI interpret: empty choices")
         return None
     message = choices[0].get("message") or {}
     content = message.get("content") or ""
     parsed = _extract_json_payload(content)
     if not parsed:
+        logger.warning("OpenAI interpret: JSON parse failed")
         return None
     if not isinstance(parsed.get("proposal"), dict):
         parsed["proposal"] = {}

@@ -800,6 +800,10 @@ export default function HomePage() {
   const realtimeVoiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeToolBusyRef = useRef(false);
   const realtimeToolHandledRef = useRef(false);
+  const realtimeCallsSeenRef = useRef<Set<string>>(new Set());
+  const alfredInputRef = useRef<HTMLInputElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const alfredNearBottomRef = useRef(true);
   const realtimeMsRef = useRef<MediaStream | null>(null);
   const realtimeAudioElRef = useRef<HTMLAudioElement | null>(null);
   const docPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -842,8 +846,14 @@ export default function HomePage() {
     }
   }, []);
 
+  const openAiRealtimeOnRef = useRef(false);
+  useEffect(() => {
+    openAiRealtimeOnRef.current = openAiRealtimeOn;
+  }, [openAiRealtimeOn]);
+
   const disconnectOpenAiRealtime = useCallback(() => {
     cleanupRealtimeMedia();
+    realtimeCallsSeenRef.current.clear();
     setOpenAiRealtimeOn(false);
   }, [cleanupRealtimeMedia]);
 
@@ -1258,13 +1268,6 @@ export default function HomePage() {
   }, [token]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // no-op
-    });
-  }, []);
-
-  useEffect(() => {
     localStorage.setItem('majordome_courses', JSON.stringify(courses));
   }, [courses]);
   useEffect(() => {
@@ -1308,6 +1311,17 @@ export default function HomePage() {
   }, [assistantHistory]);
 
   useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      alfredNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [overlay, mainTab]);
+
+  useEffect(() => {
+    if (!alfredNearBottomRef.current) return;
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [assistantHistory, assistantTyping]);
 
@@ -1418,7 +1432,7 @@ export default function HomePage() {
     setLoading(true);
     setError('');
     try {
-      const [eventsRes, tasksPayload, oppsRes, conflictsRes, accountsRes, membersRes, taskSummaryRes, capRes] =
+      const [eventsRes, tasksPayload, oppsRes, conflictsRes, accountsRes, membersRes, taskSummaryRes, capRes, memoryRes] =
         await Promise.all([
         getJson<EventItem[]>('/api/v1/events', accessToken),
         (async (): Promise<{ merged: TaskItem[]; donePagingExhausted: boolean }> => {
@@ -1445,7 +1459,18 @@ export default function HomePage() {
         getJson<HouseholdMemberRow[]>('/api/v1/household/members', accessToken).catch(() => []),
         getJson<TaskSummaryApi>('/api/v1/tasks/summary', accessToken).catch(() => null),
         getJson<{ apple_caldav_available: boolean }>('/api/v1/integrations/capabilities', accessToken).catch(() => null),
+        getJson<{ id: number; fact_text: string }[]>('/api/v1/memory/facts', accessToken).catch(() => []),
       ]);
+      if (memoryRes.length > 0) {
+        const fromServer = memoryRes.map((f) => f.fact_text.trim()).filter(Boolean);
+        setAlfredMemory((prev) => {
+          const merged = [...prev];
+          for (const line of fromServer) {
+            if (!merged.includes(line)) merged.push(line);
+          }
+          return merged.slice(-48);
+        });
+      }
       const caldavServerOk = capRes?.apple_caldav_available ?? null;
       setAppleCaldavAvailable(caldavServerOk);
       setEvents(eventsRes);
@@ -1763,6 +1788,21 @@ export default function HomePage() {
       }
     }
 
+    if (interpreted.intent === 'email_draft' && typeof window !== 'undefined') {
+      const subject = toStr((proposal as { subject?: unknown }).subject) || 'Message';
+      const body = toStr((proposal as { body?: unknown }).body) || '';
+      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      return { done: true, message: 'Brouillon email ouvert dans ton application mail.' };
+    }
+
+    if (interpreted.intent === 'call_prepare') {
+      const script = toStr((proposal as { script?: unknown }).script) || command;
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(script);
+      }
+      return { done: true, message: `Script d’appel copié :\n${script.slice(0, 200)}` };
+    }
+
     const shouldCreateEvent =
       interpreted.intent === 'event_create' ||
       interpreted.intent.includes('event') ||
@@ -1816,6 +1856,59 @@ export default function HomePage() {
     }
   }
 
+  function agentNeedsConfirm(res: AgentInterpretResponse): boolean {
+    if (res.mode === 'confirm' || res.mode === 'suggest') return true;
+    return ['email_draft', 'call_prepare', 'event_create'].includes(res.intent);
+  }
+
+  function confirmLabelForIntent(intent: string): string {
+    if (intent === 'event_create') return "Ajouter à l'agenda";
+    if (intent === 'email_draft') return 'Ouvrir le brouillon';
+    if (intent === 'call_prepare') return 'Copier le script';
+    return 'Confirmer';
+  }
+
+  async function confirmAlfredAction(
+    command: string,
+    intent: string,
+    proposal?: Record<string, unknown>,
+  ) {
+    if (!token) return;
+    setAssistantTyping(true);
+    try {
+      const res: AgentInterpretResponse = {
+        intent,
+        mode: 'auto',
+        explanation: '',
+        proposal: proposal ?? {},
+      };
+      const execution = await executeAgentIntent(command, res);
+      if (execution.done && execution.message) {
+        setAssistantHistory((h) => [
+          ...h.map((m) => ({ ...m, pendingConfirm: undefined })),
+          { who: 'ai', text: execution.message!, id: `ai-${Date.now()}` },
+        ]);
+        pushToast('success', execution.message);
+      }
+    } finally {
+      setAssistantTyping(false);
+    }
+  }
+
+  async function clearAlfredMemoryAll() {
+    if (!token) return;
+    if (!window.confirm('Effacer toutes les notes mémorisées par Alfred (app + serveur) ?')) return;
+    try {
+      const facts = await getJson<{ id: number }[]>('/api/v1/memory/facts', token);
+      await Promise.all(facts.map((f) => deleteJson(`/api/v1/memory/facts/${f.id}`, token)));
+    } catch {
+      /* ignore */
+    }
+    setAlfredMemory([]);
+    localStorage.removeItem('majordome_alfred_memory');
+    pushToast('info', 'Mémoire Alfred effacée');
+  }
+
   async function handleRealtimeToolCall(
     dc: RTCDataChannel,
     callId: string,
@@ -1823,6 +1916,8 @@ export default function HomePage() {
     argsJson: string,
   ) {
     if (!token || realtimeToolBusyRef.current) return;
+    if (realtimeCallsSeenRef.current.has(callId)) return;
+    realtimeCallsSeenRef.current.add(callId);
     realtimeToolBusyRef.current = true;
     let args: Record<string, unknown> = {};
     try {
@@ -1879,6 +1974,7 @@ export default function HomePage() {
   }
 
   function scheduleVoiceCommandFromTranscript(transcript: string) {
+    if (openAiRealtimeOnRef.current) return;
     realtimeVoicePendingRef.current = transcript.trim();
     if (realtimeVoiceTimerRef.current) clearTimeout(realtimeVoiceTimerRef.current);
     realtimeVoiceTimerRef.current = setTimeout(() => {
@@ -1892,30 +1988,54 @@ export default function HomePage() {
     const text = (overrideText ?? assistantInput).trim();
     if (!token || !text) return;
     const memNote = tryExtractAlfredMemory(text);
-    setAssistantHistory((m) => [...m, { who: 'user', text }]);
+    alfredNearBottomRef.current = true;
+    setAssistantHistory((m) => [...m, { who: 'user', text, id: `u-${Date.now()}` }]);
     setAssistantInput('');
     setAssistantTyping(true);
-    const memoryBlock =
-      alfredMemory.length > 0
-        ? `[Notes qu'Alfred doit garder en tête]\n${alfredMemory.slice(-12).join('\n')}\n\n`
-        : '';
     try {
-      const res = await postJson<AgentInterpretResponse>('/api/v1/agent/interpret', { command: `${memoryBlock}${text}` }, token);
-      const execution = await executeAgentIntent(text, res).catch(() => ({ done: false } as AgentExecutionResult));
+      const res = await postJson<AgentInterpretResponse>('/api/v1/agent/interpret', { command: text }, token);
       let aiText = res.explanation || '';
       if (res.proposal && typeof res.proposal === 'object' && 'title' in res.proposal) {
         const t = (res.proposal as { title?: string }).title;
-        if (t) aiText = `${aiText}\n\nTâche proposée : ${t}`;
+        if (t && !agentNeedsConfirm(res)) aiText = `${aiText}\n\nTâche proposée : ${t}`.trim();
       }
+      if (agentNeedsConfirm(res)) {
+        if (!aiText.trim()) aiText = 'Je peux faire ça pour toi si tu confirmes.';
+        setAssistantHistory((m) => [
+          ...m,
+          {
+            who: 'ai',
+            text: aiText,
+            id: `ai-${Date.now()}`,
+            pendingConfirm: {
+              command: text,
+              intent: res.intent,
+              label: confirmLabelForIntent(res.intent),
+              proposal: res.proposal,
+            },
+          },
+        ]);
+        if (memNote) {
+          setAlfredMemory((prev) => (prev.includes(memNote) ? prev : [...prev, memNote]));
+          void postJson('/api/v1/memory/facts', { fact_text: memNote }, token).catch(() => undefined);
+          pushToast('info', 'Alfred a mémorisé une note');
+        }
+        return;
+      }
+      const execution = await executeAgentIntent(text, res).catch(() => ({ done: false } as AgentExecutionResult));
       if (execution.done && execution.message) {
         aiText = `${aiText}\n\n${execution.message}`.trim();
       }
       if (!aiText.trim()) aiText = `${res.intent} (${res.mode})`;
       const actions = inferAlfredActions(aiText, execution.done);
-      setAssistantHistory((m) => [...m, { who: 'ai', text: aiText, actions: actions.length > 0 ? actions : undefined }]);
+      setAssistantHistory((m) => [
+        ...m,
+        { who: 'ai', text: aiText, actions: actions.length > 0 ? actions : undefined, id: `ai-${Date.now()}` },
+      ]);
       if (memNote) {
         setAlfredMemory((prev) => (prev.includes(memNote) ? prev : [...prev, memNote]));
-      pushToast('info', 'Alfred a mémorisé une note');
+        void postJson('/api/v1/memory/facts', { fact_text: memNote }, token).catch(() => undefined);
+        pushToast('info', 'Alfred a mémorisé une note');
       }
       if (
         autoSpeak &&
@@ -2020,14 +2140,6 @@ export default function HomePage() {
               void handleRealtimeToolCall(dc, callId, fnName, fnArgs);
             }
             return;
-          }
-
-          if (typ === 'response.output_item.done' && msg.item && typeof msg.item === 'object') {
-            const item = msg.item as { type?: string; call_id?: string; name?: string; arguments?: string };
-            if (item.type === 'function_call' && item.call_id && item.name) {
-              void handleRealtimeToolCall(dc, item.call_id, item.name, item.arguments || '{}');
-              return;
-            }
           }
 
           const text = extract(msg);
@@ -2698,6 +2810,7 @@ export default function HomePage() {
                 setOverlay(null);
                 setMainTab('home');
               }}
+              onOpenAlfred={() => goMainTab('alfred')}
               onPersonalize={() => setHomeLayoutEditorOpen(true)}
               showPersonalize={Boolean(token)}
               showDebordee={sec('debordee') && showDebordeeCta}
@@ -4125,6 +4238,8 @@ export default function HomePage() {
           assistantTyping={assistantTyping}
           assistantInput={assistantInput}
           setAssistantInput={setAssistantInput}
+          inputRef={alfredInputRef}
+          chatScrollRef={chatScrollRef}
           endRef={endRef}
           realtimeAudioElRef={realtimeAudioElRef}
           openAiRealtimeOn={openAiRealtimeOn}
@@ -4139,13 +4254,12 @@ export default function HomePage() {
             setOverlay(null);
             setMainTab('home');
           }}
-          onClearMemory={() => {
-            if (window.confirm('Effacer toutes les notes mémorisées par Alfred ?')) setAlfredMemory([]);
-          }}
+          onClearMemory={() => void clearAlfredMemoryAll()}
           onSend={() => void sendAssistant()}
           onToggleVoice={toggleVoiceListening}
           onToggleRealtime={() => void toggleOpenAiRealtimeVoice()}
           onSuggestion={(text) => void sendAssistant(text)}
+          onConfirmPending={(cmd, intent, proposal) => void confirmAlfredAction(cmd, intent, proposal)}
           onAction={(actionId) => {
             if (actionId === 'courses') {
               setCoursesTab('liste');
@@ -4254,6 +4368,14 @@ export default function HomePage() {
               <div style={{ flex: 1, padding: 18, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', touchAction: 'pan-y' }}>
               <h2 style={{ margin: 0, color: C.text }}>Connexion</h2>
               <p style={{ color: C.text2, fontSize: 13 }}>Connecte-toi pour utiliser MajorDome.</p>
+              {error ? (
+                <p role="alert" style={{ margin: '0 0 12px', padding: '10px 12px', borderRadius: 12, background: C.redL, color: C.red, fontSize: 13, fontWeight: 600 }}>
+                  {error}
+                </p>
+              ) : null}
+              {info && !error ? (
+                <p style={{ margin: '0 0 12px', fontSize: 13, color: C.green }}>{info}</p>
+              ) : null}
               {loading ? (
                 <div style={{ marginBottom: 12 }}>
                   <AppLoader label="Connexion en cours…" compact />
@@ -4274,7 +4396,10 @@ export default function HomePage() {
                     type="email"
                     autoComplete="username"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError('');
+                    }}
                     placeholder="vous@exemple.fr"
                     style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }}
                   />
@@ -4286,7 +4411,10 @@ export default function HomePage() {
                     type="password"
                     autoComplete="current-password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError('');
+                    }}
                     placeholder="••••••••"
                     style={{ padding: 10, borderRadius: 12, border: `1px solid ${C.border}` }}
                   />

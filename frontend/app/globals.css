@@ -162,6 +162,20 @@ body {
   animation: splashFadeOut 0.45s ease forwards;
 }
 
+@keyframes realtimePulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(201, 107, 74, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(201, 107, 74, 0);
+  }
+}
+
+.majordome-realtime-live {
+  animation: realtimePulse 1.4s ease-in-out infinite;
+}
+
 @keyframes splashMarkIn {
   to {
     opacity: 1;
