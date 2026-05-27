@@ -307,6 +307,28 @@ class TaskPatch(BaseModel):
     status: Literal["open", "done"] | None = None
 
 
+class GroceryItemRead(BaseModel):
+    id: int
+    household_id: int
+    label: str
+    done: bool
+    delegated: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GroceryItemCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=512)
+
+
+class GroceryItemPatch(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=512)
+    done: bool | None = None
+    delegated: bool | None = None
+
+
 class RoutineCreate(BaseModel):
     household_id: int | None = None
     name: str

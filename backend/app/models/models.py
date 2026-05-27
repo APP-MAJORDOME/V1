@@ -129,6 +129,18 @@ class HouseholdMemoryFact(Base, TimestampMixin):
     fact_text: Mapped[str] = mapped_column(Text)
 
 
+class GroceryItem(Base, TimestampMixin):
+    """Article de la liste de courses partagée par foyer."""
+
+    __tablename__ = "household_grocery_items"
+    __table_args__ = (Index("ix_household_grocery_items_household_done", "household_id", "done"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    label: Mapped[str] = mapped_column(String(512))
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+    delegated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class TaskDelegation(Base, TimestampMixin):
     """Délégation notifiée au partenaire (tâches + lien d’accusé + relances worker)."""
 

@@ -112,6 +112,14 @@ import {
   type AgentInterpretResponse,
 } from '../lib/alfredAgent';
 import { useAlfredAssistant } from '../hooks/useAlfredAssistant';
+import {
+  clearDoneGroceryItems,
+  createGroceryItem,
+  deleteGroceryItem,
+  fetchGroceryItems,
+  mapGroceryToCourse,
+  patchGroceryItem,
+} from '../lib/grocery';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -672,11 +680,7 @@ export default function HomePage() {
   const [editEnd, setEditEnd] = useState('');
   const [editExpectedUpdatedAt, setEditExpectedUpdatedAt] = useState('');
   const [homeMood, setHomeMood] = useState<number | null>(null);
-  const [courses, setCourses] = useState<Array<{ id: number; label: string; done: boolean; delegated?: boolean }>>([
-    { id: 1, label: 'Lardons', done: false },
-    { id: 2, label: 'Crème fraîche', done: false },
-    { id: 3, label: 'Tomates', done: true },
-  ]);
+  const [courses, setCourses] = useState<Array<{ id: number; label: string; done: boolean; delegated?: boolean }>>([]);
   const [newCourse, setNewCourse] = useState('');
   const [coursesTab, setCoursesTab] = useState<'liste' | 'frigo' | 'wallet'>('liste');
   const [morningDone, setMorningDone] = useState([true, false, false]);
@@ -804,6 +808,75 @@ export default function HomePage() {
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, TOAST_DURATION_MS);
+  }
+
+  async function reloadCoursesFromServer(accessToken: string) {
+    const rows = await fetchGroceryItems(accessToken);
+    setCourses(rows.map(mapGroceryToCourse));
+  }
+
+  async function addCourseItem(label: string) {
+    if (!token || !label.trim()) return;
+    const trimmed = label.trim();
+    try {
+      const row = await createGroceryItem(trimmed, token);
+      const mapped = mapGroceryToCourse(row);
+      setCourses((prev) => {
+        if (prev.some((c) => c.id === mapped.id)) return prev;
+        if (prev.some((c) => c.label.toLowerCase() === trimmed.toLowerCase() && !c.done)) return prev;
+        return [mapped, ...prev.filter((c) => c.id !== mapped.id)];
+      });
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Impossible d’ajouter l’article');
+    }
+  }
+
+  async function toggleCourseItem(id: number, nextDone: boolean) {
+    if (!token) return;
+    setCourses((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, done: nextDone, delegated: nextDone ? c.delegated : false } : c,
+      ),
+    );
+    try {
+      await patchGroceryItem(id, nextDone ? { done: true } : { done: false, delegated: false }, token);
+    } catch {
+      void reloadCoursesFromServer(token);
+      pushToast('error', 'Synchronisation courses impossible');
+    }
+  }
+
+  async function removeCourseItem(id: number) {
+    if (!token) return;
+    setCourses((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await deleteGroceryItem(id, token);
+    } catch {
+      void reloadCoursesFromServer(token);
+      pushToast('error', 'Suppression impossible');
+    }
+  }
+
+  async function delegateCourseItem(id: number) {
+    if (!token) return;
+    setCourses((prev) => prev.map((c) => (c.id === id ? { ...c, delegated: true, done: false } : c)));
+    try {
+      await patchGroceryItem(id, { delegated: true, done: false }, token);
+    } catch {
+      void reloadCoursesFromServer(token);
+      pushToast('error', 'Délégation impossible');
+    }
+  }
+
+  async function clearDoneCourseItems() {
+    if (!token) return;
+    setCourses((prev) => prev.filter((c) => !c.done));
+    try {
+      await clearDoneGroceryItems(token);
+    } catch {
+      void reloadCoursesFromServer(token);
+      pushToast('error', 'Nettoyage impossible');
+    }
   }
 
   const onExecuteIntentRef = useRef<
@@ -1084,11 +1157,9 @@ export default function HomePage() {
       const pcontact = localStorage.getItem('majordome_partner_contact');
       if (pcontact) setPartnerContactDraft(pcontact);
 
-      const savedCourses = localStorage.getItem('majordome_courses');
       const savedBudget = localStorage.getItem('majordome_budget');
       const savedMeals = localStorage.getItem('majordome_meal_plans');
       const savedMoments = localStorage.getItem('majordome_self_moments');
-      if (savedCourses) setCourses(JSON.parse(savedCourses));
       if (savedBudget) setBudget(JSON.parse(savedBudget));
       if (savedMeals) setMealPlans(JSON.parse(savedMeals));
       if (savedMoments) setSelfMoments(JSON.parse(savedMoments));
@@ -1172,9 +1243,6 @@ export default function HomePage() {
     setPostLoginSetupResolved(true);
   }, [token]);
 
-  useEffect(() => {
-    localStorage.setItem('majordome_courses', JSON.stringify(courses));
-  }, [courses]);
   useEffect(() => {
     localStorage.setItem('majordome_budget', JSON.stringify(budget));
   }, [budget]);
@@ -1386,6 +1454,41 @@ export default function HomePage() {
       } catch {
         /* pas propriétaire ou profil vide : ignoré */
       }
+
+      let groceryRows = await fetchGroceryItems(accessToken).catch(() => []);
+      if (groceryRows.length === 0 && typeof window !== 'undefined') {
+        const legacyRaw = localStorage.getItem('majordome_courses');
+        if (legacyRaw) {
+          try {
+            const arr = JSON.parse(legacyRaw) as unknown[];
+            if (Array.isArray(arr) && arr.length > 0) {
+              let imported = 0;
+              for (const item of arr) {
+                if (!item || typeof item !== 'object') continue;
+                const label =
+                  typeof (item as { label?: string }).label === 'string'
+                    ? (item as { label: string }).label.trim()
+                    : '';
+                if (!label || (item as { done?: boolean }).done) continue;
+                try {
+                  await createGroceryItem(label, accessToken);
+                  imported += 1;
+                } catch {
+                  /* ignore */
+                }
+              }
+              if (imported > 0) {
+                localStorage.removeItem('majordome_courses');
+                pushToast('success', `${imported} article(s) importé(s) vers la liste courses`);
+                groceryRows = await fetchGroceryItems(accessToken);
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      setCourses(groceryRows.map(mapGroceryToCourse));
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de chargement';
       setError(msg);
@@ -1524,10 +1627,7 @@ export default function HomePage() {
       accounts,
       callbacks: {
         onAddCourse: (label) => {
-          setCourses((prev) => {
-            if (prev.some((c) => c.label.toLowerCase() === label.toLowerCase())) return prev;
-            return [...prev, { id: newLocalNumericId(), label, done: false }];
-          });
+          void addCourseItem(label);
         },
         onTaskCreated: (task) => setTasks((prev) => mergeTasksById(prev, [task as TaskItem])),
         onTaskUpdated: (task) =>
@@ -2772,10 +2872,7 @@ export default function HomePage() {
                   setInfo('Aucun ingredient nouveau a ajouter.');
                   return;
                 }
-                setCourses((prev) => [
-                  ...prev,
-                  ...missingToAdd.map((it) => ({ id: newLocalNumericId(), label: it, done: false })),
-                ]);
+                for (const it of missingToAdd) void addCourseItem(it);
                 setInfo('Ingredients ajoutes a Courses.');
               }}
               style={{ borderRadius: 10, border: 'none', background: C.sage, color: '#fff', padding: 8, fontWeight: 700, width: '100%' }}
@@ -2895,7 +2992,6 @@ export default function HomePage() {
           coursesTab={coursesTab}
           setCoursesTab={setCoursesTab}
           courses={courses}
-          setCourses={setCourses}
           newCourse={newCourse}
           setNewCourse={setNewCourse}
           doneCourses={doneCourses}
@@ -2909,10 +3005,14 @@ export default function HomePage() {
           partnerName={familyProfile.partenaire}
           onAddCourse={() => {
             if (!newCourse.trim()) return;
-            setCourses((v) => [...v, { id: newLocalNumericId(), label: newCourse.trim(), done: false }]);
+            void addCourseItem(newCourse.trim());
             setNewCourse('');
             pushToast('success', 'Article ajouté à la liste');
           }}
+          onToggleCourse={(id, nextDone) => void toggleCourseItem(id, nextDone)}
+          onRemoveCourse={(id) => void removeCourseItem(id)}
+          onDelegateCourse={(id) => void delegateCourseItem(id)}
+          onClearDoneCourses={() => void clearDoneCourseItems()}
           pushToast={pushToast}
         />,
       );
@@ -3436,7 +3536,7 @@ export default function HomePage() {
               pushToast('info', 'Déjà présents dans la liste courses.');
               return;
             }
-            setCourses((prev) => [...prev, ...unique.map((label) => ({ id: newLocalNumericId(), label, done: false }))]);
+            for (const label of unique) void addCourseItem(label);
             pushToast('success', `${unique.length} ingrédient(s) ajouté(s) à la liste`);
           }}
         />,

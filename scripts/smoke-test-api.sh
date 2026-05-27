@@ -102,6 +102,15 @@ echo "[smoke] memory facts list"
 MEMORY_FACTS="$(curl -fsS "${API_BASE}/api/v1/memory/facts" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${MEMORY_FACTS}"
 
+echo "[smoke] grocery items"
+GROCERY_LIST="$(curl -fsS "${API_BASE}/api/v1/grocery/items" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${GROCERY_LIST}"
+GROCERY_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/grocery/items" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d '{"label":"Smoke test lait"}')"
+GROCERY_ID="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("label")=="Smoke test lait"; print(p["id"])' <<< "${GROCERY_CREATED}")"
+curl -fsS -X DELETE "${API_BASE}/api/v1/grocery/items/${GROCERY_ID}" -H "${AUTH_HEADER}" >/dev/null
+
 echo "[smoke] partner inbox"
 PARTNER_INBOX="$(curl -fsS "${API_BASE}/api/v1/tasks/partner-inbox" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${PARTNER_INBOX}"

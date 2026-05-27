@@ -52,6 +52,7 @@ from app.models.models import (
     HouseholdDocument,
     HouseholdMemoryFact,
     TaskDelegation,
+    GroceryItem,
 )
 from app.schemas.schemas import (
     HouseholdCreate,
@@ -80,6 +81,9 @@ from app.schemas.schemas import (
     CanonicalEventRead,
     TaskRead,
     TaskSummaryResponse,
+    GroceryItemRead,
+    GroceryItemCreate,
+    GroceryItemPatch,
     RoutineRead,
     OpportunityRead,
     AccountSyncResponse,
@@ -1251,6 +1255,93 @@ def delete_memory_fact(
     row = db.get(HouseholdMemoryFact, fact_id)
     if not row or row.household_id != auth.household_id:
         raise api_error("memory_fact_not_found", "Fait introuvable.", 404)
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/grocery/items", response_model=list[GroceryItemRead])
+def list_grocery_items(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    return (
+        db.query(GroceryItem)
+        .filter(GroceryItem.household_id == auth.household_id)
+        .order_by(GroceryItem.done.asc(), GroceryItem.updated_at.desc(), GroceryItem.id.desc())
+        .limit(500)
+        .all()
+    )
+
+
+@router.post("/grocery/items", response_model=GroceryItemRead)
+def create_grocery_item(
+    payload: GroceryItemCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    label = payload.label.strip()
+    if not label:
+        raise api_error("invalid_grocery_label", "Le libellé est requis.", 400)
+    existing = (
+        db.query(GroceryItem)
+        .filter(
+            GroceryItem.household_id == auth.household_id,
+            GroceryItem.label.ilike(label),
+            GroceryItem.done.is_(False),
+        )
+        .first()
+    )
+    if existing:
+        return existing
+    row = GroceryItem(household_id=auth.household_id, label=label, done=False, delegated=False)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/grocery/items/{item_id}", response_model=GroceryItemRead)
+def patch_grocery_item(
+    item_id: int,
+    payload: GroceryItemPatch,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(GroceryItem, item_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("grocery_item_not_found", "Article introuvable.", 404)
+    data = payload.model_dump(exclude_unset=True)
+    if "label" in data and data["label"] is not None:
+        data["label"] = data["label"].strip()
+        if not data["label"]:
+            raise api_error("invalid_grocery_label", "Le libellé est requis.", 400)
+    for key, value in data.items():
+        setattr(row, key, value)
+    if data.get("done") is True:
+        row.delegated = False
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/grocery/items/done")
+def clear_done_grocery_items(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    (
+        db.query(GroceryItem)
+        .filter(GroceryItem.household_id == auth.household_id, GroceryItem.done.is_(True))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"status": "cleared"}
+
+
+@router.delete("/grocery/items/{item_id}")
+def delete_grocery_item(
+    item_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(GroceryItem, item_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("grocery_item_not_found", "Article introuvable.", 404)
     db.delete(row)
     db.commit()
     return {"status": "deleted"}

@@ -64,7 +64,6 @@ export function CoursesPanel({
   coursesTab,
   setCoursesTab,
   courses,
-  setCourses,
   newCourse,
   setNewCourse,
   doneCourses,
@@ -77,13 +76,16 @@ export function CoursesPanel({
   setFridge,
   partnerName,
   onAddCourse,
+  onToggleCourse,
+  onRemoveCourse,
+  onDelegateCourse,
+  onClearDoneCourses,
   pushToast,
 }: {
   C: Record<string, string>;
   coursesTab: 'liste' | 'frigo' | 'wallet';
   setCoursesTab: (t: 'liste' | 'frigo' | 'wallet') => void;
   courses: CourseItem[];
-  setCourses: React.Dispatch<React.SetStateAction<CourseItem[]>>;
   newCourse: string;
   setNewCourse: (v: string) => void;
   doneCourses: number;
@@ -96,6 +98,10 @@ export function CoursesPanel({
   setFridge: React.Dispatch<React.SetStateAction<FridgeItem[]>>;
   partnerName: string;
   onAddCourse: () => void;
+  onToggleCourse: (id: number, nextDone: boolean) => void;
+  onRemoveCourse: (id: number) => void;
+  onDelegateCourse: (id: number) => void;
+  onClearDoneCourses: () => void;
   pushToast: (kind: 'success' | 'error' | 'info', text: string) => void;
 }) {
   const openCount = courses.filter((c) => !c.done).length;
@@ -194,20 +200,16 @@ export function CoursesPanel({
                 partnerName={partnerName}
                 onToggle={() => {
                   const nextDone = !item.done;
-                  setCourses((v) =>
-                    v.map((c) =>
-                      c.id === item.id ? { ...c, done: nextDone, delegated: nextDone ? c.delegated : false } : c,
-                    ),
-                  );
+                  onToggleCourse(item.id, nextDone);
                   if (nextDone) pushToast('success', `${item.label} — c’est noté`);
                 }}
                 onDelete={() => {
                   if (!window.confirm(`Supprimer « ${item.label} » de la liste ?`)) return;
-                  setCourses((v) => v.filter((c) => c.id !== item.id));
+                  onRemoveCourse(item.id);
                   pushToast('info', 'Article retiré');
                 }}
                 onDelegate={() => {
-                  setCourses((v) => v.map((c) => (c.id === item.id ? { ...c, delegated: true, done: false } : c)));
+                  onDelegateCourse(item.id);
                   pushToast('success', `« ${item.label} » délégué à ${partnerName || 'ton partenaire'}`);
                 }}
               />
@@ -219,7 +221,7 @@ export function CoursesPanel({
               type="button"
               onClick={() => {
                 if (!window.confirm('Retirer tous les articles cochés ?')) return;
-                setCourses((v) => v.filter((c) => !c.done));
+                onClearDoneCourses();
                 pushToast('info', 'Articles cochés retirés');
               }}
               style={{
