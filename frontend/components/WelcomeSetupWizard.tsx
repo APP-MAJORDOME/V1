@@ -3,17 +3,11 @@
 import type { ComponentType } from 'react';
 import { useMemo, useState } from 'react';
 import {
-  IconBellRing,
   IconCalendar,
   IconCheckSmall,
   IconDotsGrid,
-  IconFolderVault,
   IconHome,
-  IconLifebuoy,
-  IconMail,
-  IconMic,
   IconPeopleOutline,
-  IconScale,
   IconSparkleAI,
   IconTarget,
   IconUserHeart,
@@ -21,9 +15,7 @@ import {
 } from './md-icons';
 import type { HomeLayoutConfig } from '../lib/homeLayout';
 import {
-  POST_LOGIN_DENSITY_OPTIONS,
   POST_LOGIN_INTEREST_OPTIONS,
-  type PostLoginDensity,
   type PostLoginInterestId,
   buildHomeLayoutFromPostLoginChoices,
 } from '../lib/postLoginPersonalization';
@@ -44,8 +36,8 @@ const OBJECTIF_CHOICES = [
   'Mieux prendre soin de moi',
 ] as const;
 
-/** 14 étapes (0–13) : bienvenue, profil foyer, tutoriels, personnalisation, récap final. */
-const TOTAL_STEPS = 14;
+/** Onboarding court : 5 étapes max. */
+const TOTAL_STEPS = 5;
 
 type Props = {
   C: Record<string, string>;
@@ -62,11 +54,11 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
   const [step, setStep] = useState(0);
   const [profile, setProfile] = useState<WelcomeFamilyProfile>(() => ({ ...initialProfile }));
   const [interests, setInterests] = useState<Set<PostLoginInterestId>>(() => new Set());
-  const [density, setDensity] = useState<PostLoginDensity>('balanced');
 
   const previewLayout = useMemo(
-    () => buildHomeLayoutFromPostLoginChoices([...interests], density),
-    [interests, density],
+    // Densité fixée à balanced pour garder l’onboarding court.
+    () => buildHomeLayoutFromPostLoginChoices([...interests], 'balanced'),
+    [interests],
   );
 
   function toggleInterest(id: PostLoginInterestId) {
@@ -155,9 +147,8 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
               Bienvenue dans MajorDome
             </h2>
             <p style={{ fontSize: 14, color: C.text2, textAlign: 'center', lineHeight: 1.55, margin: 0, maxWidth: 320 }}>
-              En quelques minutes, on configure <strong>ton foyer</strong>, on te montre <strong>où tout se trouve</strong>, puis on
-              personnalise <strong>ton accueil</strong>. L’objectif : moins de charge mentale, moins d’oublis, et des rappels utiles
-              avec Alfred — souvent <strong>15 à 30 minutes gagnées</strong> par semaine une fois les habitudes prises.
+              En 2 minutes : on configure <strong>ton foyer</strong>, ton <strong>objectif</strong>, et on personnalise l’app.
+              L’objectif : <strong>moins de charge mentale</strong>, moins d’oublis, et des rappels utiles avec Alfred.
             </p>
           </>
         ) : null}
@@ -247,115 +238,14 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
           <>
             <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center', gap: 10 }}>
               <IconHome size={28} color={C.terra} strokeWidth={1.65} />
-              <IconCalendar size={28} color={C.terra} strokeWidth={1.65} />
-              <IconUserHeart size={28} color={C.terra} strokeWidth={1.65} />
+              <IconSparkleAI size={28} color={C.terra} strokeWidth={1.65} />
               <IconDotsGrid size={28} color={C.terra} strokeWidth={1.65} />
+              <IconUserHeart size={28} color={C.terra} strokeWidth={1.65} />
+              <IconCalendar size={28} color={C.terra} strokeWidth={1.65} />
             </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px' }}>Navigation : les 4 onglets</h2>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: C.text2, lineHeight: 1.55, maxWidth: 320 }}>
-              <li><strong style={{ color: C.text }}>Accueil</strong> : vue du jour, modules, tâches, raccourcis.</li>
-              <li><strong style={{ color: C.text }}>Agenda</strong> : événements, repas du jour, synchro calendrier (Google / Apple selon connexions).</li>
-              <li><strong style={{ color: C.text }}>Moi</strong> : ton bien-être, humeur, petits moments pour toi.</li>
-              <li><strong style={{ color: C.text }}>Plus</strong> : tout le reste — coffre, courses, famille, intégrations, réglages.</li>
-            </ul>
-          </>
-        ) : null}
-
-        {step === 5 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-              <IconDotsGrid size={48} color={C.terra} strokeWidth={1.65} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px' }}>L’onglet Plus : tout l’univers</h2>
-            <p style={{ fontSize: 13, color: C.text2, textAlign: 'center', lineHeight: 1.55, margin: '0 0 10px', maxWidth: 320 }}>
-              Ici tu ouvres les <strong>modules</strong> : courses & frigo, coffre documents, famille & équité, courrier IA, routines, wallet,
-              albums, notifications, <strong>intégrations</strong> (Doctolib, ENT en raccourcis web), etc. Tu peux aussi aller aux{' '}
-              <strong>Réglages</strong> pour les connexions compte.
-            </p>
-          </>
-        ) : null}
-
-        {step === 6 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-              <IconBellRing size={44} color={C.terra} strokeWidth={1.65} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px' }}>Personnaliser l’accueil</h2>
-            <p style={{ fontSize: 13, color: C.text2, textAlign: 'center', lineHeight: 1.55, margin: 0, maxWidth: 320 }}>
-              Sur l’accueil, le bouton <strong>« Personnaliser »</strong> te permet de <strong>réordonner les raccourcis</strong> vers les modules
-              et d’<strong>afficher ou masquer des blocs</strong> (équité, budget, humeur, etc.). Tout est mémorisé <strong>sur cet appareil</strong> pour ton
-              compte — tu peux raffiner plus tard.
-            </p>
-          </>
-        ) : null}
-
-        {step === 7 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-              <IconSparkleAI size={48} color={C.terra} strokeWidth={1.45} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px' }}>Alfred, ton assistant</h2>
-            <p style={{ fontSize: 13, color: C.text2, textAlign: 'center', lineHeight: 1.55, margin: 0, maxWidth: 320 }}>
-              Le <strong>bouton flottant</strong> ouvre la conversation : messages, idées, préparation de messages pour le partenaire. Tu peux
-              renommer l’assistant dans Réglages. La <strong>voix temps réel</strong> dépend de la configuration serveur (clé API) — sinon
-              dictée navigateur ou texte.
-            </p>
-            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center' }}>
-              <IconMic size={32} color={C.text2} strokeWidth={1.65} />
-            </div>
-          </>
-        ) : null}
-
-        {step === 8 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-              <IconCalendar size={48} color={C.terra} strokeWidth={1.65} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px' }}>Agenda & synchronisation</h2>
-            <p style={{ fontSize: 13, color: C.text2, textAlign: 'center', lineHeight: 1.55, margin: 0, maxWidth: 320 }}>
-              Connecte <strong>Google Calendar</strong> ou <strong>Apple Calendar</strong> (CalDAV) depuis Réglages pour que les événements
-              remontent dans l’app. Tu peux aussi créer des événements « app seulement ». Les tâches du <strong>foyer</strong> sont synchronisées avec le
-              serveur quand tu es connecté·e.
-            </p>
-          </>
-        ) : null}
-
-        {step === 9 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', gap: 12 }}>
-              <IconFolderVault size={40} color={C.terra} strokeWidth={1.65} />
-              <IconMail size={40} color={C.terra} strokeWidth={1.65} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px' }}>Coffre & courrier</h2>
-            <p style={{ fontSize: 13, color: C.text2, textAlign: 'center', lineHeight: 1.55, margin: 0, maxWidth: 320 }}>
-              Le <strong>coffre famille</strong> centralise contrats, santé, identité (pièces jointes chiffrées côté serveur). Le{' '}
-              <strong>courrier IA</strong> aide à traiter école / admin. Tu retrouves tout depuis <strong>Plus</strong> ou les raccourcis de l’accueil.
-            </p>
-          </>
-        ) : null}
-
-        {step === 10 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', gap: 12 }}>
-              <IconScale size={40} color={C.terra} strokeWidth={1.65} />
-              <IconLifebuoy size={40} color={typeof C.red === 'string' ? C.red : '#E05C5C'} strokeWidth={1.55} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 8px' }}>Équité & délégation</h2>
-            <p style={{ fontSize: 13, color: C.text2, textAlign: 'center', lineHeight: 1.55, margin: 0, maxWidth: 320 }}>
-              Visualise la <strong>charge</strong>, lance le mode <strong>« Je suis débordée »</strong> pour trier les tâches avec Alfred, et préviens le partenaire
-              quand c’est prêt. L’objectif affiché plus tôt guide les suggestions dans l’app.
-            </p>
-          </>
-        ) : null}
-
-        {step === 11 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-              <IconDotsGrid size={48} color={C.terra} strokeWidth={1.65} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 6px' }}>Tes sujets du moment</h2>
+            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 6px' }}>Tes priorités (pour personnaliser)</h2>
             <p style={{ fontSize: 12, color: C.text2, textAlign: 'center', margin: '0 0 14px', lineHeight: 1.45 }}>
-              On adapte les <strong>raccourcis modules</strong> et certains <strong>blocs</strong> de l’accueil. Tu pourras tout modifier dans « Personnaliser ».
+              On adapte les <strong>raccourcis</strong> et le contenu de l’accueil. Tu pourras tout modifier plus tard.
             </p>
             <div style={{ width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {POST_LOGIN_INTEREST_OPTIONS.map((opt) => {
@@ -392,95 +282,12 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
                 );
               })}
             </div>
-          </>
-        ) : null}
-
-        {step === 12 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-              <IconTarget size={48} color={C.terra} strokeWidth={1.5} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 6px' }}>Densité de l’accueil</h2>
-            <p style={{ fontSize: 12, color: C.text2, textAlign: 'center', margin: '0 0 14px', lineHeight: 1.45 }}>
-              Choisis combien d’informations tu veux voir d’un coup sur la page d’accueil.
-            </p>
-            <div style={{ width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {POST_LOGIN_DENSITY_OPTIONS.map((opt) => {
-                const on = density === opt.id;
-                return (
-                  <button
-                    type="button"
-                    key={opt.id}
-                    onClick={() => setDensity(opt.id)}
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: 14,
-                      border: `1.5px solid ${on ? C.terra : C.border}`,
-                      background: on ? C.terraXL : C.white,
-                      fontSize: 14,
-                      color: C.text,
-                      fontWeight: on ? 700 : 500,
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span style={{ display: 'block' }}>{opt.label}</span>
-                    <span style={{ display: 'block', fontSize: 11, color: C.text2, fontWeight: 500, marginTop: 4 }}>{opt.hint}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
-
-        {step === 13 ? (
-          <>
-            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-              <IconSparkleAI size={48} color={C.terra} strokeWidth={1.45} />
-            </div>
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.text, textAlign: 'center', margin: '0 0 10px' }}>Récap & c’est parti</h2>
-            <div
-              style={{
-                width: '100%',
-                maxWidth: 340,
-                padding: 14,
-                borderRadius: 16,
-                border: `1px solid ${C.border}`,
-                background: C.white,
-                fontSize: 12,
-                color: C.text2,
-                lineHeight: 1.5,
-              }}
-            >
-              <div>
-                <strong style={{ color: C.text }}>Toi :</strong> {profile.prenom || '—'}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <strong style={{ color: C.text }}>Foyer :</strong> {profile.partenaire || '—'} · enfant(s) : {profile.enfant || '—'}{' '}
-                {profile.ageEnfant ? `(${profile.ageEnfant})` : ''}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <strong style={{ color: C.text }}>Objectif :</strong> {profile.objectif || '—'}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <strong style={{ color: C.text }}>Densité :</strong> {POST_LOGIN_DENSITY_OPTIONS.find((d) => d.id === density)?.label ?? density}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <strong style={{ color: C.text }}>Sujets :</strong>{' '}
-                {interests.size === 0
-                  ? 'Par défaut'
-                  : [...interests]
-                      .map((id) => POST_LOGIN_INTEREST_OPTIONS.find((o) => o.id === id)?.label)
-                      .filter(Boolean)
-                      .join(' · ')}
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <strong style={{ color: C.text }}>Raccourcis :</strong> {previewLayout.hubShortcuts.length} tuiles sur l’accueil
+            <div style={{ marginTop: 14, width: '100%', maxWidth: 340, padding: 12, borderRadius: 16, background: C.white, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>À faire ensuite (recommandé)</div>
+              <div style={{ marginTop: 6, fontSize: 12, color: C.text2, lineHeight: 1.5 }}>
+                Connecte ton agenda (Google/Apple) dans <a href="/settings" style={{ color: C.terra, fontWeight: 800, textDecoration: 'none' }}>Paramètres → Connexions</a> pour que l’app se remplisse automatiquement.
               </div>
             </div>
-            <p style={{ fontSize: 11, color: C.text3, textAlign: 'center', marginTop: 12, maxWidth: 300, lineHeight: 1.45 }}>
-              Tout est enregistré sur cet appareil pour ton compte. Tu peux encore tout ajuster dans l’app.
-            </p>
           </>
         ) : null}
       </div>
@@ -500,7 +307,7 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
               fontSize: 12,
             }}
           >
-            Passer tout (profil + disposition par défaut)
+            Passer (garder un accueil par défaut)
           </button>
         ) : null}
         <div style={{ display: 'flex', gap: 10 }}>

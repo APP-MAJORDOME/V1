@@ -52,9 +52,11 @@ export function BottomTabBar({
             <button
               key={tab.id}
               type="button"
+              className="ui-press"
               aria-current={on ? 'page' : undefined}
               onClick={() => onSelect(tab.id)}
               style={{
+                transition: 'transform var(--duration-fast) ease',
                 background: 'transparent',
                 border: 'none',
                 cursor: 'pointer',

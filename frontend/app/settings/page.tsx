@@ -16,32 +16,21 @@ type MemoryFactRow = { id: number; fact_text: string };
 const C = {
   bg: '#FEF9F5',
   white: '#FFFFFF',
+  surface: '#FFF5F0',
   surface2: '#F5EDE8',
+  surface3: '#EDE3DE',
   terra: '#D96B52',
   terraXL: '#FDEAE5',
+  lilac: '#B49BD1',
+  lilacL: '#F0EBFA',
   text: '#2C1F1A',
   text2: '#9A8882',
   text3: '#C8BAB5',
   border: '#EDE3DE',
   green: '#5BAA8A',
   red: '#E05C5C',
+  redL: '#FDEAEA',
 };
-
-function StatusBar() {
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(id);
-  }, []);
-  const hh = now.getHours().toString().padStart(2, '0');
-  const mm = now.getMinutes().toString().padStart(2, '0');
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 24px 4px', color: C.text }}>
-      <span style={{ fontSize: 15, fontWeight: 700 }}>{hh}:{mm}</span>
-      <span style={{ fontSize: 11, color: C.text2 }}>Paramètres</span>
-    </div>
-  );
-}
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'connexions' | 'compte' | 'securite'>('connexions');
@@ -300,37 +289,58 @@ export default function SettingsPage() {
 
   return (
     <>
-      <style>{`*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body{overscroll-behavior-y:none;}::-webkit-scrollbar{display:none;}`}</style>
-      <div style={{ width: '100%', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#E8DDD8', padding: '24px 16px' }}>
-        <div style={{ width: 390, height: 844, background: C.bg, borderRadius: 52, overflow: 'hidden', border: '10px solid #D4C8C2', boxShadow: '0 40px 80px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          <div style={{ position: 'relative' }}>
-            <StatusBar />
-            <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 110, height: 30, background: '#D4C8C2', borderBottomLeftRadius: 18, borderBottomRightRadius: 18 }} />
-          </div>
-
-          <div style={{ padding: '8px 14px', display: 'flex', justifyContent: 'space-between' }}>
-            <a href="/" style={{ color: C.terra, fontSize: 12, fontWeight: 700 }}>Retour accueil</a>
-            <span style={{ fontSize: 12, color: token ? C.green : C.text3 }}>{token ? 'Session active' : 'Session inactive'}</span>
-          </div>
-
-          <div style={{ flex: 1, height: '100%', overflowY: 'auto', padding: '8px 14px 0', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
-            <div style={{ background: C.white, borderRadius: 18, padding: 12, marginBottom: 10 }}>
-              <strong style={{ color: C.text }}>Paramètres et connexions</strong>
-              <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ fontSize: 10, background: C.terraXL, color: C.terra, padding: '4px 8px', borderRadius: 14 }}>
-                  {readyServicesCount}/4 services prets (agendas + Alfred serveur)
-                </span>
-                <span style={{ fontSize: 10, background: '#fff5f8', color: C.text2, padding: '4px 8px', borderRadius: 14 }}>{doctolibSummary?.count || 0} RDV Doctolib</span>
-              </div>
+      <div style={{ minHeight: '100vh', background: C.bg }}>
+        <div style={{ maxWidth: 760, margin: '0 auto', padding: '16px 14px 120px' }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, color: C.text2, fontWeight: 800, letterSpacing: 0.4 }}>PARAMÈTRES</div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: C.text, marginTop: 4, lineHeight: 1.15 }}>Compte & connexions</div>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <a href="/" style={{ color: C.terra, fontSize: 12, fontWeight: 800, textDecoration: 'none' }}>← Retour</a>
+              <span style={{ fontSize: 11, padding: '6px 10px', borderRadius: 999, background: token ? '#E8F6EF' : C.surface2, color: token ? C.green : C.text3, border: `1px solid ${C.border}` }}>
+                {token ? 'Session active' : 'Session inactive'}
+              </span>
+            </div>
+          </header>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
-              {(['connexions', 'compte', 'securite'] as const).map((tab) => (
-                <button key={tab} onClick={() => setActiveTab(tab)} style={{ border: 'none', borderRadius: 12, padding: '8px 6px', background: activeTab === tab ? C.terra : C.white, color: activeTab === tab ? '#fff' : C.text2, fontSize: 11, fontWeight: 700 }}>
+          <div style={{ background: C.white, borderRadius: 18, padding: 12, marginBottom: 10, border: `1px solid ${C.border}` }}>
+            <strong style={{ color: C.text }}>Progression de configuration</strong>
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontSize: 10, background: C.terraXL, color: C.terra, padding: '4px 8px', borderRadius: 14 }}>
+                {readyServicesCount}/4 services prêts (agendas + Alfred serveur)
+              </span>
+              <span style={{ fontSize: 10, background: C.lilacL, color: C.text2, padding: '4px 8px', borderRadius: 14, border: `1px solid ${C.lilac}33` }}>
+                {doctolibSummary?.count || 0} RDV Doctolib détectés
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 12 }}>
+            {(['connexions', 'compte', 'securite'] as const).map((tab) => {
+              const on = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    border: `1.5px solid ${on ? C.terra : C.border}`,
+                    borderRadius: 999,
+                    padding: '10px 8px',
+                    background: on ? C.terra : C.white,
+                    color: on ? '#fff' : C.text2,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    minHeight: 44,
+                  }}
+                >
                   {tab === 'connexions' ? 'Connexions' : tab === 'compte' ? 'Compte' : 'Sécurité'}
                 </button>
-              ))}
-            </div>
+              );
+            })}
+          </div>
 
             {activeTab === 'connexions' ? (
               <>
@@ -348,10 +358,8 @@ export default function SettingsPage() {
 
                 <Card title="Apple Calendar">
                   {appleIntegration && !appleIntegration.configured ? (
-                    <p style={{ fontSize: 11, color: C.red, margin: '0 0 8px', lineHeight: 1.45, fontWeight: 700 }}>
-                      {
-                        "Ce serveur n'a pas le module Python « caldav » : la synchro Apple est indisponible. Sur la machine qui héberge l'API : pip install -r requirements.txt puis redémarrage."
-                      }
+                    <p style={{ fontSize: 11, color: C.red, margin: '0 0 8px', lineHeight: 1.45, fontWeight: 800 }}>
+                      Synchro Apple indisponible : le serveur n’est pas encore configuré pour CalDAV.
                     </p>
                   ) : (
                     <p style={{ fontSize: 10, color: C.text3, margin: '0 0 8px', lineHeight: 1.45 }}>
@@ -359,7 +367,7 @@ export default function SettingsPage() {
                     </p>
                   )}
                   <div style={{ display: 'grid', gap: 6 }}>
-                    <Input value={appleId} onChange={setAppleId} placeholder="Apple ID" />
+                    <Input value={appleId} onChange={setAppleId} placeholder="Apple ID (ex: a***@icloud.com)" type="email" />
                     <Input value={appleAppPassword} onChange={setAppleAppPassword} placeholder="Mot de passe app" type="password" />
                     <Input value={appleCalendarUrl} onChange={setAppleCalendarUrl} placeholder="URL calendrier (optionnel)" />
                   </div>
@@ -487,20 +495,12 @@ export default function SettingsPage() {
             ) : null}
 
             {loading ? <p style={{ color: C.text2, fontSize: 11 }}>Chargement...</p> : null}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '10px 6px 24px', background: C.white, borderTop: `1px solid ${C.border}` }}>
-            <a href="/" style={{ textDecoration: 'none', fontSize: 11, color: C.text3 }}>☀️ Accueil</a>
-            <span style={{ fontSize: 11, color: C.terra, fontWeight: 700 }}>⚙️ Paramètres</span>
-            <a href="/settings#connexions" style={{ textDecoration: 'none', fontSize: 11, color: C.text3 }}>🔌 Connexions</a>
-          </div>
-
-          {error || info ? null : null}
           {toasts.length > 0 ? (
-            <div style={{ position: 'absolute', left: 24, right: 24, top: 54, display: 'grid', gap: 8, pointerEvents: 'none', zIndex: 30 }}>
+            <div style={{ position: 'fixed', left: 14, right: 14, top: 14, display: 'grid', gap: 8, pointerEvents: 'none', zIndex: 60, maxWidth: 760, margin: '0 auto' }}>
               {toasts.map((t) => (
                 <div
                   key={t.id}
+                  className="ui-toast-in"
                   style={{
                     borderRadius: 16,
                     padding: '12px 14px',
@@ -508,7 +508,7 @@ export default function SettingsPage() {
                     border: `1px solid ${t.kind === 'success' ? C.green : t.kind === 'error' ? C.red : C.terra}55`,
                     color: t.kind === 'success' ? C.green : t.kind === 'error' ? C.red : C.terra,
                     fontSize: 12,
-                    fontWeight: 700,
+                    fontWeight: 800,
                     textAlign: 'center',
                     boxShadow: '0 12px 28px rgba(0,0,0,0.12)',
                     backdropFilter: 'blur(8px)',
@@ -536,12 +536,35 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function Btn({ children, onClick, light, disabled }: { children: React.ReactNode; onClick?: () => void; light?: boolean; disabled?: boolean }) {
   return (
-    <button onClick={onClick} disabled={disabled} style={{ border: 'none', borderRadius: 10, padding: '8px 10px', background: light ? C.surface2 : C.terra, color: light ? C.text : '#fff', fontSize: 11, fontWeight: 700 }}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        border: 'none',
+        borderRadius: 12,
+        padding: '10px 12px',
+        minHeight: 44,
+        background: light ? C.surface2 : C.terra,
+        color: light ? C.text : '#fff',
+        fontSize: 12,
+        fontWeight: 800,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
       {children}
     </button>
   );
 }
 
 function Input({ value, onChange, placeholder, type = 'text' }: { value: string; onChange: (v: string) => void; placeholder: string; type?: string }) {
-  return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} type={type} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }} />;
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      type={type}
+      style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', fontSize: 13, minHeight: 44, background: C.white }}
+    />
+  );
 }

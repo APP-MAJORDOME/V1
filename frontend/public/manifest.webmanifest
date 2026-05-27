@@ -1,0 +1,25 @@
+{
+  "name": "MajorDome",
+  "short_name": "MajorDome",
+  "description": "Ton majordome numérique pour réduire la charge mentale familiale.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F0E8",
+  "theme_color": "#C96B4A",
+  "lang": "fr",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/majordome-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/majordome-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

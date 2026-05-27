@@ -43,6 +43,86 @@ body {
   font-size: var(--font-body);
   background: var(--color-bg-base);
   color: var(--color-text-main);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Coque app : plein écran sur mobile réel, cadre démo sur desktop */
+.app-outer {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #e8ddd8;
+  padding: 24px 16px;
+}
+
+.app-device {
+  width: 390px;
+  height: 844px;
+  max-height: calc(100dvh - 48px);
+  border-radius: 52px;
+  overflow: hidden;
+  border: 10px solid #d4c8c2;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+@media (max-width: 640px) {
+  .app-outer {
+    padding: 0;
+    background: var(--color-bg-base);
+    align-items: stretch;
+  }
+
+  .app-device {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  .app-logo-fixed {
+    display: none !important;
+  }
+}
+
+/* Micro-interactions */
+.ui-press:active {
+  transform: scale(0.97);
+}
+
+.ui-check-flash {
+  animation: checkFlash var(--duration-base) ease;
+}
+
+.ui-toast-in {
+  animation: toastIn var(--duration-base) ease;
+}
+
+@keyframes checkFlash {
+  0% {
+    background-color: #e8f6ef;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -100,6 +100,10 @@ import { RecettesPanel } from '../components/RecettesPanel';
 import { CourrierPanel } from '../components/CourrierPanel';
 import { AlbumsPanel } from '../components/AlbumsPanel';
 import { RoutinesPanel } from '../components/RoutinesPanel';
+import { CoursesPanel } from '../components/CoursesPanel';
+import { AlfredChatPanel, type AlfredMessage } from '../components/AlfredChatPanel';
+import { CollapsibleSection } from '../components/CollapsibleSection';
+import { inferAlfredActions } from '../lib/alfredSuggestions';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -700,7 +704,7 @@ export default function HomePage() {
   const [editEnd, setEditEnd] = useState('');
   const [editExpectedUpdatedAt, setEditExpectedUpdatedAt] = useState('');
   const [homeMood, setHomeMood] = useState<number | null>(null);
-  const [courses, setCourses] = useState<Array<{ id: number; label: string; done: boolean }>>([
+  const [courses, setCourses] = useState<Array<{ id: number; label: string; done: boolean; delegated?: boolean }>>([
     { id: 1, label: 'Lardons', done: false },
     { id: 2, label: 'Crème fraîche', done: false },
     { id: 3, label: 'Tomates', done: true },
@@ -710,6 +714,7 @@ export default function HomePage() {
   const [morningDone, setMorningDone] = useState([true, false, false]);
   const [eveningDone, setEveningDone] = useState([false, false, false]);
   const [moiMood, setMoiMood] = useState(3);
+  const [budgetEditing, setBudgetEditing] = useState(false);
   const [sleep, setSleep] = useState(7);
   const [budget, setBudget] = useState<BudgetItem[]>([
     { id: 'courses', label: 'Courses', spent: 0, budget: 400, color: C.sage },
@@ -788,8 +793,8 @@ export default function HomePage() {
   /** null = chargement du statut serveur ; false = pas de MAJORDOME_LLM_API_KEY côté API */
   const [realtimeVoiceOk, setRealtimeVoiceOk] = useState<boolean | null>(null);
   const [aiName, setAiName] = useState('Alfred');
-  const [assistantHistory, setAssistantHistory] = useState<Array<{ who: 'ai' | 'user'; text: string }>>([
-    { who: 'ai', text: "Coucou, je suis Alfred. Dis-moi ce que je dois gerer pour toi." },
+  const [assistantHistory, setAssistantHistory] = useState<AlfredMessage[]>([
+    { who: 'ai', text: "Coucou, je suis Alfred. Dis-moi ce que je dois gérer pour toi." },
   ]);
   const [toasts, setToasts] = useState<UiToast[]>([]);
   const [taskAssignBusyId, setTaskAssignBusyId] = useState<number | null>(null);
@@ -1391,6 +1396,30 @@ export default function HomePage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [token, onboardingDone, postLoginSetupDone, toggleGlobalSearch]);
 
+  useEffect(() => {
+    if (!clientReady) return;
+    const overlayTitles: Partial<Record<OverlayId, string>> = {
+      courses: 'Courses & Frigo',
+      documents: 'Coffre famille',
+      assistant: aiName,
+      plus: 'Modules',
+      routines: 'Routines',
+      recettes: 'Recettes',
+      courrier: 'Courrier IA',
+      famille: 'Famille & équité',
+      integrations: 'Intégrations',
+    };
+    const tabTitles: Record<MainTab, string> = {
+      home: "Aujourd'hui",
+      alfred: aiName,
+      modules: 'Modules',
+      moi: 'Moi',
+      agenda: 'Agenda',
+    };
+    const title = overlay ? overlayTitles[overlay] ?? 'MajorDome' : tabTitles[mainTab] ?? 'MajorDome';
+    document.title = `${title} — MajorDome`;
+  }, [clientReady, overlay, mainTab, aiName]);
+
   async function loadData(accessToken: string) {
     setLoading(true);
     setError('');
@@ -1657,7 +1686,30 @@ export default function HomePage() {
       toStr((proposal as { member_name?: unknown }).member_name) ||
       toStr((proposal as { assigned_to?: unknown }).assigned_to);
 
-    if (interpreted.intent === 'task_create' || lowered.startsWith('ajoute ') || lowered.includes('rajoute')) {
+    const isGrocery =
+      lowered.includes('liste de courses') ||
+      lowered.includes('liste courses') ||
+      (lowered.includes('courses') && (lowered.includes('ajoute') || lowered.includes('rajoute'))) ||
+      (lowered.includes('liste') && (lowered.includes('ajoute') || lowered.includes('rajoute')));
+
+    if (isGrocery) {
+      const itemLabel =
+        titleFromProposal ||
+        (() => {
+          const m = command.match(/ajoute(?:r)?\s+(.+?)(?:\s+(?:à|a)\s+la\s+liste|\s*$)/i);
+          return m?.[1]?.trim() ?? '';
+        })() ||
+        command.replace(/^(ajoute|rajoute)\s+/i, '').trim().slice(0, 80);
+      if (itemLabel.length >= 2) {
+        setCourses((prev) => {
+          if (prev.some((c) => c.label.toLowerCase() === itemLabel.toLowerCase())) return prev;
+          return [...prev, { id: newLocalNumericId(), label: itemLabel, done: false }];
+        });
+        return { done: true, message: `« ${itemLabel} » ajouté à ta liste de courses.` };
+      }
+    }
+
+    if (interpreted.intent === 'task_create' || (lowered.startsWith('ajoute ') && !isGrocery) || (lowered.includes('rajoute') && !isGrocery)) {
       const created = await postJson<TaskItem>('/api/v1/tasks', { title, task_type: 'manual_task' }, token);
       setTasks((prev) => mergeTasksById(prev, [created]));
       void refreshTaskSummary({ trackBusy: false });
@@ -1719,9 +1771,9 @@ export default function HomePage() {
     return { done: false };
   }
 
-  async function sendAssistant() {
-    if (!token || !assistantInput.trim()) return;
-    const text = assistantInput.trim();
+  async function sendAssistant(overrideText?: string) {
+    const text = (overrideText ?? assistantInput).trim();
+    if (!token || !text) return;
     const memNote = tryExtractAlfredMemory(text);
     setAssistantHistory((m) => [...m, { who: 'user', text }]);
     setAssistantInput('');
@@ -1742,7 +1794,8 @@ export default function HomePage() {
         aiText = `${aiText}\n\n${execution.message}`.trim();
       }
       if (!aiText.trim()) aiText = `${res.intent} (${res.mode})`;
-      setAssistantHistory((m) => [...m, { who: 'ai', text: aiText }]);
+      const actions = inferAlfredActions(aiText, execution.done);
+      setAssistantHistory((m) => [...m, { who: 'ai', text: aiText, actions: actions.length > 0 ? actions : undefined }]);
       if (memNote) {
         setAlfredMemory((prev) => (prev.includes(memNote) ? prev : [...prev, memNote]));
       pushToast('info', 'Alfred a mémorisé une note');
@@ -3086,7 +3139,7 @@ export default function HomePage() {
               </label>
               {appleConnected && appleCaldavAvailable === false ? (
                 <div style={{ fontSize: 11, color: C.sun, lineHeight: 1.4, padding: '6px 8px', borderRadius: 10, background: '#FFF8E6', border: `1px solid ${C.border}` }}>
-                  Apple : ce serveur n’a pas le module « caldav » — événements seulement dans l’app (voir Paramètres → Connexions).
+                  Apple : synchronisation indisponible sur ce serveur — événements seulement dans l’app (voir Paramètres → Connexions).
                 </div>
               ) : null}
               <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
@@ -3268,153 +3321,31 @@ export default function HomePage() {
     if (layer === 'courses') {
       return wrapOv(
         'Courses & Frigo',
-        <div style={{ padding: '14px 18px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
-            {(['liste', 'frigo', 'wallet'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setCoursesTab(tab)}
-                style={{ border: 'none', borderRadius: 12, padding: '8px 6px', background: coursesTab === tab ? C.terra : C.white, color: coursesTab === tab ? '#fff' : C.text2, fontSize: 10, fontWeight: 700 }}
-              >
-                {tab === 'liste' ? 'Liste' : tab === 'frigo' ? 'Frigo' : 'Wallet'}
-              </button>
-            ))}
-          </div>
-          {coursesTab === 'liste' ? (
-            <>
-          <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <label htmlFor="new-course-input" className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>
-                Ajouter un article
-              </label>
-              <input id="new-course-input" value={newCourse} onChange={(e) => setNewCourse(e.target.value)} placeholder="Ajouter un article…" style={{ flex: 1, borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, fontSize: 16 }} />
-              <button
-                type="button"
-                aria-label="Ajouter à la liste de courses"
-                onClick={() => {
-                  if (!newCourse.trim()) return;
-                  setCourses((v) => [...v, { id: newLocalNumericId(), label: newCourse.trim(), done: false }]);
-                  setNewCourse('');
-                  pushToast('success', 'Article ajouté à la liste');
-                }}
-                style={{ borderRadius: 10, border: 'none', background: C.terra, color: '#fff', padding: '0 12px' }}
-              >
-                +
-              </button>
-            </div>
-          </GlassCard>
-          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.sageL }}>
-            <strong style={{ fontSize: 12 }}>Panier: {doneCourses}/{courses.length}</strong>
-          </GlassCard>
-          {courses.map((item) => (
-            <GlassCard key={item.id} style={{ padding: 12, marginBottom: 8, background: item.done ? C.greenL : C.white }}>
-              <button onClick={() => setCourses((v) => v.map((c) => (c.id === item.id ? { ...c, done: !c.done } : c)))} style={{ display: 'flex', width: '100%', border: 'none', background: 'transparent', textAlign: 'left' }}>
-                <span style={{ flex: 1, color: item.done ? C.green : C.text }}>{item.label}</span>
-                <span style={{ width: 18, display: 'flex', justifyContent: 'center' }}>{item.done ? <IconCheckSmall size={14} color={C.green} /> : <IconCircleOutline size={14} color={C.text3} />}</span>
-              </button>
-            </GlassCard>
-          ))}
-            </>
-          ) : null}
-          {coursesTab === 'frigo' ? (
-            <>
-              <GlassCard
-                style={{
-                  padding: 12,
-                  marginBottom: 10,
-                  background: fridgeExpiredCount > 0 ? C.redL : fridgeAlerts.length > 0 ? '#FFF4E8' : C.greenL,
-                }}
-              >
-                <strong style={{ fontSize: 12, color: fridgeExpiredCount > 0 ? C.red : fridgeAlerts.length > 0 ? C.sun : C.green }}>
-                  {fridgeExpiredCount > 0
-                    ? `${fridgeExpiredCount} produit(s) périmé(s)`
-                    : fridgeAlerts.length > 0
-                      ? `${fridgeAlerts.length} alerte(s) DLC`
-                      : 'Aucune alerte DLC'}
-                </strong>
-              </GlassCard>
-              {fridgeSorted.map((f) => {
-                const tone = fridgeExpiryTone(f.expires_at);
-                const toneColor = tone === 'expired' ? C.red : tone === 'urgent' ? C.red : tone === 'soon' ? C.sun : C.green;
-                return (
-                <GlassCard key={f.id} style={{ padding: 12, marginBottom: 8, border: tone === 'expired' ? `1.5px solid ${C.red}` : undefined }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700 }}>
-                        {tone === 'expired' ? '⚠️ ' : ''}{f.label}
-                      </div>
-                      <div style={{ fontSize: 11, color: toneColor }}>
-                        DLC: {new Date(f.expires_at).toLocaleDateString('fr-FR')} · Qté: {f.qty}
-                        {tone === 'expired' ? ' · Périmé' : ''}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`Retirer ${f.label} du frigo`}
-                      onClick={() => {
-                        if (!window.confirm(`Retirer « ${f.label} » du frigo ?`)) return;
-                        setFridge((prev) => prev.filter((x) => x.id !== f.id));
-                        pushToast('info', `${f.label} retiré du frigo`);
-                      }}
-                      style={{ border: 'none', background: C.terraXL, color: C.terra, borderRadius: 8, padding: '4px 8px' }}
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                </GlassCard>
-              );
-              })}
-            </>
-          ) : null}
-          {coursesTab === 'wallet' ? (
-            <>
-              <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <IconWallet size={15} color={C.text} strokeWidth={1.65} />
-                  Cartes fidélité
-                </div>
-                {walletCards.map((c) => (
-                  <div key={c.id} style={{ borderRadius: 14, background: c.color, color: '#fff', padding: 12, marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{c.brand}</div>
-                    <div style={{ fontSize: 11 }}>{c.points} points</div>
-                  </div>
-                ))}
-              </GlassCard>
-              <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <IconCoupon size={15} color={C.text} strokeWidth={1.65} />
-                  Coupons actifs ({activeCoupons.length})
-                </div>
-                {activeCoupons.length === 0 ? (
-                  <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>Aucun coupon actif.</p>
-                ) : (
-                  activeCoupons.map((c) => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${C.border}`, padding: '8px 0' }}>
-                      <div>
-                        <div style={{ fontSize: 12 }}>{c.label}</div>
-                        <div style={{ fontSize: 10, color: C.text2 }}>Expire: {new Date(c.expires_at).toLocaleDateString('fr-FR')}</div>
-                      </div>
-                      <Pill bg={C.terraXL} color={C.terra}>{c.discount}</Pill>
-                    </div>
-                  ))
-                )}
-                {expiredCoupons.length > 0 ? (
-                  <details style={{ marginTop: 10 }}>
-                    <summary style={{ fontSize: 11, color: C.text2, cursor: 'pointer' }}>
-                      {expiredCoupons.length} coupon(s) expiré(s)
-                    </summary>
-                    {expiredCoupons.map((c) => (
-                      <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', opacity: 0.65 }}>
-                        <div style={{ fontSize: 11 }}>{c.label}</div>
-                        <span style={{ fontSize: 10, color: C.text3 }}>{new Date(c.expires_at).toLocaleDateString('fr-FR')}</span>
-                      </div>
-                    ))}
-                  </details>
-                ) : null}
-              </GlassCard>
-            </>
-          ) : null}
-        </div>,
+        <CoursesPanel
+          C={C}
+          coursesTab={coursesTab}
+          setCoursesTab={setCoursesTab}
+          courses={courses}
+          setCourses={setCourses}
+          newCourse={newCourse}
+          setNewCourse={setNewCourse}
+          doneCourses={doneCourses}
+          fridgeSorted={fridgeSorted}
+          fridgeAlertsCount={fridgeAlerts.length}
+          fridgeExpiredCount={fridgeExpiredCount}
+          activeCoupons={activeCoupons}
+          expiredCoupons={expiredCoupons}
+          walletCards={walletCards}
+          setFridge={setFridge}
+          partnerName={familyProfile.partenaire}
+          onAddCourse={() => {
+            if (!newCourse.trim()) return;
+            setCourses((v) => [...v, { id: newLocalNumericId(), label: newCourse.trim(), done: false }]);
+            setNewCourse('');
+            pushToast('success', 'Article ajouté à la liste');
+          }}
+          pushToast={pushToast}
+        />,
       );
     }
 
@@ -3639,42 +3570,93 @@ export default function HomePage() {
             Moi d&apos;abord
           </h2>
           <GlassCard style={{ padding: 12, marginBottom: 10, background: C.lilacL }}>
-            <div style={{ fontSize: 11, color: C.text2, marginBottom: 6 }}>Humeur du jour</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              {['😴', '😟', '😐', '🙂', '😄'].map((m, i) => (
-                <button key={m} onClick={() => setMoiMood(i)} style={{ border: 'none', background: moiMood === i ? C.white : 'transparent', borderRadius: 10, padding: '6px 8px' }}>
-                  {m}
+            <div style={{ fontSize: 11, color: C.text2, marginBottom: 8 }}>Humeur du jour</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+              {(
+                [
+                  { emoji: '😴', label: 'Épuisée' },
+                  { emoji: '😟', label: 'Stressée' },
+                  { emoji: '😐', label: 'Ok' },
+                  { emoji: '🙂', label: 'Bien' },
+                  { emoji: '😄', label: 'Super' },
+                ] as const
+              ).map((m, i) => (
+                <button
+                  key={m.emoji}
+                  type="button"
+                  aria-label={m.label}
+                  onClick={() => {
+                    setMoiMood(i);
+                    pushToast('success', 'Humeur enregistrée ✓');
+                  }}
+                  style={{
+                    border: 'none',
+                    background: moiMood === i ? C.white : 'transparent',
+                    borderRadius: 12,
+                    padding: '8px 6px',
+                    flex: 1,
+                    cursor: 'pointer',
+                    boxShadow: moiMood === i ? `0 0 0 2px ${C.lilac}` : 'none',
+                  }}
+                >
+                  <div style={{ fontSize: 32, lineHeight: 1 }}>{m.emoji}</div>
+                  <div style={{ fontSize: 9, color: C.text2, marginTop: 4, fontWeight: 600 }}>{m.label}</div>
                 </button>
               ))}
             </div>
           </GlassCard>
           <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-            <div style={{ fontSize: 12, marginBottom: 6 }}>Sommeil: {sleep}h</div>
-            <input type="range" min={3} max={11} step={0.5} value={sleep} onChange={(e) => setSleep(Number(e.target.value))} style={{ width: '100%' }} />
+            <label htmlFor="sleep-range" style={{ fontSize: 12, marginBottom: 6, display: 'block' }}>
+              Sommeil : <strong>{sleep}h</strong>
+            </label>
+            <input
+              id="sleep-range"
+              type="range"
+              min={3}
+              max={11}
+              step={0.5}
+              value={sleep}
+              onChange={(e) => setSleep(Number(e.target.value))}
+              aria-valuemin={3}
+              aria-valuemax={11}
+              aria-valuenow={sleep}
+              style={{ width: '100%' }}
+            />
           </GlassCard>
-          <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <IconMoon size={15} color={C.text2} strokeWidth={1.65} />
-              Cycle menstruel
+          <CollapsibleSection title="Mon cycle" C={C}>
+            <div style={{ fontSize: 11, color: C.text2, marginBottom: 6 }}>Jour J{cycleDay} de ton cycle</div>
+            <input
+              type="range"
+              min={1}
+              max={28}
+              step={1}
+              value={cycleDay}
+              onChange={(e) => setCycleDay(Number(e.target.value))}
+              aria-label="Jour du cycle menstruel"
+              aria-valuemin={1}
+              aria-valuemax={28}
+              aria-valuenow={cycleDay}
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: 11, color: C.text2, marginTop: 8, lineHeight: 1.45 }}>
+              {cycleDay <= 5
+                ? 'Phase menstruelle : repose-toi et hydrate-toi.'
+                : cycleDay <= 13
+                  ? 'Phase folliculaire : énergie en hausse.'
+                  : cycleDay <= 16
+                    ? 'Ovulation : bonne fenêtre pour planifier.'
+                    : 'Phase lutéale : ralentir, prioriser le sommeil.'}
             </div>
-            <div style={{ fontSize: 11, color: C.text2, marginBottom: 6 }}>Jour du cycle: {cycleDay}</div>
-            <input type="range" min={1} max={28} step={1} value={cycleDay} onChange={(e) => setCycleDay(Number(e.target.value))} style={{ width: '100%' }} />
-            <div style={{ fontSize: 11, color: C.text2, marginTop: 6 }}>
-              {cycleDay <= 5 ? 'Phase règles: repose-toi et hydrate-toi.' : cycleDay <= 13 ? 'Phase folliculaire: énergie en hausse.' : cycleDay <= 16 ? 'Ovulation: bonne fenêtre pour planning actif.' : 'Phase lutéale: ralentir, prioriser le sommeil.'}
-            </div>
-          </GlassCard>
-          <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <IconPenLine size={15} color={C.text2} strokeWidth={1.65} />
-              Micro-journal (1 phrase)
-            </div>
+          </CollapsibleSection>
+          <CollapsibleSection title="Mon journal" C={C}>
             <textarea
               value={journal}
               onChange={(e) => setJournal(e.target.value)}
-              placeholder="Ce qui t'a fait du bien aujourd'hui..."
-              style={{ width: '100%', minHeight: 70, borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, resize: 'none' }}
+              aria-label="Micro-journal du jour"
+              placeholder="Ce qui t'a fait du bien aujourd'hui…"
+              style={{ width: '100%', minHeight: 70, borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, resize: 'none', fontSize: 14 }}
             />
-          </GlassCard>
+          </CollapsibleSection>
           <GlassCard style={{ padding: 12, marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <IconHeartOutline size={15} color={C.lilac} strokeWidth={1.65} />
@@ -3683,43 +3665,90 @@ export default function HomePage() {
             {selfMoments.map((m) => (
               <div key={m.id} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                 <button
+                  type="button"
+                  aria-label={m.done ? 'Marquer non fait' : 'Marquer fait'}
                   onClick={() => setSelfMoments((prev) => prev.map((x) => (x.id === m.id ? { ...x, done: !x.done } : x)))}
-                  style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '4px 8px', background: m.done ? C.greenL : C.white, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 28 }}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '4px 8px', background: m.done ? C.greenL : C.white, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44 }}
                 >
                   {m.done ? <IconCheckSmall size={13} color={C.green} /> : <IconCircleOutline size={13} color={C.text3} />}
                 </button>
                 <span style={{ flex: 1, fontSize: 12, color: m.done ? C.green : C.text }}>{m.label}</span>
                 <button
+                  type="button"
                   onClick={() => addSelfMomentAsTask(m.label)}
-                  style={{ border: 'none', borderRadius: 8, padding: '4px 8px', background: C.terraXL, color: C.terra, fontSize: 11 }}
+                  style={{ border: 'none', borderRadius: 8, padding: '8px 10px', background: C.terraXL, color: C.terra, fontSize: 11, fontWeight: 700, minHeight: 44 }}
                 >
-                  + Tache
+                  + Tâche
                 </button>
               </div>
             ))}
           </GlassCard>
           <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <IconWallet size={15} color={C.text} strokeWidth={1.65} />
-              Budget editable
-            </div>
-            {budget.map((b) => (
-              <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px', gap: 6, marginBottom: 6 }}>
-                <span style={{ fontSize: 12, alignSelf: 'center' }}>{b.label}</span>
-                <input
-                  type="number"
-                  value={b.spent}
-                  onChange={(e) => setBudget((prev) => prev.map((x) => (x.id === b.id ? { ...x, spent: Number(e.target.value || 0) } : x)))}
-                  style={{ borderRadius: 8, border: `1px solid ${C.border}`, padding: 6 }}
-                />
-                <input
-                  type="number"
-                  value={b.budget}
-                  onChange={(e) => setBudget((prev) => prev.map((x) => (x.id === b.id ? { ...x, budget: Number(e.target.value || 0) } : x)))}
-                  style={{ borderRadius: 8, border: `1px solid ${C.border}`, padding: 6 }}
-                />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <IconWallet size={15} color={C.text} strokeWidth={1.65} />
+                Budget du mois
               </div>
-            ))}
+              <button
+                type="button"
+                onClick={() => {
+                  if (budgetEditing) {
+                    pushToast('success', 'Budget enregistré ✓');
+                  }
+                  setBudgetEditing((v) => !v);
+                }}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '6px 10px', background: C.white, fontSize: 11, fontWeight: 700, color: C.terra, cursor: 'pointer' }}
+              >
+                {budgetEditing ? 'Enregistrer' : 'Modifier'}
+              </button>
+            </div>
+            {budget.map((b) => {
+              const pct = b.budget > 0 ? Math.min(100, Math.round((b.spent / b.budget) * 100)) : 0;
+              const barColor = pct > 80 ? C.red : pct > 50 ? C.sun : C.green;
+              return (
+                <div key={b.id} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                    <span>{b.label}</span>
+                    <span style={{ color: C.text2 }}>
+                      {b.spent}€ / {b.budget}€
+                    </span>
+                  </div>
+                  {budgetEditing ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      <label style={{ fontSize: 10, color: C.text2 }}>
+                        Dépensé
+                        <input
+                          type="number"
+                          value={b.spent}
+                          onChange={(e) =>
+                            setBudget((prev) => prev.map((x) => (x.id === b.id ? { ...x, spent: Number(e.target.value || 0) } : x)))
+                          }
+                          style={{ width: '100%', borderRadius: 8, border: `1px solid ${C.border}`, padding: 6, marginTop: 2 }}
+                        />
+                      </label>
+                      <label style={{ fontSize: 10, color: C.text2 }}>
+                        Budget
+                        <input
+                          type="number"
+                          value={b.budget}
+                          onChange={(e) =>
+                            setBudget((prev) => prev.map((x) => (x.id === b.id ? { ...x, budget: Number(e.target.value || 0) } : x)))
+                          }
+                          style={{ width: '100%', borderRadius: 8, border: `1px solid ${C.border}`, padding: 6, marginTop: 2 }}
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <div style={{ height: 8, background: C.surface3, borderRadius: 8, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 8 }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 11, color: C.text2, marginTop: 4 }}>
+              Total : {budget.reduce((s, b) => s + b.spent, 0)}€ / {budget.reduce((s, b) => s + b.budget, 0)}€
+            </div>
           </GlassCard>
           <GlassCard style={{ padding: 12, marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -3846,7 +3875,7 @@ export default function HomePage() {
     }
 
     if (layer === 'routines') {
-      return wrapOv('Routines', <RoutinesPanel C={C} />);
+      return wrapOv('Routines', <RoutinesPanel C={C} userName={familyProfile.prenom} />);
     }
 
     if (layer === 'courrier') {
@@ -3942,130 +3971,57 @@ export default function HomePage() {
 
     if (layer === 'assistant') {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <audio ref={realtimeAudioElRef} autoPlay playsInline hidden aria-hidden />
-          <div
-            style={{
-              padding: '14px 18px',
-              borderBottom: `1px solid ${C.border}`,
-              background: C.white,
-              display: 'flex',
-              gap: 10,
-              alignItems: 'flex-start',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setOverlay(null);
-                setMainTab('home');
-              }}
-              style={{
-                flexShrink: 0,
-                marginTop: 2,
-                border: `1px solid ${C.border}`,
-                borderRadius: 12,
-                padding: '8px 12px',
-                background: C.white,
-                fontSize: 12,
-                fontWeight: 700,
-                color: C.text,
-                cursor: 'pointer',
-              }}
-            >
-              ← Retour
-            </button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-            <strong style={{ color: C.text }}>{aiName}</strong>
-            <div style={{ fontSize: 10, color: C.text2, marginTop: 2 }}>
-              Mémoire persistante : {alfredMemory.length} note{alfredMemory.length > 1 ? 's' : ''} — via ton backend (OpenAI / Anthropic)
-              {openAiRealtimeOn ? (
-                <span style={{ color: C.terra }}> · Voix temps réel OpenAI (Cedar)</span>
-              ) : null}
-              {realtimeVoiceOk === false ? (
-                <span style={{ color: C.red }}>
-                  {' '}
-                  · Voix Realtime : clé API absente sur le serveur (MAJORDOME_LLM_API_KEY dans le .env du VPS).
-                </span>
-              ) : null}
-            </div>
-            {alfredMemory.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm('Effacer toutes les notes mémorisées par Alfred ?')) setAlfredMemory([]);
-                }}
-                style={{ marginTop: 6, border: 'none', background: C.surface2, borderRadius: 8, padding: '4px 8px', fontSize: 10, color: C.text2, cursor: 'pointer' }}
-              >
-                Oublier les notes
-              </button>
-            ) : null}
-            <div style={{ marginTop: 8 }} />
-            {openAiRealtimeOn ? (
-              <div style={{ marginTop: 6, fontSize: 10, color: C.text2, lineHeight: 1.35 }}>
-                Tu parles au micro ; {aiName} répond en voix Realtime (Cedar).
-              </div>
-            ) : null}
-            </div>
-          </div>
-          <div style={{ flex: 1, height: '100%', overflowY: 'auto', padding: 12, WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
-            {assistantHistory.map((m, i) => (
-              <div key={`${m.who}-${i}`} style={{ display: 'flex', justifyContent: m.who === 'ai' ? 'flex-start' : 'flex-end', marginBottom: 8 }}>
-                <div style={{ maxWidth: '82%', padding: '10px 12px', borderRadius: 14, background: m.who === 'ai' ? C.white : C.terra, color: m.who === 'ai' ? C.text : '#fff' }}>
-                  {m.text}
-                </div>
-              </div>
-            ))}
-            {assistantTyping ? <div style={{ fontSize: 12, color: C.text2 }}>{aiName} ecrit...</div> : null}
-            <div ref={endRef} />
-          </div>
-          <div style={{ padding: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input value={assistantInput} onChange={(e) => setAssistantInput(e.target.value)} placeholder="Dis-moi ce que je dois faire..." style={{ flex: 1, borderRadius: 12, border: `1px solid ${C.border}`, padding: 10 }} />
-            <button
-              type="button"
-              onClick={toggleVoiceListening}
-              disabled={!voiceSupported || openAiRealtimeOn}
-              title={!voiceSupported ? 'Micro indisponible' : isListening ? 'Stop micro' : 'Activer micro'}
-              aria-label={!voiceSupported ? 'Micro indisponible' : isListening ? 'Stop micro' : 'Activer micro'}
-              style={{
-                width: 40,
-                height: 40,
-                border: 'none',
-                borderRadius: 12,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: isListening ? C.redL : C.terraXL,
-                opacity: !voiceSupported || openAiRealtimeOn ? 0.45 : 1,
-                cursor: !voiceSupported || openAiRealtimeOn ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <IconMic size={18} color={isListening ? C.red : C.terra} strokeWidth={1.8} />
-            </button>
-            <button
-              type="button"
-              onClick={() => void toggleOpenAiRealtimeVoice()}
-              disabled={openAiRealtimeBusy || (!openAiRealtimeOn && !realtimePcRef.current && (!token || realtimeVoiceOk !== true))}
-              title={openAiRealtimeOn ? 'Couper realtime voice' : 'Démarrer realtime voice'}
-              aria-label={openAiRealtimeOn ? 'Couper realtime voice' : 'Démarrer realtime voice'}
-              style={{
-                width: 40,
-                height: 40,
-                border: 'none',
-                borderRadius: 12,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: openAiRealtimeOn ? C.redL : C.surface2,
-                opacity: openAiRealtimeOn || realtimePcRef.current ? 1 : !token || realtimeVoiceOk !== true ? 0.45 : 1,
-                cursor: openAiRealtimeOn || realtimePcRef.current ? 'pointer' : !token || realtimeVoiceOk !== true ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <IconSpeaker size={18} color={openAiRealtimeOn ? C.red : C.text2} strokeWidth={1.8} />
-            </button>
-            <button onClick={sendAssistant} style={{ border: 'none', borderRadius: 12, background: C.terra, color: '#fff', padding: '0 14px' }}>Envoyer</button>
-          </div>
-        </div>
+        <AlfredChatPanel
+          C={C}
+          aiName={aiName}
+          firstName={familyProfile.prenom}
+          partenaire={familyProfile.partenaire}
+          assistantHistory={assistantHistory}
+          assistantTyping={assistantTyping}
+          assistantInput={assistantInput}
+          setAssistantInput={setAssistantInput}
+          endRef={endRef}
+          realtimeAudioElRef={realtimeAudioElRef}
+          openAiRealtimeOn={openAiRealtimeOn}
+          realtimeVoiceOk={realtimeVoiceOk}
+          openAiRealtimeBusy={openAiRealtimeBusy}
+          alfredMemoryCount={alfredMemory.length}
+          voiceSupported={voiceSupported}
+          isListening={isListening}
+          autoSpeak={autoSpeak}
+          setAutoSpeak={setAutoSpeak}
+          onBack={() => {
+            setOverlay(null);
+            setMainTab('home');
+          }}
+          onClearMemory={() => {
+            if (window.confirm('Effacer toutes les notes mémorisées par Alfred ?')) setAlfredMemory([]);
+          }}
+          onSend={() => void sendAssistant()}
+          onToggleVoice={toggleVoiceListening}
+          onToggleRealtime={() => void toggleOpenAiRealtimeVoice()}
+          onSuggestion={(text) => void sendAssistant(text)}
+          onAction={(actionId) => {
+            if (actionId === 'courses') {
+              setCoursesTab('liste');
+              setOverlay('courses');
+              return;
+            }
+            if (actionId === 'tasks') {
+              setOverlay(null);
+              setMainTab('home');
+              return;
+            }
+            if (actionId === 'agenda') {
+              setOverlay(null);
+              setMainTab('agenda');
+              return;
+            }
+            if (actionId === 'famille') {
+              setOverlay('famille');
+            }
+          }}
+        />
       );
     }
 
@@ -4075,20 +4031,10 @@ export default function HomePage() {
   return (
     <>
       <style>{`*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body{overscroll-behavior-y:none;}::-webkit-scrollbar{display:none;}`}</style>
-      <div
-        style={{
-          width: '100%',
-          minHeight: '100vh',
-          position: 'relative',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          background: '#E8DDD8',
-          padding: '24px 16px',
-        }}
-      >
+      <div className="app-outer" style={{ position: 'relative' }}>
         <a
           href="/"
+          className="app-logo-fixed"
           style={{
             position: 'fixed',
             top: 'max(14px, env(safe-area-inset-top))',
@@ -4100,11 +4046,11 @@ export default function HomePage() {
             textDecoration: 'none',
             lineHeight: 1,
           }}
-                          aria-label="MAJORDOME — accueil"
+          aria-label="MAJORDOME — accueil"
         >
           <MajordomeWordmarkLogo maxHeight={36} />
         </a>
-        <div style={{ width: 390, height: 844, background: C.bg, borderRadius: 52, overflow: 'hidden', border: '10px solid #D4C8C2', boxShadow: '0 40px 80px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        <div className="app-device" style={{ background: C.bg }}>
           <div style={{ position: 'relative' }}>
             <StatusBar
               onOpenSearch={
@@ -4614,9 +4560,21 @@ export default function HomePage() {
                         </div>
                       </div>
                       {docVault.filter((d) => d.urgent).length > 0 ? (
-                        <div style={{ background: C.redL, borderRadius: 12, padding: '8px 10px', marginBottom: 8, fontSize: 12, color: C.red, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <IconAlertOutline size={18} color={C.red} strokeWidth={1.65} />
-                          Au moins un document à renouveler bientôt (assurance, mutuelle…)
+                        <div style={{ background: C.redL, borderRadius: 12, padding: '10px 12px', marginBottom: 8, fontSize: 12, color: C.red, fontWeight: 600 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <IconAlertOutline size={18} color={C.red} strokeWidth={1.65} />
+                            Documents à renouveler
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: 18, fontWeight: 500, lineHeight: 1.5 }}>
+                            {docVault
+                              .filter((d) => d.urgent)
+                              .map((d) => (
+                                <li key={d.id}>
+                                  {d.name}
+                                  {d.exp ? ` — échéance ${d.exp}` : ''}
+                                </li>
+                              ))}
+                          </ul>
                         </div>
                       ) : null}
                       {docAddedFlash ? (
@@ -5197,6 +5155,7 @@ export default function HomePage() {
               {toasts.map((t) => (
                 <div
                   key={t.id}
+                  className="ui-toast-in"
                   style={{
                     borderRadius: 16,
                     padding: '12px 14px',

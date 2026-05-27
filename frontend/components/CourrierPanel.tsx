@@ -86,7 +86,11 @@ export function CourrierPanel({
                 <button
                   type="button"
                   disabled={!token || busy}
-                  onClick={() => void onImportTasks(m.tasks.map((t) => `${m.from.split(' ')[0]} — ${t}`))}
+                  onClick={() => {
+                    const titles = m.tasks.map((t) => `${m.from.split(' ')[0]} — ${t}`);
+                    if (!window.confirm(`Ajouter ${titles.length} tâche(s) à ta liste ?\n\n${titles.join('\n')}`)) return;
+                    void onImportTasks(titles);
+                  }}
                   style={{
                     marginTop: 12,
                     width: '100%',
