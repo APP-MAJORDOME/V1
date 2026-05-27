@@ -1,3 +1,22 @@
+/** Valeurs historiques API / imports ; l'affichage utilise `docCategoryLabel`. */
+export const DOC_COFFRE_CATEGORIES = ['🏥 Santé', '📚 École', '🏛️ Admin', '💰 Finance', '🏠 Maison', '🛂 Identité', 'Divers'] as const;
+
+/** Filtres UI (sans emoji) → libellés encore présents en base pour POST/PATCH. */
+const DOC_FILTER_TO_API_CAT: Record<string, string> = {
+  Santé: '🏥 Santé',
+  École: '📚 École',
+  Admin: '🏛️ Admin',
+  Finance: '💰 Finance',
+  Maison: '🏠 Maison',
+  Identité: '🛂 Identité',
+  Divers: 'Divers',
+};
+
+export function docCategoryForApi(filterId: string): string {
+  if (filterId === 'Tous') return 'Divers';
+  return DOC_FILTER_TO_API_CAT[filterId] ?? filterId;
+}
+
 export function formatDocStorageShort(usedBytes: number, quotaBytes: number | null): string {
   const fmt = (b: number) =>
     b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`;

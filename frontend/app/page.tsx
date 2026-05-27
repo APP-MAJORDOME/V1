@@ -49,7 +49,6 @@ import {
   IconSparkleAI,
   IconPaperclip,
   IconSearch,
-  IconAlertOutline,
   IconRefresh,
   IconCheckSmall,
   IconCircleOutline,
@@ -63,26 +62,16 @@ import {
   IconPenLine,
   IconChart,
   IconMeal,
-  IconBrainOutline,
   IconGift,
   IconChild,
   IconHealthCross,
   IconMic,
   IconSpeaker,
-  IconCamera,
-  IconMail,
   IconSchoolBag,
   IconPeopleOutline,
   IconTarget,
   IconHeartOutline,
-  IconLifebuoy,
   IconPartyOutline,
-  IconBoltSoft,
-  DocGlyphBubble,
-  DocGlyphPicker,
-  docCategoryLabel,
-  DOC_CATEGORY_FILTER_IDS,
-  docMatchesCategoryFilter,
   InlineDocGlyph,
   IconDotsGrid,
 } from '../components/md-icons';
@@ -107,7 +96,9 @@ import { MaisonTabPanel } from '../components/MaisonTabPanel';
 import { DocumentsTabPanel } from '../components/DocumentsTabPanel';
 import { FamilleTabPanel } from '../components/FamilleTabPanel';
 import { EquiteModal } from '../components/EquiteModal';
-import { formatDocStorageShort } from '../lib/documentsUi';
+import { DebordeeModal, type DebordeeResult } from '../components/DebordeeModal';
+import { CoffreModal } from '../components/CoffreModal';
+import { formatDocStorageShort, docCategoryForApi } from '../lib/documentsUi';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton } from '../components/taskUi';
 import {
   executeAgentIntent as runAgentIntent,
@@ -209,7 +200,7 @@ type OpportunityItem = { id: number; title: string; score: number };
 type ConflictItem = { event_a: number; event_b: number; title_a: string; title_b: string; severity?: string };
 type ConnectedAccount = { id: number; provider: string; status: string };
 type LoginResponse = { access_token: string; refresh_token: string };
-type DebordeeApiResponse = { critique: string[]; deleguer: string[]; supprimer: string[]; message: string };
+type DebordeeApiResponse = DebordeeResult;
 type FamilyProfile = { prenom: string; partenaire: string; enfant: string; ageEnfant: string; objectif: string };
 type DocVaultItem = {
   id: number;
@@ -268,25 +259,6 @@ function mapDocFromApi(d: HouseholdDocumentApi): DocVaultItem {
     attachmentOriginalName: d.attachment_original_name,
     attachmentSizeBytes: d.attachment_size_bytes,
   };
-}
-
-/** Valeurs historiques API / imports ; l’affichage utilise `docCategoryLabel`. */
-const DOC_COFFRE_CATEGORIES = ['🏥 Santé', '📚 École', '🏛️ Admin', '💰 Finance', '🏠 Maison', '🛂 Identité', 'Divers'] as const;
-
-/** Filtres UI (sans emoji) → libellés encore présents en base pour POST/PATCH. */
-const DOC_FILTER_TO_API_CAT: Record<string, string> = {
-  Santé: '🏥 Santé',
-  École: '📚 École',
-  Admin: '🏛️ Admin',
-  Finance: '💰 Finance',
-  Maison: '🏠 Maison',
-  Identité: '🛂 Identité',
-  Divers: 'Divers',
-};
-
-function docCategoryForApi(filterId: string): string {
-  if (filterId === 'Tous') return 'Divers';
-  return DOC_FILTER_TO_API_CAT[filterId] ?? filterId;
 }
 
 type FridgeItem = { id: number; label: string; expires_at: string; qty: number };
@@ -882,6 +854,52 @@ export default function HomePage() {
     try {
       await deleteJson<HouseholdDocumentApi>(`/api/v1/documents/${docId}/attachment`, token);
       pushToast('info', 'Pièce jointe supprimée');
+      await loadData(token);
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Erreur');
+    }
+  }
+
+  async function quickAddDocument() {
+    if (!token) return;
+    try {
+      await postJson<HouseholdDocumentApi>(
+        '/api/v1/documents',
+        {
+          icon: 'g:clip',
+          name: `Ajout ${new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`,
+          category: docCategoryForApi(docCat),
+          date_label: new Date().toLocaleDateString('fr-FR'),
+          who: familyProfile.prenom,
+          urgent: false,
+        },
+        token
+      );
+      setDocAddedFlash(true);
+      window.setTimeout(() => setDocAddedFlash(false), 2400);
+      pushToast('success', 'Document enregistré (base sécurisée par foyer)');
+      await loadData(token);
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Impossible d’ajouter');
+    }
+  }
+
+  async function toggleDocUrgent(d: DocVaultItem) {
+    if (!token) return;
+    try {
+      await patchJson<HouseholdDocumentApi>(`/api/v1/documents/${d.id}`, { urgent: !d.urgent }, token);
+      await loadData(token);
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Erreur');
+    }
+  }
+
+  async function deleteDocumentFromVault(d: DocVaultItem) {
+    if (!token) return;
+    if (!window.confirm(`Supprimer « ${d.name} » du coffre ?`)) return;
+    try {
+      await deleteJson(`/api/v1/documents/${d.id}`, token);
+      pushToast('info', 'Document supprimé');
       await loadData(token);
     } catch (e) {
       pushToast('error', e instanceof Error ? e.message : 'Erreur');
@@ -2818,136 +2836,26 @@ export default function HomePage() {
               <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
                 {renderAppLayer()}
               </div>
-              {modalDebordee !== 'closed' ? (
-                <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                  <button type="button" aria-label="Fermer" onClick={() => setModalDebordee('closed')} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)', border: 'none', cursor: 'pointer' }} />
-                  <div style={{ position: 'relative', width: '100%', maxHeight: '82%', background: C.white, borderRadius: '22px 22px 0 0', padding: '20px 18px 28px', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                    <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: '0 auto 16px' }} />
-                    {modalDebordee === 'confirm' ? (
-                      <>
-                        <div style={{ textAlign: 'center', marginBottom: 18 }}>
-                          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}>
-                            <IconLifebuoy size={44} color={C.red} strokeWidth={1.55} />
-                          </div>
-                          <h3 style={{ fontSize: 19, fontWeight: 800, color: C.red, margin: '0 0 8px' }}>Mode « Je suis débordée »</h3>
-                          <p style={{ fontSize: 13, color: C.text2, lineHeight: 1.55 }}>
-                            Alfred analyse ta liste complète : garde le <strong>critique</strong> pour aujourd&apos;hui, propose du relais vers {familyProfile.partenaire}, et allège le reste.
-                          </p>
-                        </div>
-                        <div style={{ background: C.redL, borderRadius: 14, padding: '12px 14px', marginBottom: 14 }}>
-                          <div style={{ fontSize: 10, fontWeight: 700, color: C.red, letterSpacing: 0.4, marginBottom: 6 }}>TA LISTE ({openTasks.length} tâches)</div>
-                          {openTasks.slice(0, 8).map((u, i) => (
-                            <div
-                              key={u.id}
-                              style={{
-                                fontSize: 12,
-                                color: C.text,
-                                padding: '4px 0',
-                                borderBottom: i < Math.min(7, openTasks.length - 1) ? `1px solid ${C.red}22` : 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                flexWrap: 'wrap',
-                                gap: 6,
-                              }}
-                            >
-                              <span>• {u.title}</span>
-                              {primaryMemberId != null && u.assigned_member_id === primaryMemberId ? (
-                                <Pill bg={C.terraXL} color={C.terra}>
-                                  → {familyProfile.prenom}
-                                </Pill>
-                              ) : null}
-                              {partnerMemberId != null && u.assigned_member_id === partnerMemberId ? (
-                                <Pill bg={C.alexXL} color={C.alex}>
-                                  → {familyProfile.partenaire}
-                                </Pill>
-                              ) : null}
-                              {childMemberId != null && u.assigned_member_id === childMemberId ? (
-                                <Pill bg="#FFF8E8" color="#B8860B">
-                                  → {familyProfile.enfant}
-                                </Pill>
-                              ) : null}
-                              <TaskAssignSelect
-                                C={C}
-                                taskId={u.id}
-                                assigned_member_id={u.assigned_member_id}
-                                members={householdMembers}
-                                token={token}
-                                busy={taskAssignBusyId === u.id}
-                                onAssign={assignTaskMember}
-                                compact
-                              />
-                              <TaskDoneButton C={C} taskId={u.id} token={token} busyDone={taskCompleteBusyId === u.id} onDone={completeTaskById} />
-                            </div>
-                          ))}
-                        </div>
-                        <button type="button" onClick={() => void launchDebordee()} style={{ width: '100%', padding: 14, fontSize: 14, fontWeight: 800, border: 'none', borderRadius: 14, background: C.red, color: '#fff' }}>
-                          Lancer le triage Alfred
-                        </button>
-                        <button type="button" onClick={() => setModalDebordee('closed')} style={{ width: '100%', marginTop: 10, padding: 12, border: 'none', background: 'transparent', color: C.text3, fontSize: 13 }}>
-                          Annuler
-                        </button>
-                      </>
-                    ) : null}
-                    {modalDebordee === 'loading' ? (
-                      <div style={{ textAlign: 'center', padding: '36px 0' }}>
-                        <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}>
-                          <IconBrainOutline size={44} color={C.text} strokeWidth={1.45} />
-                        </div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>Alfred analyse ta liste…</div>
-                        <div style={{ fontSize: 13, color: C.text2 }}>Urgences, délégations, ce qui peut attendre.</div>
-                      </div>
-                    ) : null}
-                    {modalDebordee === 'result' && debordeeResult ? (
-                      <>
-                        <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                          <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
-                            <IconSparkleAI size={34} color={C.terra} strokeWidth={1.55} />
-                          </div>
-                          <div style={{ fontSize: 14, color: C.terra, fontWeight: 700, fontStyle: 'italic', lineHeight: 1.45 }}>&quot;{debordeeResult.message}&quot;</div>
-                        </div>
-                        {debordeeResult.critique.length > 0 ? (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: C.red, letterSpacing: 0.4, marginBottom: 6 }}>CRITIQUE — aujourd&apos;hui</div>
-                            {debordeeResult.critique.map((t, i) => (
-                              <div key={i} style={{ padding: '10px 12px', borderRadius: 12, background: C.redL, border: `1.5px solid ${C.red}33`, marginBottom: 6, fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                                <span style={{ flexShrink: 0, marginTop: 2 }}>
-                                  <IconBoltSoft size={16} color={C.red} strokeWidth={1.55} />
-                                </span>
-                                <span>{t}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        {debordeeResult.deleguer.length > 0 ? (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: C.alex, letterSpacing: 0.4, marginBottom: 6 }}>DÉLÉGUÉ — à suivre</div>
-                            {debordeeResult.deleguer.map((t, i) => {
-                              const [task, who] = t.split(':');
-                              return (
-                                <div key={i} style={{ padding: '10px 12px', borderRadius: 12, background: C.alexL, border: `1.5px solid ${C.alex}33`, marginBottom: 6, fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                                  <span>{task.trim()}</span>
-                                  <Pill color={C.alex} bg={C.alexXL}>→ {who?.trim() || familyProfile.partenaire}</Pill>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        {debordeeResult.supprimer.length > 0 ? (
-                          <div style={{ marginBottom: 16 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, letterSpacing: 0.4, marginBottom: 6 }}>REPORTÉ — pas urgent</div>
-                            {debordeeResult.supprimer.map((t, i) => (
-                              <div key={i} style={{ padding: '8px 12px', borderRadius: 12, background: C.surface2, marginBottom: 6, fontSize: 13, color: C.text3, textDecoration: 'line-through' }}>{t}</div>
-                            ))}
-                          </div>
-                        ) : null}
-                        <button type="button" onClick={() => setModalDebordee('closed')} style={{ width: '100%', padding: 13, fontSize: 14, fontWeight: 700, border: 'none', borderRadius: 14, background: C.terra, color: '#fff' }}>
-                          Parfait, je gère ça
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
+              <DebordeeModal
+                C={C}
+                phase={modalDebordee}
+                openTasks={openTasks}
+                debordeeResult={debordeeResult}
+                prenom={familyProfile.prenom}
+                partenaire={familyProfile.partenaire}
+                enfant={familyProfile.enfant}
+                primaryMemberId={primaryMemberId}
+                partnerMemberId={partnerMemberId}
+                childMemberId={childMemberId}
+                householdMembers={householdMembers}
+                token={token}
+                taskAssignBusyId={taskAssignBusyId}
+                taskCompleteBusyId={taskCompleteBusyId}
+                onClose={() => setModalDebordee('closed')}
+                onLaunch={() => void launchDebordee()}
+                onAssign={assignTaskMember}
+                onDone={completeTaskById}
+              />
               {modalAlex ? (
                 <div style={{ position: 'absolute', inset: 0, zIndex: 48, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
                   <button type="button" aria-label="Fermer" onClick={() => setModalAlex(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', border: 'none', cursor: 'pointer' }} />
@@ -3122,505 +3030,37 @@ export default function HomePage() {
                   </div>
                 </div>
               ) : null}
-              {modalCoffre ? (
-                <div style={{ position: 'absolute', inset: 0, zIndex: 46, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                  <button type="button" aria-label="Fermer" onClick={() => setModalCoffre(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', border: 'none', cursor: 'pointer' }} />
-                  <div style={{ position: 'relative', width: '100%', maxHeight: '88%', background: C.white, borderRadius: '22px 22px 0 0', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '16px 18px 12px', borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: '0 auto 12px' }} />
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <h3 style={{ fontSize: 17, fontWeight: 800, color: C.text, margin: 0 }}>Coffre famille</h3>
-                          <p style={{ fontSize: 11, color: C.text2, margin: 0 }}>{docVault.length} documents</p>
-                          {token && docStorageSummary ? (
-                            <p style={{ fontSize: 10, color: C.text2, margin: '6px 0 0', lineHeight: 1.35 }}>
-                              {formatDocStorageShort(docStorageSummary.used_bytes, docStorageSummary.quota_bytes)}
-                            </p>
-                          ) : null}
-                          {!token ? <p style={{ fontSize: 10, color: C.terra, margin: '6px 0 0' }}>Connecte-toi pour synchroniser le coffre sur le serveur.</p> : null}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch', flexShrink: 0 }}>
-                          <button
-                            type="button"
-                            disabled={!token || loading}
-                            onClick={() => token && void loadData(token)}
-                            style={{
-                              padding: '6px 12px',
-                              borderRadius: 12,
-                              border: `1px solid ${C.border}`,
-                              background: C.white,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: C.text2,
-                              opacity: !token ? 0.5 : 1,
-                            }}
-                          >
-                            Rafraîchir
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!token) return;
-                              try {
-                                await postJson<HouseholdDocumentApi>(
-                                  '/api/v1/documents',
-                                  {
-                                    icon: 'g:clip',
-                                    name: `Ajout ${new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`,
-                                    category: docCategoryForApi(docCat),
-                                    date_label: new Date().toLocaleDateString('fr-FR'),
-                                    who: familyProfile.prenom,
-                                    urgent: false,
-                                  },
-                                  token
-                                );
-                                setDocAddedFlash(true);
-                                window.setTimeout(() => setDocAddedFlash(false), 2400);
-                                pushToast('success', 'Document enregistré (base sécurisée par foyer)');
-                                await loadData(token);
-                              } catch (e) {
-                                pushToast('error', e instanceof Error ? e.message : 'Impossible d’ajouter');
-                              }
-                            }}
-                            style={{ padding: '6px 12px', borderRadius: 12, background: C.terraXL, color: C.terra, border: 'none', fontSize: 11, fontWeight: 700 }}
-                          >
-                            + Ajouter
-                          </button>
-                        </div>
-                      </div>
-                      {docVault.filter((d) => d.urgent).length > 0 ? (
-                        <div style={{ background: C.redL, borderRadius: 12, padding: '10px 12px', marginBottom: 8, fontSize: 12, color: C.red, fontWeight: 600 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                            <IconAlertOutline size={18} color={C.red} strokeWidth={1.65} />
-                            Documents à renouveler
-                          </div>
-                          <ul style={{ margin: 0, paddingLeft: 18, fontWeight: 500, lineHeight: 1.5 }}>
-                            {docVault
-                              .filter((d) => d.urgent)
-                              .map((d) => (
-                                <li key={d.id}>
-                                  {d.name}
-                                  {d.exp ? ` — échéance ${d.exp}` : ''}
-                                </li>
-                              ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      {docAddedFlash ? (
-                        <div style={{ background: C.greenL, borderRadius: 12, padding: '8px 10px', marginBottom: 8, fontSize: 12, color: C.green, fontWeight: 600 }}>Référence enregistrée — tu pourras ajouter une pièce jointe ensuite.</div>
-                      ) : null}
-                      <div style={{ background: C.surface, borderRadius: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <IconSearch size={18} color={C.text3} strokeWidth={1.65} />
-                        <input value={docSearch} onChange={(e) => setDocSearch(e.target.value)} placeholder="Rechercher…" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13 }} />
-                      </div>
-                      <div style={{ display: 'flex', gap: 5, overflowX: 'auto', paddingBottom: 4 }}>
-                        {DOC_CATEGORY_FILTER_IDS.map((c) => (
-                          <button
-                            type="button"
-                            key={c}
-                            onClick={() => setDocCat(c)}
-                            style={{
-                              flexShrink: 0,
-                              padding: '5px 10px',
-                              borderRadius: 20,
-                              border: `1.5px solid ${docCat === c ? C.terra : C.border}`,
-                              background: docCat === c ? C.terra : C.white,
-                              color: docCat === c ? '#fff' : C.text2,
-                              fontSize: 10,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {c}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px 24px' }}>
-                      {docVault
-                        .filter((d) => docMatchesCategoryFilter(docCat, d) && (docSearch === '' || d.name.toLowerCase().includes(docSearch.toLowerCase())))
-                        .map((d) => {
-                          const editing = docEdit?.id === d.id;
-                          const catSelectOptions = [...new Set([...DOC_COFFRE_CATEGORIES, docEdit?.category || 'Divers'])];
-                          return (
-                            <div
-                              key={d.id}
-                              style={{
-                                borderRadius: 14,
-                                border: `1.5px solid ${editing ? C.terra : d.urgent ? `${C.red}33` : C.border}`,
-                                marginBottom: 8,
-                                background: editing ? C.white : d.urgent ? C.redL : C.surface,
-                                overflow: 'hidden',
-                              }}
-                            >
-                              {editing && docEdit ? (
-                                <div style={{ padding: 12, display: 'grid', gap: 8 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 800, color: C.text }}>Modifier</div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <span style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden>
-                                      <InlineDocGlyph icon={docEdit.icon.trim() || 'g:doc'} size={26} color={C.terra} />
-                                    </span>
-                                    <input
-                                      value={docEdit.icon}
-                                      onChange={(e) => setDocEdit((p) => (p ? { ...p, icon: e.target.value.slice(0, 16) } : null))}
-                                      placeholder="Code picto (ex. g:doc)"
-                                      maxLength={16}
-                                      aria-label="Icône du document"
-                                      style={{ flex: 1, padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
-                                    />
-                                  </div>
-                                  <DocGlyphPicker value={docEdit.icon} onPick={(v) => setDocEdit((p) => (p ? { ...p, icon: v } : null))} terra={C.terra} border={C.border} terraXL={C.terraXL} />
-                                  <input
-                                    value={docEdit.name}
-                                    onChange={(e) => setDocEdit((p) => (p ? { ...p, name: e.target.value } : null))}
-                                    placeholder="Nom du document"
-                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
-                                  />
-                                  <select
-                                    value={docEdit.category}
-                                    onChange={(e) => setDocEdit((p) => (p ? { ...p, category: e.target.value } : null))}
-                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, background: C.white }}
-                                  >
-                                    {catSelectOptions.map((c) => (
-                                      <option key={c} value={c}>
-                                        {c}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <input
-                                    value={docEdit.date_label}
-                                    onChange={(e) => setDocEdit((p) => (p ? { ...p, date_label: e.target.value } : null))}
-                                    placeholder="Date (texte libre, ex. Jan. 2024)"
-                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
-                                  />
-                                  <label style={{ fontSize: 10, color: C.text2 }}>
-                                    Échéance (optionnel)
-                                    <input
-                                      type="date"
-                                      value={docEdit.expires_date}
-                                      onChange={(e) => setDocEdit((p) => (p ? { ...p, expires_date: e.target.value } : null))}
-                                      style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
-                                    />
-                                  </label>
-                                  <input
-                                    value={docEdit.who}
-                                    onChange={(e) => setDocEdit((p) => (p ? { ...p, who: e.target.value } : null))}
-                                    placeholder="Qui (vide = Famille)"
-                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
-                                  />
-                                  <textarea
-                                    value={docEdit.notes}
-                                    onChange={(e) => setDocEdit((p) => (p ? { ...p, notes: e.target.value } : null))}
-                                    placeholder="Notes internes"
-                                    rows={3}
-                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }}
-                                  />
-                                  <input
-                                    ref={docAttachmentReplaceRef}
-                                    type="file"
-                                    accept="image/*,application/pdf"
-                                    style={{ display: 'none' }}
-                                    onChange={(e) => {
-                                      const f = e.target.files?.[0];
-                                      e.target.value = '';
-                                      if (f && docEdit && token) void uploadAttachmentForDoc(docEdit.id, f);
-                                    }}
-                                  />
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: C.text2 }}>Pièce jointe (serveur)</div>
-                                  {(() => {
-                                    const pj = docVault.find((x) => x.id === docEdit.id);
-                                    const has = pj?.attachmentSizeBytes != null && pj.attachmentSizeBytes > 0;
-                                    return has ? (
-                                      <div style={{ fontSize: 11, color: C.text, padding: '10px 12px', borderRadius: 12, background: C.surface2, border: `1px solid ${C.border}` }}>
-                                        <div style={{ fontWeight: 700 }}>{pj?.attachmentOriginalName || 'Fichier'}</div>
-                                        <div style={{ fontSize: 10, color: C.text2 }}>{Math.max(1, Math.round((pj?.attachmentSizeBytes || 0) / 1024))} Ko</div>
-                                        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                                          <button
-                                            type="button"
-                                            disabled={!token}
-                                            onClick={() => void downloadDocAttachment(docEdit.id)}
-                                            style={{
-                                              padding: '6px 10px',
-                                              borderRadius: 10,
-                                              border: `1px solid ${C.sage}`,
-                                              background: C.sageL,
-                                              fontSize: 11,
-                                              fontWeight: 700,
-                                              color: C.sage,
-                                            }}
-                                          >
-                                            Télécharger
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={!token}
-                                            onClick={() => docAttachmentReplaceRef.current?.click()}
-                                            style={{
-                                              padding: '6px 10px',
-                                              borderRadius: 10,
-                                              border: `1px solid ${C.border}`,
-                                              background: C.white,
-                                              fontSize: 11,
-                                              fontWeight: 700,
-                                              color: C.text2,
-                                            }}
-                                          >
-                                            Remplacer
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={!token}
-                                            onClick={() => void removeAttachmentForDoc(docEdit.id)}
-                                            style={{
-                                              padding: '6px 10px',
-                                              borderRadius: 10,
-                                              border: 'none',
-                                              background: C.redL,
-                                              fontSize: 11,
-                                              fontWeight: 700,
-                                              color: C.red,
-                                            }}
-                                          >
-                                            Supprimer PJ
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        disabled={!token}
-                                        onClick={() => docAttachmentReplaceRef.current?.click()}
-                                        style={{
-                                          padding: '10px 12px',
-                                          borderRadius: 12,
-                                          border: `1px dashed ${C.border}`,
-                                          background: C.white,
-                                          fontSize: 12,
-                                          fontWeight: 700,
-                                          color: C.text2,
-                                          textAlign: 'center',
-                                        }}
-                                      >
-                                        + Ajouter fichier (image ou PDF)
-                                      </button>
-                                    );
-                                  })()}
-                                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                                    <button
-                                      type="button"
-                                      disabled={docEditSaving}
-                                      onClick={() => setDocEdit(null)}
-                                      style={{
-                                        flex: 1,
-                                        padding: '10px 12px',
-                                        borderRadius: 12,
-                                        border: `1px solid ${C.border}`,
-                                        background: C.white,
-                                        fontSize: 12,
-                                        fontWeight: 700,
-                                        color: C.text2,
-                                      }}
-                                    >
-                                      Annuler
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={!token || docEditSaving}
-                                      onClick={() => void saveDocEdit()}
-                                      style={{
-                                        flex: 1,
-                                        padding: '10px 12px',
-                                        borderRadius: 12,
-                                        border: 'none',
-                                        background: C.terra,
-                                        fontSize: 12,
-                                        fontWeight: 700,
-                                        color: '#fff',
-                                      }}
-                                    >
-                                      {docEditSaving ? '…' : 'Enregistrer'}
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px' }}>
-                                  <div style={{ width: 40, height: 40, borderRadius: 12, background: C.terraXL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                    <InlineDocGlyph icon={d.icon} size={22} color={C.terra} />
-                                  </div>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                                    <div style={{ fontSize: 10, color: C.text2, marginTop: 2 }}>
-                                      {d.who} · {d.date}
-                                      {d.exp ? ` → exp. ${d.exp}` : ''}
-                                    </div>
-                                    {d.notes?.trim() ? <div style={{ fontSize: 10, color: C.text3, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.notes.trim()}</div> : null}
-                                    {d.attachmentSizeBytes ? (
-                                      <button
-                                        type="button"
-                                        disabled={!token}
-                                        onClick={() => void downloadDocAttachment(d.id)}
-                                        style={{
-                                          marginTop: 6,
-                                          padding: '5px 10px',
-                                          borderRadius: 10,
-                                          border: `1px solid ${C.sage}`,
-                                          background: C.sageL,
-                                          fontSize: 10,
-                                          fontWeight: 700,
-                                          color: C.sage,
-                                          cursor: token ? 'pointer' : 'default',
-                                        }}
-                                      >
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                          <IconPaperclip size={13} color={C.sage} strokeWidth={1.75} />
-                                          Fichier ({Math.max(1, Math.round(d.attachmentSizeBytes / 1024))} Ko)
-                                        </span>
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                  {d.urgent ? (
-                                    <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }} aria-label="Urgent">
-                                      <IconAlertOutline size={18} color={C.red} strokeWidth={1.65} />
-                                    </span>
-                                  ) : null}
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
-                                    <button
-                                      type="button"
-                                      disabled={!token}
-                                      onClick={() => openDocEdit(d)}
-                                      style={{
-                                        padding: '4px 8px',
-                                        borderRadius: 8,
-                                        border: `1px solid ${C.terra}`,
-                                        background: C.terraXL,
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: C.terra,
-                                      }}
-                                    >
-                                      Modifier
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={!token}
-                                      onClick={async () => {
-                                        if (!token) return;
-                                        try {
-                                          await patchJson<HouseholdDocumentApi>(`/api/v1/documents/${d.id}`, { urgent: !d.urgent }, token);
-                                          await loadData(token);
-                                        } catch (e) {
-                                          pushToast('error', e instanceof Error ? e.message : 'Erreur');
-                                        }
-                                      }}
-                                      style={{
-                                        padding: '4px 8px',
-                                        borderRadius: 8,
-                                        border: `1px solid ${C.border}`,
-                                        background: C.white,
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: C.text2,
-                                      }}
-                                    >
-                                      {d.urgent ? 'Pas urgent' : 'Urgent'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={!token}
-                                      onClick={async () => {
-                                        if (!token) return;
-                                        if (!window.confirm(`Supprimer « ${d.name} » du coffre ?`)) return;
-                                        try {
-                                          await deleteJson(`/api/v1/documents/${d.id}`, token);
-                                          pushToast('info', 'Document supprimé');
-                                          await loadData(token);
-                                        } catch (e) {
-                                          pushToast('error', e instanceof Error ? e.message : 'Erreur');
-                                        }
-                                      }}
-                                      style={{
-                                        padding: '4px 8px',
-                                        borderRadius: 8,
-                                        border: 'none',
-                                        background: C.redL,
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: C.red,
-                                      }}
-                                    >
-                                      Supprimer
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      <div style={{ marginTop: 14 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: C.text2, marginBottom: 6 }}>AJOUTER DEPUIS</div>
-                        <input
-                          ref={docPhotoInputRef}
-                          type="file"
-                          accept="image/*,application/pdf"
-                          capture="environment"
-                          style={{ display: 'none' }}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            e.target.value = '';
-                            if (f) void createDocFromPhotoFile(f);
-                          }}
-                        />
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button
-                            type="button"
-                            disabled={!token}
-                            onClick={() => {
-                              if (!token) return;
-                              docPhotoInputRef.current?.click();
-                            }}
-                            style={{
-                              flex: 1,
-                              padding: 10,
-                              borderRadius: 12,
-                              border: `1.5px solid ${C.border}`,
-                              background: C.white,
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: token ? C.text : C.text3,
-                            }}
-                          >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                              <IconCamera size={14} color={C.text} strokeWidth={1.65} />
-                              Photo
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={openDocEmailDraft}
-                            style={{
-                              flex: 1,
-                              padding: 10,
-                              borderRadius: 12,
-                              border: `1.5px solid ${C.border}`,
-                              background: C.white,
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: C.text2,
-                            }}
-                          >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                              <IconMail size={14} color={C.text2} strokeWidth={1.65} />
-                              Email
-                            </span>
-                          </button>
-                        </div>
-                        <p style={{ fontSize: 9, color: C.text3, margin: '8px 0 0', lineHeight: 1.35 }}>
-                          Image ou PDF : la fiche est créée puis le fichier est enregistré sur le serveur (stockage isolé par foyer, volume Docker majordome_uploads). La taille max est définie côté API (MAJORDOME_ATTACHMENT_MAX_MB).
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+              <CoffreModal
+                C={C}
+                open={modalCoffre}
+                token={token}
+                loading={loading}
+                prenom={familyProfile.prenom}
+                docVault={docVault}
+                docStorageSummary={docStorageSummary}
+                docCat={docCat}
+                onDocCatChange={setDocCat}
+                docSearch={docSearch}
+                onDocSearchChange={setDocSearch}
+                docAddedFlash={docAddedFlash}
+                docEdit={docEdit}
+                onDocEditChange={setDocEdit}
+                docEditSaving={docEditSaving}
+                docAttachmentReplaceRef={docAttachmentReplaceRef}
+                docPhotoInputRef={docPhotoInputRef}
+                onClose={() => setModalCoffre(false)}
+                onRefresh={() => token && void loadData(token)}
+                onQuickAdd={() => void quickAddDocument()}
+                onOpenDocEdit={openDocEdit}
+                onSaveDocEdit={() => void saveDocEdit()}
+                onDownloadAttachment={downloadDocAttachment}
+                onUploadAttachment={uploadAttachmentForDoc}
+                onRemoveAttachment={removeAttachmentForDoc}
+                onToggleUrgent={(d) => void toggleDocUrgent(d)}
+                onDeleteDoc={(d) => void deleteDocumentFromVault(d)}
+                onCreateFromPhoto={(f) => void createDocFromPhotoFile(f)}
+                onOpenDocEmailDraft={openDocEmailDraft}
+              />
               <EquiteModal
                 C={C}
                 open={modalEquite}
