@@ -1816,10 +1816,14 @@ export default function HomePage() {
       const startsAt = toStr((proposal as { starts_at?: unknown }).starts_at) || now.toISOString();
       const endsAt = toStr((proposal as { ends_at?: unknown }).ends_at) || inOneHour.toISOString();
       const eventTitle = titleFromProposal || command.slice(0, 120);
+      const googleConnected = accounts.some(
+        (a) => a.provider === 'google_calendar' && a.status === 'connected',
+      );
+      const eventProvider = googleConnected ? 'google_calendar' : 'none';
       const created = await postJson<EventItem>(
         '/api/v1/events/create-and-sync',
-        { title: eventTitle, starts_at: startsAt, ends_at: endsAt, provider: 'google_calendar' },
-        token
+        { title: eventTitle, starts_at: startsAt, ends_at: endsAt, provider: eventProvider },
+        token,
       );
       setEvents((prev) => [created, ...prev.filter((e) => e.id !== created.id)]);
       return { done: true, message: `C'est noté. Événement ajouté : ${eventTitle}` };
