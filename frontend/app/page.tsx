@@ -45,9 +45,6 @@ import {
   IconHome,
   IconCalendar,
   IconCart,
-  IconHouseCare,
-  IconSmartHome,
-  IconFolderVault,
   IconUserHeart,
   IconSparkleAI,
   IconPaperclip,
@@ -75,7 +72,6 @@ import {
   IconCamera,
   IconMail,
   IconSchoolBag,
-  IconLeaf,
   IconPeopleOutline,
   IconTarget,
   IconHeartOutline,
@@ -108,6 +104,9 @@ import { LoginAuthScreen } from '../components/LoginAuthScreen';
 import { MoiTabPanel } from '../components/MoiTabPanel';
 import { AgendaTabPanel } from '../components/AgendaTabPanel';
 import { HomeTabPanel } from '../components/HomeTabPanel';
+import { MaisonTabPanel } from '../components/MaisonTabPanel';
+import { DocumentsTabPanel } from '../components/DocumentsTabPanel';
+import { formatDocStorageShort } from '../lib/documentsUi';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton } from '../components/taskUi';
 import {
   executeAgentIntent as runAgentIntent,
@@ -289,13 +288,6 @@ function docCategoryForApi(filterId: string): string {
   return DOC_FILTER_TO_API_CAT[filterId] ?? filterId;
 }
 
-function formatDocStorageShort(usedBytes: number, quotaBytes: number | null): string {
-  const fmt = (b: number) =>
-    b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`;
-  if (quotaBytes == null) return `Pièces jointes : ${fmt(usedBytes)} (sans quota global)`;
-  const pct = quotaBytes > 0 ? Math.min(100, Math.round((usedBytes / quotaBytes) * 100)) : 0;
-  return `Stockage PJ : ${fmt(usedBytes)} / ${fmt(quotaBytes)} (${pct} %)`;
-}
 type FridgeItem = { id: number; label: string; expires_at: string; qty: number };
 type UiToast = { id: string; kind: 'success' | 'error' | 'info'; text: string };
 
@@ -1944,8 +1936,6 @@ export default function HomePage() {
   const urgentCount = useMemo(() => conflicts.filter((c) => c.severity === 'high').length, [conflicts]);
   const loadPct = computeTaskCompletionPct(openTasks.length, tasks.length);
   const doneCourses = useMemo(() => courses.filter((c) => c.done).length, [courses]);
-  const morningPct = Math.round((morningDone.filter(Boolean).length / Math.max(morningDone.length, 1)) * 100);
-  const eveningPct = Math.round((eveningDone.filter(Boolean).length / Math.max(eveningDone.length, 1)) * 100);
   const budgetUsedPct = computeBudgetUsedPct(budget);
   const selectedMeal = mealPlans[selectedMealDay] || { lunch: '', dinner: '', missing: [] };
   const weekEvents = useMemo(() => events.slice(0, 8), [events]);
@@ -2464,202 +2454,39 @@ export default function HomePage() {
     if (layer === 'maison') {
       return wrapOv(
         'Maison',
-        <div style={{ padding: '14px 18px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <IconHouseCare size={26} color={C.terra} strokeWidth={1.65} />
-            <div>
-              <p style={{ margin: 0, fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
-                Domotique, extérieur et routines du foyer — tout ce qui concerne le logement (pas les courses).
-              </p>
-            </div>
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.6, margin: '0 0 8px' }}>DOMOTIQUE & ÉQUIPEMENTS</div>
-          <GlassCard style={{ padding: 14, marginBottom: 12, background: C.alexL, border: `1.5px solid ${C.alex}44` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <IconSmartHome size={22} color={C.alex} strokeWidth={1.65} />
-              <strong style={{ fontSize: 13, color: C.alex }}>Maison connectée</strong>
-            </div>
-            <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>
-              Ici vivront les connexions vers tes équipements : éclairage, chauffage, volets, alarme, prises, Matter / Home Assistant, etc. Ce n&apos;est pas encore branché au backend : on définit l&apos;emplacement dans l&apos;app pour que la famille s&apos;y retrouve.
-            </p>
-            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {(['Éclairage', 'Chauffage', 'Volets', 'Alarme', 'Prises', 'Scénarios'] as const).map((label) => (
-                <Pill key={label} bg={C.white} color={C.alex}>
-                  {label}
-                </Pill>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                alfred.setAssistantInput(
-                  `Pour la domotique du foyer : propose un plan simple (priorités + sécurité) pour ${familyProfile.prenom}, sans installer de matériel.`,
-                );
-                setOverlay('assistant');
-              }}
-              style={{
-                marginTop: 12,
-                width: '100%',
-                borderRadius: 12,
-                border: `1px solid ${C.alex}`,
-                padding: '10px 12px',
-                background: C.white,
-                color: C.alex,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              En parler avec {aiName}
-            </button>
-          </GlassCard>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.6, margin: '14px 0 8px' }}>JARDIN & EXTÉRIEUR</div>
-          <GlassCard style={{ padding: 14, marginBottom: 12, background: C.sageL, border: `1.5px solid ${C.sage}44` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <IconLeaf size={22} color={C.sage} strokeWidth={1.65} />
-              <strong style={{ fontSize: 13, color: C.sage }}>Extérieur</strong>
-            </div>
-            <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>
-              Arrosage, tonte, compost : zone dédiée pour remplir l&apos;écran « vide » actuel. Prochaine étape : lier des rappels météo et un calendrier d&apos;entretien.
-            </p>
-            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Pill bg={C.white} color={C.sage}>
-                Arrosage
-              </Pill>
-              <Pill bg={C.white} color={C.sage}>
-                Plants saison
-              </Pill>
-              <Pill bg={C.white} color={C.sage}>
-                Outils
-              </Pill>
-            </div>
-          </GlassCard>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.6, margin: '14px 0 8px' }}>ROUTINES DU FOYER</div>
-          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
-            <div style={{ fontSize: 12, fontWeight: 700 }}>Matin · {morningPct}%</div>
-            <div style={{ height: 8, background: C.surface3, borderRadius: 8, marginTop: 6 }}>
-              <div style={{ width: `${morningPct}%`, height: '100%', background: C.terra, borderRadius: 8 }} />
-            </div>
-          </GlassCard>
-          {['Aérer', 'Machine', `Cartable ${familyProfile.enfant}`].map((label, idx) => (
-            <GlassCard key={label} style={{ padding: 12, marginBottom: 8, background: morningDone[idx] ? C.greenL : C.white }}>
-              <button onClick={() => setMorningDone((v) => v.map((x, i) => (i === idx ? !x : x)))} style={{ border: 'none', background: 'transparent', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 18, display: 'flex', justifyContent: 'center' }}>{morningDone[idx] ? <IconCheckSmall size={16} color={C.green} /> : <IconCircleOutline size={16} color={C.text3} />}</span>
-                <span>{label}</span>
-              </button>
-            </GlassCard>
-          ))}
-          <GlassCard style={{ padding: 12, marginTop: 12, marginBottom: 10, background: C.sageL }}>
-            <div style={{ fontSize: 12, fontWeight: 700 }}>Soir · {eveningPct}%</div>
-            <div style={{ height: 8, background: C.surface3, borderRadius: 8, marginTop: 6 }}>
-              <div style={{ width: `${eveningPct}%`, height: '100%', background: C.sage, borderRadius: 8 }} />
-            </div>
-          </GlassCard>
-          {['Ranger salon', 'Préparer affaires', 'Lave-vaisselle'].map((label, idx) => (
-            <GlassCard key={label} style={{ padding: 12, marginBottom: 8, background: eveningDone[idx] ? C.greenL : C.white }}>
-              <button onClick={() => setEveningDone((v) => v.map((x, i) => (i === idx ? !x : x)))} style={{ border: 'none', background: 'transparent', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 18, display: 'flex', justifyContent: 'center' }}>{eveningDone[idx] ? <IconCheckSmall size={16} color={C.green} /> : <IconCircleOutline size={16} color={C.text3} />}</span>
-                <span>{label}</span>
-              </button>
-            </GlassCard>
-          ))}
-        </div>,
+        <MaisonTabPanel
+          C={C}
+          aiName={aiName}
+          enfantName={familyProfile.enfant}
+          morningDone={morningDone}
+          onToggleMorning={(idx) => setMorningDone((v) => v.map((x, i) => (i === idx ? !x : x)))}
+          eveningDone={eveningDone}
+          onToggleEvening={(idx) => setEveningDone((v) => v.map((x, i) => (i === idx ? !x : x)))}
+          onOpenAssistant={() => {
+            alfred.setAssistantInput(
+              `Pour la domotique du foyer : propose un plan simple (priorités + sécurité) pour ${familyProfile.prenom}, sans installer de matériel.`,
+            );
+            setOverlay('assistant');
+          }}
+        />,
       );
     }
 
     if (layer === 'documents') {
       return wrapOv(
         'Coffre famille',
-        <div style={{ padding: '14px 18px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 16, background: C.sageL, border: `1px solid ${C.sage}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <IconFolderVault size={28} color={C.sage} strokeWidth={1.65} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: 12, color: C.text2, lineHeight: 1.5 }}>
-                Stockage des références foyer (contrats, santé, identité). Ce n&apos;est pas Google Drive : tout reste dans MajorDome ; connexion CalDAV / Drive pourrait être ajoutée côté API plus tard.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setModalCoffre(true)}
-            style={{ marginBottom: 12, width: '100%', borderRadius: 14, border: 'none', padding: '12px 14px', background: C.terra, color: '#fff', fontSize: 13, fontWeight: 800 }}
-          >
-            Ouvrir le coffre complet ({docVault.length})
-          </button>
-          {!token ? <p style={{ fontSize: 11, color: C.text2, margin: '0 0 10px' }}>Connecte-toi pour synchroniser les documents du foyer.</p> : null}
-          {docVault.slice(0, 12).map((d) => (
-            <div
-              key={d.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                borderBottom: `1px solid ${C.border}`,
-                padding: '10px 0',
-              }}
-            >
-              <DocGlyphBubble icon={d.icon} />
-              <button
-                type="button"
-                onClick={() => {
-                  setModalCoffre(true);
-                  openDocEdit(d);
-                }}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  minWidth: 0,
-                  border: 'none',
-                  padding: 0,
-                  background: 'transparent',
-                  cursor: token ? 'pointer' : 'default',
-                  textAlign: 'left',
-                  gap: 8,
-                }}
-              >
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
-                <Pill bg={C.surface} color={C.sage}>
-                  {docCategoryLabel(d.cat)}
-                </Pill>
-              </button>
-              {d.attachmentSizeBytes && token ? (
-                <button
-                  type="button"
-                  aria-label="Télécharger la pièce jointe"
-                  title="Télécharger"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void downloadDocAttachment(d.id);
-                  }}
-                  style={{
-                    flexShrink: 0,
-                    width: 38,
-                    height: 38,
-                    borderRadius: 11,
-                    border: `1px solid ${C.sage}`,
-                    background: C.white,
-                    cursor: 'pointer',
-                    padding: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <IconPaperclip size={18} color={C.sage} strokeWidth={1.65} />
-                </button>
-              ) : null}
-            </div>
-          ))}
-          {token && docStorageSummary ? (
-            <p style={{ fontSize: 11, color: C.text3, marginTop: 14, textAlign: 'center' }}>
-              {formatDocStorageShort(docStorageSummary.used_bytes, docStorageSummary.quota_bytes)}
-            </p>
-          ) : null}
-        </div>,
+        <DocumentsTabPanel
+          C={C}
+          token={token}
+          docVault={docVault}
+          docStorageSummary={docStorageSummary}
+          onOpenVault={() => setModalCoffre(true)}
+          onOpenDoc={(docId) => {
+            const doc = docVault.find((d) => d.id === docId);
+            if (doc) openDocEdit(doc);
+          }}
+          onDownloadAttachment={downloadDocAttachment}
+        />,
       );
     }
 
