@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   deleteJson,
   downloadAuthed,
@@ -11,7 +11,6 @@ import {
   postJson,
   saveBlobAsFile,
 } from '../lib/api';
-import { normalizeWebRtcSdp, waitForIceGatheringComplete } from '../lib/realtimeSdp';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
 import {
   TOAST_DURATION_MS,
@@ -100,21 +99,16 @@ import { CourrierPanel } from '../components/CourrierPanel';
 import { AlbumsPanel } from '../components/AlbumsPanel';
 import { RoutinesPanel } from '../components/RoutinesPanel';
 import { CoursesPanel } from '../components/CoursesPanel';
-import { AlfredChatPanel, type AlfredMessage } from '../components/AlfredChatPanel';
+import { AlfredChatPanel } from '../components/AlfredChatPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 import { AppLoader, MajordomeMark, MajordomeWordmark } from '../components/BrandLogo';
 import { LoginSplash } from '../components/LoginSplash';
-import { inferAlfredActions } from '../lib/alfredSuggestions';
-import { realtimeToolToInterpret } from '../lib/alfredRealtimeTools';
 import {
-  agentNeedsConfirm,
-  clearAlfredMemoryServer,
-  confirmLabelForIntent,
   executeAgentIntent as runAgentIntent,
-  tryExtractAlfredMemory,
   type AgentExecutionResult,
   type AgentInterpretResponse,
 } from '../lib/alfredAgent';
+import { useAlfredAssistant } from '../hooks/useAlfredAssistant';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -148,28 +142,6 @@ type TaskItem = {
 
 type TaskSummaryApi = { open_count: number; done_count: number };
 
-/** API Web Speech (navigateurs Chromium / Safari) — types DOM incomplets selon les configs TS. */
-type WebSpeechRecognitionResultList = {
-  length: number;
-  [index: number]: { 0?: { transcript?: string }; isFinal: boolean };
-};
-type WebSpeechRecognitionResultEvent = {
-  resultIndex: number;
-  results: WebSpeechRecognitionResultList;
-};
-type SpeechRecognitionLike = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((event: WebSpeechRecognitionResultEvent) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-};
-type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
-
-const ASSISTANT_HISTORY_KEY = 'majordome_assistant_history';
 
 function mergeTasksById(prev: TaskItem[], incoming: TaskItem[]): TaskItem[] {
   const map = new Map<number, TaskItem>();
@@ -773,22 +745,7 @@ export default function HomePage() {
   const [docEdit, setDocEdit] = useState<DocEditDraft | null>(null);
   const [docEditSaving, setDocEditSaving] = useState(false);
 
-  const [assistantInput, setAssistantInput] = useState('');
-  const [assistantTyping, setAssistantTyping] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [liveTranscript, setLiveTranscript] = useState('');
-  const [autoSpeak, setAutoSpeak] = useState(false);
-  const [pushToTalk, setPushToTalk] = useState(true);
-  /** Speech-to-speech OpenAI Realtime (voix Cedar côté serveur). */
-  const [openAiRealtimeOn, setOpenAiRealtimeOn] = useState(false);
-  const [openAiRealtimeBusy, setOpenAiRealtimeBusy] = useState(false);
-  /** null = chargement du statut serveur ; false = pas de MAJORDOME_LLM_API_KEY côté API */
-  const [realtimeVoiceOk, setRealtimeVoiceOk] = useState<boolean | null>(null);
   const [aiName, setAiName] = useState('Alfred');
-  const [assistantHistory, setAssistantHistory] = useState<AlfredMessage[]>([
-    { who: 'ai', text: "Coucou, je suis Alfred. Dis-moi ce que je dois gérer pour toi." },
-  ]);
   const [toasts, setToasts] = useState<UiToast[]>([]);
   const [taskAssignBusyId, setTaskAssignBusyId] = useState<number | null>(null);
   const [taskCompleteBusyId, setTaskCompleteBusyId] = useState<number | null>(null);
@@ -799,70 +756,8 @@ export default function HomePage() {
   const [taskSummary, setTaskSummary] = useState<TaskSummaryApi | null>(null);
   const [taskSummaryRefreshing, setTaskSummaryRefreshing] = useState(false);
   const doneNextOffsetRef = useRef(INITIAL_DONE_TASKS_LIMIT);
-  const endRef = useRef<HTMLDivElement | null>(null);
-  const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const realtimePcRef = useRef<RTCPeerConnection | null>(null);
-  const realtimeDcRef = useRef<RTCDataChannel | null>(null);
-  const realtimeVoicePendingRef = useRef('');
-  const realtimeVoiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const realtimeToolBusyRef = useRef(false);
-  const realtimeToolHandledRef = useRef(false);
-  const realtimeCallsSeenRef = useRef<Set<string>>(new Set());
-  const alfredInputRef = useRef<HTMLInputElement | null>(null);
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const alfredNearBottomRef = useRef(true);
-  const realtimeMsRef = useRef<MediaStream | null>(null);
-  const realtimeAudioElRef = useRef<HTMLAudioElement | null>(null);
   const docPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const docAttachmentReplaceRef = useRef<HTMLInputElement | null>(null);
-
-  const cleanupRealtimeMedia = useCallback(() => {
-    try {
-      realtimeDcRef.current?.close();
-    } catch {
-      /* ignore */
-    }
-    realtimeDcRef.current = null;
-    try {
-      realtimePcRef.current?.getSenders().forEach((s) => {
-        try {
-          s.track?.stop();
-        } catch {
-          /* ignore */
-        }
-      });
-      realtimePcRef.current?.close();
-    } catch {
-      /* ignore */
-    }
-    realtimePcRef.current = null;
-    try {
-      realtimeMsRef.current?.getTracks().forEach((t) => t.stop());
-    } catch {
-      /* ignore */
-    }
-    realtimeMsRef.current = null;
-    const el = realtimeAudioElRef.current;
-    if (el) {
-      try {
-        el.pause();
-        el.srcObject = null;
-      } catch {
-        /* ignore */
-      }
-    }
-  }, []);
-
-  const openAiRealtimeOnRef = useRef(false);
-  useEffect(() => {
-    openAiRealtimeOnRef.current = openAiRealtimeOn;
-  }, [openAiRealtimeOn]);
-
-  const disconnectOpenAiRealtime = useCallback(() => {
-    cleanupRealtimeMedia();
-    realtimeCallsSeenRef.current.clear();
-    setOpenAiRealtimeOn(false);
-  }, [cleanupRealtimeMedia]);
 
   function seedDocsForFamily(f: FamilyProfile): DocVaultItem[] {
     const J = f.prenom || 'Joanne';
@@ -906,6 +801,20 @@ export default function HomePage() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, TOAST_DURATION_MS);
   }
+
+  const onExecuteIntentRef = useRef<
+    (command: string, interpreted: AgentInterpretResponse) => Promise<AgentExecutionResult>
+  >(async () => ({ done: false }));
+
+  const alfred = useAlfredAssistant({
+    token,
+    overlayActive: overlay === 'assistant' || mainTab === 'alfred',
+    aiName,
+    alfredMemory,
+    setAlfredMemory,
+    onExecuteIntent: (command, interpreted) => onExecuteIntentRef.current(command, interpreted),
+    onToast: pushToast,
+  });
 
   async function assignTaskMember(taskId: number, next: number | null) {
     if (!token || taskId <= 0) return;
@@ -1149,32 +1058,7 @@ export default function HomePage() {
     const cleanName = storedAiName?.trim() || 'Alfred';
     if (!storedAiName) localStorage.setItem('majordome_ai_name', cleanName);
     setAiName(cleanName);
-    try {
-      const rawHistory = localStorage.getItem(ASSISTANT_HISTORY_KEY);
-      if (rawHistory) {
-        const parsed = JSON.parse(rawHistory);
-        if (Array.isArray(parsed)) {
-          const cleaned = parsed
-            .filter(
-              (x: unknown): x is { who: 'ai' | 'user'; text: string } =>
-                !!x &&
-                typeof x === 'object' &&
-                (((x as { who?: string }).who === 'ai') || (x as { who?: string }).who === 'user') &&
-                typeof (x as { text?: unknown }).text === 'string'
-            )
-            .slice(-200);
-          if (cleaned.length > 0) {
-            setAssistantHistory(cleaned);
-          } else {
-            setAssistantHistory([{ who: 'ai', text: `Coucou, je suis ${cleanName}. Dis-moi ce que je dois gerer pour toi.` }]);
-          }
-        }
-      } else {
-        setAssistantHistory([{ who: 'ai', text: `Coucou, je suis ${cleanName}. Dis-moi ce que je dois gerer pour toi.` }]);
-      }
-    } catch {
-      setAssistantHistory([{ who: 'ai', text: `Coucou, je suis ${cleanName}. Dis-moi ce que je dois gerer pour toi.` }]);
-    }
+    alfred.hydrateHistoryFromStorage(cleanName);
     try {
       const famRaw = localStorage.getItem('majordome_family_profile');
       let fam: FamilyProfile = defaultFamily();
@@ -1318,97 +1202,6 @@ export default function HomePage() {
       // ignore
     }
   }, [alfredMemory]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(assistantHistory.slice(-200)));
-    } catch {
-      // ignore
-    }
-  }, [assistantHistory]);
-
-  useEffect(() => {
-    const el = chatScrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      alfredNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [overlay, mainTab]);
-
-  useEffect(() => {
-    if (!alfredNearBottomRef.current) return;
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [assistantHistory, assistantTyping]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const w = window as Window & {
-      SpeechRecognition?: SpeechRecognitionCtor;
-      webkitSpeechRecognition?: SpeechRecognitionCtor;
-    };
-    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!SR) {
-      setVoiceSupported(false);
-      return;
-    }
-    setVoiceSupported(true);
-    const rec = new SR();
-    rec.lang = 'fr-FR';
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.onresult = (event: WebSpeechRecognitionResultEvent) => {
-      let finalText = '';
-      let interimText = '';
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const chunk = event.results[i][0]?.transcript || '';
-        if (event.results[i].isFinal) finalText += `${chunk} `;
-        else interimText += `${chunk} `;
-      }
-      const merged = `${finalText}${interimText}`.trim();
-      setLiveTranscript(merged);
-      if (finalText.trim()) setAssistantInput((prev) => `${prev} ${finalText}`.trim());
-    };
-    rec.onerror = () => setIsListening(false);
-    rec.onend = () => setIsListening(false);
-    speechRecognitionRef.current = rec;
-    return () => {
-      try {
-        rec.stop();
-      } catch {
-        // ignore
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (overlay !== 'assistant') {
-      cleanupRealtimeMedia();
-      setOpenAiRealtimeOn(false);
-    }
-  }, [overlay, cleanupRealtimeMedia]);
-
-  useEffect(() => {
-    if (overlay !== 'assistant' || !token) {
-      setRealtimeVoiceOk(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const s = await getJson<{ configured: boolean }>('/api/v1/agent/realtime/status', token);
-        if (!cancelled) setRealtimeVoiceOk(s.configured);
-      } catch {
-        if (!cancelled) setRealtimeVoiceOk(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [overlay, token]);
-
-  useEffect(() => () => cleanupRealtimeMedia(), [cleanupRealtimeMedia]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -1650,6 +1443,7 @@ export default function HomePage() {
   }
 
   function logout() {
+    alfred.disconnectRealtime();
     localStorage.removeItem('majordome_access_token');
     localStorage.removeItem('majordome_refresh_token');
     localStorage.removeItem(LAYOUT_USER_EMAIL_KEY);
@@ -1711,355 +1505,7 @@ export default function HomePage() {
     });
   }
 
-  async function processVoiceCommand(transcript: string) {
-    if (!token || !transcript.trim()) return;
-    const text = transcript.trim();
-    setAssistantTyping(true);
-    const memoryBlock =
-      alfredMemory.length > 0
-        ? `[Notes qu'Alfred doit garder en tête]\n${alfredMemory.slice(-12).join('\n')}\n\n`
-        : '';
-    try {
-      const res = await postJson<AgentInterpretResponse>(
-        '/api/v1/agent/interpret',
-        { command: `${memoryBlock}${text}` },
-        token,
-      );
-      const execution = await executeAgentIntent(text, res).catch(() => ({ done: false } as AgentExecutionResult));
-      if (execution.done && execution.message) {
-        startTransition(() => {
-          setAssistantHistory((h) => [...h, { who: 'ai', text: execution.message! }]);
-        });
-        pushToast('success', execution.message);
-      }
-    } catch {
-      pushToast('error', 'Impossible d’exécuter la commande vocale.');
-    } finally {
-      setAssistantTyping(false);
-    }
-  }
-
-  async function confirmAlfredAction(
-    command: string,
-    intent: string,
-    proposal?: Record<string, unknown>,
-  ) {
-    if (!token) return;
-    setAssistantTyping(true);
-    try {
-      const res: AgentInterpretResponse = {
-        intent,
-        mode: 'auto',
-        explanation: '',
-        proposal: proposal ?? {},
-      };
-      const execution = await executeAgentIntent(command, res);
-      if (execution.done && execution.message) {
-        setAssistantHistory((h) => [
-          ...h.map((m) => ({ ...m, pendingConfirm: undefined })),
-          { who: 'ai', text: execution.message!, id: `ai-${Date.now()}` },
-        ]);
-        pushToast('success', execution.message);
-      }
-    } finally {
-      setAssistantTyping(false);
-    }
-  }
-
-  async function clearAlfredMemoryAll() {
-    if (!token) return;
-    if (!window.confirm('Effacer toutes les notes mémorisées par Alfred (app + serveur) ?')) return;
-    try {
-      await clearAlfredMemoryServer(token);
-    } catch {
-      /* ignore */
-    }
-    setAlfredMemory([]);
-    localStorage.removeItem('majordome_alfred_memory');
-    pushToast('info', 'Mémoire Alfred effacée');
-  }
-
-  async function handleRealtimeToolCall(
-    dc: RTCDataChannel,
-    callId: string,
-    name: string,
-    argsJson: string,
-  ) {
-    if (!token || realtimeToolBusyRef.current) return;
-    if (realtimeCallsSeenRef.current.has(callId)) return;
-    realtimeCallsSeenRef.current.add(callId);
-    realtimeToolBusyRef.current = true;
-    let args: Record<string, unknown> = {};
-    try {
-      args = JSON.parse(argsJson) as Record<string, unknown>;
-    } catch {
-      args = {};
-    }
-    const interpreted = realtimeToolToInterpret(name, args);
-    let output: { ok: boolean; message: string } = { ok: false, message: 'Action non reconnue.' };
-    if (interpreted) {
-      const raw =
-        typeof args.title === 'string'
-          ? args.title
-          : typeof args.label === 'string'
-            ? args.label
-            : typeof args.task_title === 'string'
-              ? args.task_title
-              : typeof args.note === 'string'
-                ? args.note
-                : name;
-      try {
-        const execution = await executeAgentIntent(String(raw), interpreted);
-        if (execution.done && execution.message) {
-          output = { ok: true, message: execution.message };
-          pushToast('success', execution.message);
-          realtimeToolHandledRef.current = true;
-          window.setTimeout(() => {
-            realtimeToolHandledRef.current = false;
-          }, 2500);
-        } else {
-          output = { ok: false, message: "Je n'ai pas pu terminer cette action." };
-        }
-      } catch {
-        output = { ok: false, message: 'Erreur lors de l’exécution.' };
-      }
-    }
-    try {
-      dc.send(
-        JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: callId,
-            output: JSON.stringify(output),
-          },
-        }),
-      );
-      dc.send(JSON.stringify({ type: 'response.create' }));
-    } catch {
-      /* canal fermé */
-    } finally {
-      realtimeToolBusyRef.current = false;
-    }
-  }
-
-  function scheduleVoiceCommandFromTranscript(transcript: string) {
-    if (openAiRealtimeOnRef.current) return;
-    realtimeVoicePendingRef.current = transcript.trim();
-    if (realtimeVoiceTimerRef.current) clearTimeout(realtimeVoiceTimerRef.current);
-    realtimeVoiceTimerRef.current = setTimeout(() => {
-      const t = realtimeVoicePendingRef.current;
-      realtimeVoicePendingRef.current = '';
-      if (t && !realtimeToolHandledRef.current) void processVoiceCommand(t);
-    }, 450);
-  }
-
-  async function sendAssistant(overrideText?: string) {
-    const text = (overrideText ?? assistantInput).trim();
-    if (!token || !text) return;
-    const memNote = tryExtractAlfredMemory(text);
-    alfredNearBottomRef.current = true;
-    setAssistantHistory((m) => [...m, { who: 'user', text, id: `u-${Date.now()}` }]);
-    setAssistantInput('');
-    setAssistantTyping(true);
-    try {
-      const res = await postJson<AgentInterpretResponse>('/api/v1/agent/interpret', { command: text }, token);
-      let aiText = res.explanation || '';
-      if (res.proposal && typeof res.proposal === 'object' && 'title' in res.proposal) {
-        const t = (res.proposal as { title?: string }).title;
-        if (t && !agentNeedsConfirm(res)) aiText = `${aiText}\n\nTâche proposée : ${t}`.trim();
-      }
-      if (agentNeedsConfirm(res)) {
-        if (!aiText.trim()) aiText = 'Je peux faire ça pour toi si tu confirmes.';
-        setAssistantHistory((m) => [
-          ...m,
-          {
-            who: 'ai',
-            text: aiText,
-            id: `ai-${Date.now()}`,
-            pendingConfirm: {
-              command: text,
-              intent: res.intent,
-              label: confirmLabelForIntent(res.intent),
-              proposal: res.proposal,
-            },
-          },
-        ]);
-        if (memNote) {
-          setAlfredMemory((prev) => (prev.includes(memNote) ? prev : [...prev, memNote]));
-          void postJson('/api/v1/memory/facts', { fact_text: memNote }, token).catch(() => undefined);
-          pushToast('info', 'Alfred a mémorisé une note');
-        }
-        return;
-      }
-      const execution = await executeAgentIntent(text, res).catch(() => ({ done: false } as AgentExecutionResult));
-      if (execution.done && execution.message) {
-        aiText = `${aiText}\n\n${execution.message}`.trim();
-      }
-      if (!aiText.trim()) aiText = `${res.intent} (${res.mode})`;
-      const actions = inferAlfredActions(aiText, execution.done);
-      setAssistantHistory((m) => [
-        ...m,
-        { who: 'ai', text: aiText, actions: actions.length > 0 ? actions : undefined, id: `ai-${Date.now()}` },
-      ]);
-      if (memNote) {
-        setAlfredMemory((prev) => (prev.includes(memNote) ? prev : [...prev, memNote]));
-        void postJson('/api/v1/memory/facts', { fact_text: memNote }, token).catch(() => undefined);
-        pushToast('info', 'Alfred a mémorisé une note');
-      }
-      if (
-        autoSpeak &&
-        !openAiRealtimeOn &&
-        typeof window !== 'undefined' &&
-        'speechSynthesis' in window
-      ) {
-        const utterance = new SpeechSynthesisUtterance(aiText);
-        utterance.lang = 'fr-FR';
-        utterance.rate = 1;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
-      }
-    } catch {
-      setAssistantHistory((m) => [...m, { who: 'ai', text: "Je n'ai pas pu repondre maintenant, reessaie dans quelques secondes." }]);
-    } finally {
-      setAssistantTyping(false);
-    }
-  }
-
-  async function toggleOpenAiRealtimeVoice() {
-    if (!token) {
-      pushToast('error', 'Connecte-toi pour utiliser la voix OpenAI.');
-      return;
-    }
-    if (typeof window === 'undefined' || typeof RTCPeerConnection === 'undefined') {
-      pushToast('error', 'WebRTC indisponible sur ce navigateur.');
-      return;
-    }
-    if (openAiRealtimeOn || realtimePcRef.current) {
-      disconnectOpenAiRealtime();
-      pushToast('info', 'Appel vocal OpenAI terminé');
-      return;
-    }
-    const audioSink = realtimeAudioElRef.current;
-    if (!audioSink) {
-      pushToast('error', 'Lecteur audio indisponible. Réessaie après avoir rouvert Alfred.');
-      return;
-    }
-    audioSink.muted = false;
-    audioSink.volume = 1;
-    audioSink.autoplay = true;
-    setOpenAiRealtimeBusy(true);
-    try {
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
-      });
-      realtimePcRef.current = pc;
-
-      pc.ontrack = (e) => {
-        const [stream] = e.streams;
-        if (stream && realtimeAudioElRef.current) {
-          realtimeAudioElRef.current.srcObject = stream;
-          void realtimeAudioElRef.current.play().catch(() => {
-            pushToast('info', 'Touchez le bouton vagues pour activer le son.');
-          });
-        }
-      };
-
-      const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
-      realtimeMsRef.current = ms;
-      ms.getTracks().forEach((track) => pc.addTrack(track, ms));
-
-      const dc = pc.createDataChannel('oai-events');
-      realtimeDcRef.current = dc;
-
-      dc.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data as string) as {
-            type?: string;
-            transcript?: string;
-            item?: unknown;
-            name?: string;
-            arguments?: string;
-            call_id?: string;
-          };
-          const typ = String(msg.type || '');
-          const extract = (o: unknown): string | null => {
-            if (!o || typeof o !== 'object') return null;
-            const r = o as Record<string, unknown>;
-            if (typeof r.transcript === 'string' && r.transcript.trim()) return r.transcript.trim();
-            const item = r.item;
-            if (item && typeof item === 'object') {
-              const content = (item as { content?: unknown }).content;
-              if (Array.isArray(content)) {
-                for (const block of content) {
-                  if (block && typeof block === 'object') {
-                    const t = (block as { transcript?: string }).transcript;
-                    if (typeof t === 'string' && t.trim()) return t.trim();
-                  }
-                }
-              }
-            }
-            return null;
-          };
-
-          if (typ === 'response.function_call_arguments.done' || typ.endsWith('function_call_arguments.done')) {
-            const callId = String(msg.call_id || '');
-            const fnName = String(msg.name || '');
-            const fnArgs = String(msg.arguments || '{}');
-            if (callId && fnName) {
-              void handleRealtimeToolCall(dc, callId, fnName, fnArgs);
-            }
-            return;
-          }
-
-          const text = extract(msg);
-          if (!text) return;
-          if (typ === 'response.output_audio_transcript.done' || typ.endsWith('output_audio_transcript.done')) {
-            startTransition(() => {
-              setAssistantHistory((h) => [...h, { who: 'ai', text }]);
-            });
-          } else if (typ.includes('input_audio_transcription.completed')) {
-            startTransition(() => {
-              setAssistantHistory((h) => [...h, { who: 'user', text }]);
-            });
-            scheduleVoiceCommandFromTranscript(text);
-          }
-        } catch {
-          /* ignore */
-        }
-      };
-
-      const offer = await pc.createOffer({ offerToReceiveAudio: true });
-      await pc.setLocalDescription(offer);
-      await waitForIceGatheringComplete(pc, 10000);
-      const sdpRaw = pc.localDescription?.sdp;
-      if (!sdpRaw) throw new Error('SDP local vide');
-      const sdp = normalizeWebRtcSdp(sdpRaw);
-
-      const answer = await postJson<{ sdp: string }>(
-        '/api/v1/agent/realtime/webrtc',
-        {
-          sdp,
-          assistant_display_name: aiName,
-          extra_memory_notes: alfredMemory.slice(-14),
-        },
-        token,
-      );
-
-      await pc.setRemoteDescription({
-        type: 'answer',
-        sdp: normalizeWebRtcSdp(answer.sdp),
-      });
-      setOpenAiRealtimeOn(true);
-      pushToast('success', 'Voix Alfred connectée (GPT Realtime)');
-    } catch (e) {
-      disconnectOpenAiRealtime();
-      const msg = e instanceof Error ? e.message : 'Erreur voix OpenAI';
-      pushToast('error', msg);
-    } finally {
-      setOpenAiRealtimeBusy(false);
-    }
-  }
+  onExecuteIntentRef.current = executeAgentIntent;
 
   async function launchDebordee() {
     if (!token) return;
@@ -2157,30 +1603,6 @@ export default function HomePage() {
     pushToast('info', 'Tu pourras tout retrouver dans l’app et dans « Personnaliser l’accueil ».');
     const t = localStorage.getItem('majordome_access_token');
     if (t) void loadData(t);
-  }
-
-  function toggleVoiceListening() {
-    if (!speechRecognitionRef.current) return;
-    if (isListening) {
-      speechRecognitionRef.current.stop();
-      setIsListening(false);
-      return;
-    }
-    setLiveTranscript('');
-    speechRecognitionRef.current.start();
-    setIsListening(true);
-  }
-
-  async function stopListeningAndSend() {
-    if (!speechRecognitionRef.current) return;
-    try {
-      speechRecognitionRef.current.stop();
-    } catch {
-      // ignore
-    }
-    setIsListening(false);
-    const text = (assistantInput || '').trim();
-    if (text) await sendAssistant();
   }
 
   async function createEventFromApp() {
@@ -2960,7 +2382,7 @@ export default function HomePage() {
             </div>
             <button
               type="button"
-              onClick={() => setAssistantInput(`Rédige un message WhatsApp à ${familyProfile.partenaire} pour déléguer 2 tâches aujourd'hui`)}
+              onClick={() => alfred.setAssistantInput(`Rédige un message WhatsApp à ${familyProfile.partenaire} pour déléguer 2 tâches aujourd'hui`)}
               style={{ marginTop: 8, borderRadius: 10, border: 'none', padding: '8px 10px', background: C.terraXL, color: C.terra, fontSize: 11, fontWeight: 700 }}
             >
               Déléguer en 1 tap (WhatsApp)
@@ -3508,7 +2930,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => {
-                setAssistantInput(
+                alfred.setAssistantInput(
                   `Pour la domotique du foyer : propose un plan simple (priorités + sécurité) pour ${familyProfile.prenom}, sans installer de matériel.`,
                 );
                 setOverlay('assistant');
@@ -4063,12 +3485,12 @@ export default function HomePage() {
             <button type="button" onClick={() => window.open('https://www.picnic.app/fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Picnic / Instacart</button>
             <button
               type="button"
-              onClick={() => setAssistantInput(`Prépare un message WhatsApp pour ${familyProfile.partenaire} pour répartir les tâches de ce soir`)}
+              onClick={() => alfred.setAssistantInput(`Prépare un message WhatsApp pour ${familyProfile.partenaire} pour répartir les tâches de ce soir`)}
               style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}
             >
               Msg WhatsApp (Alfred)
             </button>
-            <button type="button" onClick={() => setAssistantInput('Crée une routine vocale Alexa et Google Home pour rappel tâches')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Alexa/Home/Siri</button>
+            <button type="button" onClick={() => alfred.setAssistantInput('Crée une routine vocale Alexa et Google Home pour rappel tâches')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Alexa/Home/Siri</button>
             <button type="button" onClick={() => { window.location.href = '/settings'; }} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.terraXL, color: C.terra, fontSize: 11, fontWeight: 700 }}>Configurer connexions</button>
           </div>
         </div>,
@@ -4104,32 +3526,32 @@ export default function HomePage() {
           aiName={aiName}
           firstName={familyProfile.prenom}
           partenaire={familyProfile.partenaire}
-          assistantHistory={assistantHistory}
-          assistantTyping={assistantTyping}
-          assistantInput={assistantInput}
-          setAssistantInput={setAssistantInput}
-          inputRef={alfredInputRef}
-          chatScrollRef={chatScrollRef}
-          endRef={endRef}
-          realtimeAudioElRef={realtimeAudioElRef}
-          openAiRealtimeOn={openAiRealtimeOn}
-          realtimeVoiceOk={realtimeVoiceOk}
-          openAiRealtimeBusy={openAiRealtimeBusy}
+          assistantHistory={alfred.assistantHistory}
+          assistantTyping={alfred.assistantTyping}
+          assistantInput={alfred.assistantInput}
+          setAssistantInput={alfred.setAssistantInput}
+          inputRef={alfred.alfredInputRef}
+          chatScrollRef={alfred.chatScrollRef}
+          endRef={alfred.endRef}
+          realtimeAudioElRef={alfred.realtimeAudioElRef}
+          openAiRealtimeOn={alfred.openAiRealtimeOn}
+          realtimeVoiceOk={alfred.realtimeVoiceOk}
+          openAiRealtimeBusy={alfred.openAiRealtimeBusy}
           alfredMemoryCount={alfredMemory.length}
-          voiceSupported={voiceSupported}
-          isListening={isListening}
-          autoSpeak={autoSpeak}
-          setAutoSpeak={setAutoSpeak}
+          voiceSupported={alfred.voiceSupported}
+          isListening={alfred.isListening}
+          autoSpeak={alfred.autoSpeak}
+          setAutoSpeak={alfred.setAutoSpeak}
           onBack={() => {
             setOverlay(null);
             setMainTab('home');
           }}
-          onClearMemory={() => void clearAlfredMemoryAll()}
-          onSend={() => void sendAssistant()}
-          onToggleVoice={toggleVoiceListening}
-          onToggleRealtime={() => void toggleOpenAiRealtimeVoice()}
-          onSuggestion={(text) => void sendAssistant(text)}
-          onConfirmPending={(cmd, intent, proposal) => void confirmAlfredAction(cmd, intent, proposal)}
+          onClearMemory={() => void alfred.clearAlfredMemoryAll()}
+          onSend={() => void alfred.sendAssistant()}
+          onToggleVoice={alfred.toggleVoiceListening}
+          onToggleRealtime={() => void alfred.toggleOpenAiRealtimeVoice()}
+          onSuggestion={(text) => void alfred.sendAssistant(text)}
+          onConfirmPending={(cmd, intent, proposal) => void alfred.confirmAlfredAction(cmd, intent, proposal)}
           onAction={(actionId) => {
             if (actionId === 'courses') {
               setCoursesTab('liste');
@@ -5273,7 +4695,7 @@ export default function HomePage() {
                               <div style={{ fontSize: 12, color: C.text2, marginTop: 4 }}>
                                 {s.from} → <strong style={{ color: C.alex }}>{s.to}</strong> · <span style={{ color: C.green }}>{s.save}</span>
                               </div>
-                              <button type="button" onClick={() => setAssistantInput(`Message pour ${s.to} : peux-tu prendre la tâche « ${s.task} » ?`)} style={{ marginTop: 8, width: '100%', padding: 8, borderRadius: 10, border: 'none', background: C.alex, color: '#fff', fontSize: 11, fontWeight: 700 }}>
+                              <button type="button" onClick={() => alfred.setAssistantInput(`Message pour ${s.to} : peux-tu prendre la tâche « ${s.task} » ?`)} style={{ marginTop: 8, width: '100%', padding: 8, borderRadius: 10, border: 'none', background: C.alex, color: '#fff', fontSize: 11, fontWeight: 700 }}>
                                 Proposer via Alfred
                               </button>
                             </GlassCard>
