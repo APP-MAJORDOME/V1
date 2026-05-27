@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.services.agent_tools import INTENT_SYSTEM_SUFFIX
 
 
 def _extract_json_payload(content: str) -> dict[str, Any] | None:
@@ -33,7 +34,8 @@ def interpret_with_openai(command: str, memory_facts: list[str] | None = None) -
     system_prompt = (
         "You are MajorDome assistant. Classify a French user command and return only a JSON object "
         "with keys: intent, mode, proposal, explanation. "
-        "intent in [task_create, email_draft, call_prepare, opportunity_search, planning]. "
+        + INTENT_SYSTEM_SUFFIX
+        + " "
         "mode in [auto, confirm, suggest]. "
         "proposal must be an object with useful actionable fields. "
         "explanation must be short in French."
@@ -91,7 +93,8 @@ def interpret_with_anthropic(command: str, memory_facts: list[str] | None = None
     system_prompt = (
         "You are MajorDome assistant. Classify a French user command and return only a JSON object "
         "with keys: intent, mode, proposal, explanation. "
-        "intent in [task_create, email_draft, call_prepare, opportunity_search, planning]. "
+        + INTENT_SYSTEM_SUFFIX
+        + " "
         "mode in [auto, confirm, suggest]. "
         "proposal must be an object with useful actionable fields. "
         "explanation must be short in French."

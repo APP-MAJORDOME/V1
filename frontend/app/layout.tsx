@@ -30,8 +30,8 @@ export const metadata: Metadata = {
   },
   robots: { index: false, follow: false },
   icons: {
-    icon: '/majordome-icon.svg',
-    apple: '/majordome-icon.svg',
+    icon: '/majordome-mark.png',
+    apple: '/majordome-mark.png',
   },
 };
 

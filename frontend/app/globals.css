@@ -125,6 +125,63 @@ body {
   }
 }
 
+/* Logo — loader & splash connexion */
+@keyframes majordomeMarkPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.88;
+  }
+}
+
+.majordome-loader-mark {
+  animation: majordomeMarkPulse 1.15s ease-in-out infinite;
+}
+
+.login-splash__mark {
+  opacity: 0;
+  transform: scale(0.55);
+  animation: splashMarkIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.login-splash__wordmark {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+.login-splash--wordmark .login-splash__wordmark,
+.login-splash--out .login-splash__wordmark {
+  animation: splashWordmarkIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.login-splash--out {
+  animation: splashFadeOut 0.45s ease forwards;
+}
+
+@keyframes splashMarkIn {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes splashWordmarkIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splashFadeOut {
+  to {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

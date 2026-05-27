@@ -10,15 +10,15 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/majordome-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/majordome-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/majordome-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/majordome-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]

@@ -9,10 +9,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     llm_provider: str = "mock"
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "gpt-5.4-mini"
     llm_base_url: str = "https://api.openai.com/v1"
     # OpenAI Realtime API (voix speech-to-speech, ex. Alfred dans l’app)
-    llm_realtime_model: str = "gpt-realtime"
+    llm_realtime_model: str = "gpt-realtime-2"
     llm_realtime_voice: str = "cedar"
     home_adapter_mode: str = "mock"
     jwt_secret_key: str = "change-me-in-prod"

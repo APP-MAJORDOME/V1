@@ -41,7 +41,6 @@ import {
   sortDoneTasksRecent,
 } from '../lib/selectors';
 import {
-  LogoMarkArrows,
   IconHome,
   IconCalendar,
   IconCart,
@@ -103,7 +102,10 @@ import { RoutinesPanel } from '../components/RoutinesPanel';
 import { CoursesPanel } from '../components/CoursesPanel';
 import { AlfredChatPanel, type AlfredMessage } from '../components/AlfredChatPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
+import { AppLoader, MajordomeMark, MajordomeWordmark } from '../components/BrandLogo';
+import { LoginSplash } from '../components/LoginSplash';
 import { inferAlfredActions } from '../lib/alfredSuggestions';
+import { realtimeToolToInterpret } from '../lib/alfredRealtimeTools';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -569,24 +571,7 @@ function RecentDoneTasksCard({
 }
 
 function AppBrandMark({ height = 24 }: { height?: number }) {
-  return <LogoMarkArrows size={Math.round(height * 1.45)} color={C.terra} strokeWidth={1.35} />;
-}
-
-/** Wordmark PNG transparent (asset foyer) — voir `public/majordome-brand-logo.png`. */
-function MajordomeWordmarkLogo({ maxHeight = 28 }: { maxHeight?: number }) {
-  return (
-    <img
-      src="/majordome-brand-logo.png"
-      alt="MAJORDOME"
-      style={{
-        height: maxHeight,
-        width: 'auto',
-        maxWidth: 'min(280px, 78vw)',
-        objectFit: 'contain',
-        display: 'block',
-      }}
-    />
-  );
+  return <MajordomeMark size={Math.round(height * 2.2)} />;
 }
 
 function StatusBar({ onOpenSearch }: { onOpenSearch?: () => void }) {
@@ -758,6 +743,7 @@ export default function HomePage() {
   const [clientReady, setClientReady] = useState(false);
   /** Toujours false au 1er rendu pour matcher le SSR ; useEffect applique localStorage. */
   const [onboardingDone, setOnboardingDone] = useState(false);
+  const [loginSplashDone, setLoginSplashDone] = useState(false);
   const [alfredMemory, setAlfredMemory] = useState<string[]>([]);
   const [modalDebordee, setModalDebordee] = useState<'closed' | 'confirm' | 'loading' | 'result'>('closed');
   const [debordeeResult, setDebordeeResult] = useState<DebordeeApiResponse | null>(null);
@@ -785,7 +771,7 @@ export default function HomePage() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
-  const [autoSpeak, setAutoSpeak] = useState(true);
+  const [autoSpeak, setAutoSpeak] = useState(false);
   const [pushToTalk, setPushToTalk] = useState(true);
   /** Speech-to-speech OpenAI Realtime (voix Cedar côté serveur). */
   const [openAiRealtimeOn, setOpenAiRealtimeOn] = useState(false);
@@ -810,6 +796,10 @@ export default function HomePage() {
   const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const realtimePcRef = useRef<RTCPeerConnection | null>(null);
   const realtimeDcRef = useRef<RTCDataChannel | null>(null);
+  const realtimeVoicePendingRef = useRef('');
+  const realtimeVoiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeToolBusyRef = useRef(false);
+  const realtimeToolHandledRef = useRef(false);
   const realtimeMsRef = useRef<MediaStream | null>(null);
   const realtimeAudioElRef = useRef<HTMLAudioElement | null>(null);
   const docPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -1226,6 +1216,10 @@ export default function HomePage() {
       setClientReady(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (token) setLoginSplashDone(true);
+  }, [token]);
 
   useEffect(() => {
     if (!clientReady) return;
@@ -1687,13 +1681,27 @@ export default function HomePage() {
       toStr((proposal as { assigned_to?: unknown }).assigned_to);
 
     const isGrocery =
+      interpreted.intent === 'grocery_add' ||
       lowered.includes('liste de courses') ||
       lowered.includes('liste courses') ||
       (lowered.includes('courses') && (lowered.includes('ajoute') || lowered.includes('rajoute'))) ||
       (lowered.includes('liste') && (lowered.includes('ajoute') || lowered.includes('rajoute')));
 
+    if (interpreted.intent === 'memory_store') {
+      const note =
+        toStr((proposal as { note?: unknown }).note) ||
+        toStr((proposal as { title?: unknown }).title) ||
+        command.slice(0, 220);
+      if (note.length >= 3) {
+        setAlfredMemory((prev) => (prev.includes(note) ? prev : [...prev, note]));
+        void postJson('/api/v1/memory/facts', { fact_text: note }, token).catch(() => undefined);
+        return { done: true, message: "C'est noté, je m'en souviendrai." };
+      }
+    }
+
     if (isGrocery) {
       const itemLabel =
+        toStr((proposal as { label?: unknown }).label) ||
         titleFromProposal ||
         (() => {
           const m = command.match(/ajoute(?:r)?\s+(.+?)(?:\s+(?:à|a)\s+la\s+liste|\s*$)/i);
@@ -1717,6 +1725,7 @@ export default function HomePage() {
     }
 
     const shouldAssign =
+      interpreted.intent === 'task_assign' ||
       interpreted.intent.includes('assign') ||
       interpreted.intent.includes('delegate') ||
       commandNormalized.includes('assigne');
@@ -1738,7 +1747,10 @@ export default function HomePage() {
       }
     }
 
-    const shouldComplete = interpreted.intent.includes('complete') || commandNormalized.includes('termine');
+    const shouldComplete =
+      interpreted.intent === 'task_complete' ||
+      interpreted.intent.includes('complete') ||
+      commandNormalized.includes('termine');
     if (shouldComplete) {
       const idFromProposal = Number((proposal as { task_id?: unknown }).task_id || 0);
       const taskHint = toStr((proposal as { task_title?: unknown }).task_title) || title;
@@ -1752,7 +1764,12 @@ export default function HomePage() {
     }
 
     const shouldCreateEvent =
-      interpreted.intent.includes('event') || interpreted.intent.includes('schedule') || commandNormalized.includes('emploi du temps');
+      interpreted.intent === 'event_create' ||
+      interpreted.intent.includes('event') ||
+      interpreted.intent.includes('schedule') ||
+      commandNormalized.includes('emploi du temps') ||
+      commandNormalized.includes('rendez-vous') ||
+      commandNormalized.includes('agenda');
     if (shouldCreateEvent) {
       const now = new Date();
       const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
@@ -1769,6 +1786,106 @@ export default function HomePage() {
     }
 
     return { done: false };
+  }
+
+  async function processVoiceCommand(transcript: string) {
+    if (!token || !transcript.trim()) return;
+    const text = transcript.trim();
+    setAssistantTyping(true);
+    const memoryBlock =
+      alfredMemory.length > 0
+        ? `[Notes qu'Alfred doit garder en tête]\n${alfredMemory.slice(-12).join('\n')}\n\n`
+        : '';
+    try {
+      const res = await postJson<AgentInterpretResponse>(
+        '/api/v1/agent/interpret',
+        { command: `${memoryBlock}${text}` },
+        token,
+      );
+      const execution = await executeAgentIntent(text, res).catch(() => ({ done: false } as AgentExecutionResult));
+      if (execution.done && execution.message) {
+        startTransition(() => {
+          setAssistantHistory((h) => [...h, { who: 'ai', text: execution.message! }]);
+        });
+        pushToast('success', execution.message);
+      }
+    } catch {
+      pushToast('error', 'Impossible d’exécuter la commande vocale.');
+    } finally {
+      setAssistantTyping(false);
+    }
+  }
+
+  async function handleRealtimeToolCall(
+    dc: RTCDataChannel,
+    callId: string,
+    name: string,
+    argsJson: string,
+  ) {
+    if (!token || realtimeToolBusyRef.current) return;
+    realtimeToolBusyRef.current = true;
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(argsJson) as Record<string, unknown>;
+    } catch {
+      args = {};
+    }
+    const interpreted = realtimeToolToInterpret(name, args);
+    let output: { ok: boolean; message: string } = { ok: false, message: 'Action non reconnue.' };
+    if (interpreted) {
+      const raw =
+        typeof args.title === 'string'
+          ? args.title
+          : typeof args.label === 'string'
+            ? args.label
+            : typeof args.task_title === 'string'
+              ? args.task_title
+              : typeof args.note === 'string'
+                ? args.note
+                : name;
+      try {
+        const execution = await executeAgentIntent(String(raw), interpreted);
+        if (execution.done && execution.message) {
+          output = { ok: true, message: execution.message };
+          pushToast('success', execution.message);
+          realtimeToolHandledRef.current = true;
+          window.setTimeout(() => {
+            realtimeToolHandledRef.current = false;
+          }, 2500);
+        } else {
+          output = { ok: false, message: "Je n'ai pas pu terminer cette action." };
+        }
+      } catch {
+        output = { ok: false, message: 'Erreur lors de l’exécution.' };
+      }
+    }
+    try {
+      dc.send(
+        JSON.stringify({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: callId,
+            output: JSON.stringify(output),
+          },
+        }),
+      );
+      dc.send(JSON.stringify({ type: 'response.create' }));
+    } catch {
+      /* canal fermé */
+    } finally {
+      realtimeToolBusyRef.current = false;
+    }
+  }
+
+  function scheduleVoiceCommandFromTranscript(transcript: string) {
+    realtimeVoicePendingRef.current = transcript.trim();
+    if (realtimeVoiceTimerRef.current) clearTimeout(realtimeVoiceTimerRef.current);
+    realtimeVoiceTimerRef.current = setTimeout(() => {
+      const t = realtimeVoicePendingRef.current;
+      realtimeVoicePendingRef.current = '';
+      if (t && !realtimeToolHandledRef.current) void processVoiceCommand(t);
+    }, 450);
   }
 
   async function sendAssistant(overrideText?: string) {
@@ -1800,7 +1917,12 @@ export default function HomePage() {
         setAlfredMemory((prev) => (prev.includes(memNote) ? prev : [...prev, memNote]));
       pushToast('info', 'Alfred a mémorisé une note');
       }
-      if (autoSpeak && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      if (
+        autoSpeak &&
+        !openAiRealtimeOn &&
+        typeof window !== 'undefined' &&
+        'speechSynthesis' in window
+      ) {
         const utterance = new SpeechSynthesisUtterance(aiText);
         utterance.lang = 'fr-FR';
         utterance.rate = 1;
@@ -1866,6 +1988,9 @@ export default function HomePage() {
             type?: string;
             transcript?: string;
             item?: unknown;
+            name?: string;
+            arguments?: string;
+            call_id?: string;
           };
           const typ = String(msg.type || '');
           const extract = (o: unknown): string | null => {
@@ -1886,6 +2011,25 @@ export default function HomePage() {
             }
             return null;
           };
+
+          if (typ === 'response.function_call_arguments.done' || typ.endsWith('function_call_arguments.done')) {
+            const callId = String(msg.call_id || '');
+            const fnName = String(msg.name || '');
+            const fnArgs = String(msg.arguments || '{}');
+            if (callId && fnName) {
+              void handleRealtimeToolCall(dc, callId, fnName, fnArgs);
+            }
+            return;
+          }
+
+          if (typ === 'response.output_item.done' && msg.item && typeof msg.item === 'object') {
+            const item = msg.item as { type?: string; call_id?: string; name?: string; arguments?: string };
+            if (item.type === 'function_call' && item.call_id && item.name) {
+              void handleRealtimeToolCall(dc, item.call_id, item.name, item.arguments || '{}');
+              return;
+            }
+          }
+
           const text = extract(msg);
           if (!text) return;
           if (typ === 'response.output_audio_transcript.done' || typ.endsWith('output_audio_transcript.done')) {
@@ -1896,6 +2040,7 @@ export default function HomePage() {
             startTransition(() => {
               setAssistantHistory((h) => [...h, { who: 'user', text }]);
             });
+            scheduleVoiceCommandFromTranscript(text);
           }
         } catch {
           /* ignore */
@@ -1924,7 +2069,7 @@ export default function HomePage() {
         sdp: normalizeWebRtcSdp(answer.sdp),
       });
       setOpenAiRealtimeOn(true);
-      pushToast('success', 'Voix OpenAI connectée (Cedar)');
+      pushToast('success', 'Voix Alfred connectée (GPT Realtime)');
     } catch (e) {
       disconnectOpenAiRealtime();
       const msg = e instanceof Error ? e.message : 'Erreur voix OpenAI';
@@ -2521,7 +2666,7 @@ export default function HomePage() {
     setOverlay(hubKey as OverlayId);
   }
 
-  const Screen = () => {
+  function renderAppLayer() {
     const layer: MainTab | OverlayId =
       overlay ??
       (mainTab === 'modules' ? 'plus' : mainTab === 'alfred' ? 'assistant' : mainTab);
@@ -4026,7 +4171,7 @@ export default function HomePage() {
     }
 
     return <div />;
-  };
+  }
 
   return (
     <>
@@ -4048,7 +4193,7 @@ export default function HomePage() {
           }}
           aria-label="MAJORDOME — accueil"
         >
-          <MajordomeWordmarkLogo maxHeight={36} />
+          <MajordomeWordmark maxHeight={36} />
         </a>
         <div className="app-device" style={{ background: C.bg }}>
           <div style={{ position: 'relative' }}>
@@ -4076,35 +4221,44 @@ export default function HomePage() {
           </div>
 
           {!clientReady ? (
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 24,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: 14, color: C.text2 }}>Chargement…</p>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AppLoader label="Chargement de l'application…" />
             </div>
           ) : !token ? (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+              {!loginSplashDone ? <LoginSplash onDone={() => setLoginSplashDone(true)} /> : null}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '100%',
+                  opacity: loginSplashDone ? 1 : 0,
+                  transition: 'opacity 0.4s ease',
+                  pointerEvents: loginSplashDone ? 'auto' : 'none',
+                }}
+              >
               <div
                 style={{
                   flexShrink: 0,
                   padding: '10px 16px',
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   gap: 12,
                   background: C.white,
                   borderBottom: `1px solid ${C.border}`,
                 }}
               >
-                <MajordomeWordmarkLogo maxHeight={28} />
+                <MajordomeWordmark maxHeight={32} />
               </div>
               <div style={{ flex: 1, padding: 18, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', touchAction: 'pan-y' }}>
               <h2 style={{ margin: 0, color: C.text }}>Connexion</h2>
               <p style={{ color: C.text2, fontSize: 13 }}>Connecte-toi pour utiliser MajorDome.</p>
+              {loading ? (
+                <div style={{ marginBottom: 12 }}>
+                  <AppLoader label="Connexion en cours…" compact />
+                </div>
+              ) : null}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -4146,22 +4300,11 @@ export default function HomePage() {
                 </button>
               </form>
               </div>
+              </div>
             </div>
           ) : !postLoginSetupResolved ? (
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                minHeight: 0,
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: C.bg,
-                padding: 24,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: 14, color: C.text2, textAlign: 'center' }}>Préparation de ton espace…</p>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
+              <AppLoader label="Préparation de ton espace…" />
             </div>
           ) : !postLoginSetupDone ? (
             <WelcomeSetupWizard
@@ -4171,7 +4314,7 @@ export default function HomePage() {
               onComplete={completeWelcomeWizard}
               onSkipAll={skipWelcomeWizard}
               onLogout={logout}
-              Wordmark={MajordomeWordmarkLogo}
+              Wordmark={MajordomeWordmark}
             />
           ) : (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
@@ -4186,10 +4329,10 @@ export default function HomePage() {
                   borderBottom: `1px solid ${C.border}`,
                 }}
               >
-                <MajordomeWordmarkLogo maxHeight={26} />
+                <MajordomeWordmark maxHeight={26} />
               </div>
               <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
-                <Screen />
+                {renderAppLayer()}
               </div>
               {modalDebordee !== 'closed' ? (
                 <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>

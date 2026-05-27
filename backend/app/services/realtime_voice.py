@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 import httpx
 
 from app.core.config import settings
+from app.services.agent_tools import ALFRED_REALTIME_TOOLS
 
 
 class RealtimeVoiceError(Exception):
@@ -37,9 +38,11 @@ def build_alfred_realtime_instructions(
     base = (
         f"Tu es {assistant_name}, l’assistant familial de l’application MajorDome (MAJORDOME). "
         "Tu réponds en français, naturellement, avec une voix claire et bienveillante. "
-        "Tu aides au quotidien : tâches, agenda, organisation du foyer, messages. "
-        "Si l’utilisateur décrit une action dans l’app, résume ce qu’il veut et propose les prochaines étapes ; "
-        "tu ne peux pas exécuter les boutons à sa place depuis cet écran vocal."
+        "Tu aides au quotidien : tâches, agenda, liste de courses, organisation du foyer. "
+        "Quand l’utilisateur demande une action concrète (créer une tâche, un événement, ajouter aux courses, "
+        "assigner ou terminer une tâche, mémoriser une info), appelle immédiatement l’outil adapté — "
+        "ne te contente pas d’expliquer comment faire. "
+        "Après l’exécution, confirme brièvement à l’oral ce qui a été fait."
     )
     lines: list[str] = []
     if household_memory:
@@ -68,6 +71,8 @@ def exchange_realtime_webrtc_sdp(sdp_offer: str, instructions: str) -> str:
         "model": settings.llm_realtime_model,
         "instructions": instructions,
         "audio": {"output": {"voice": settings.llm_realtime_voice}},
+        "tools": ALFRED_REALTIME_TOOLS,
+        "tool_choice": "auto",
     }
 
     session_json = json.dumps(session_payload, ensure_ascii=False)

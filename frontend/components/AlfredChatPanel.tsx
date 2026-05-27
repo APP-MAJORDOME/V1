@@ -226,7 +226,8 @@ export function AlfredChatPanel({
             type="button"
             onClick={onToggleRealtime}
             disabled={openAiRealtimeBusy}
-            aria-label="Voix temps réel"
+            title="Voix Alfred (GPT Realtime)"
+            aria-label="Voix Alfred GPT Realtime"
             style={{
               width: 44,
               height: 44,
@@ -260,10 +261,14 @@ export function AlfredChatPanel({
           </button>
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 10, color: C.text3 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-            <input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} />
-            Lire les réponses
-          </label>
+          {!openAiRealtimeOn ? (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} />
+              Lire les réponses (navigateur)
+            </label>
+          ) : (
+            <span>Voix GPT Realtime active — parle naturellement</span>
+          )}
           {alfredMemoryCount > 0 ? (
             <button type="button" onClick={onClearMemory} style={{ border: 'none', background: 'none', color: C.text3, cursor: 'pointer', fontSize: 10 }}>
               Effacer mémoire
