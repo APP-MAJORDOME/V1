@@ -84,7 +84,6 @@ import {
   DOC_CATEGORY_FILTER_IDS,
   docMatchesCategoryFilter,
   InlineDocGlyph,
-  EquityGlyphIcon,
   IconDotsGrid,
 } from '../components/md-icons';
 import { PlusHub } from '../components/PlusHub';
@@ -106,6 +105,8 @@ import { AgendaTabPanel } from '../components/AgendaTabPanel';
 import { HomeTabPanel } from '../components/HomeTabPanel';
 import { MaisonTabPanel } from '../components/MaisonTabPanel';
 import { DocumentsTabPanel } from '../components/DocumentsTabPanel';
+import { FamilleTabPanel } from '../components/FamilleTabPanel';
+import { EquiteModal } from '../components/EquiteModal';
 import { formatDocStorageShort } from '../lib/documentsUi';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton } from '../components/taskUi';
 import {
@@ -2524,83 +2525,21 @@ export default function HomePage() {
     if (layer === 'famille') {
       return wrapOv(
         'Famille & équité',
-        <div style={{ padding: '14px 18px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', minHeight: 0 }}>
-          <GlassCard style={{ padding: 14, marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, marginBottom: 8 }}>Répartition visible</div>
-            <div style={{ display: 'flex', gap: 4, height: 10, borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
-              {equity.map((e) => (
-                <div key={e.name} style={{ flex: Math.max(e.pct, 1), background: e.color }} />
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-              {equity.map((e) => (
-                <Pill key={e.name} bg={`${e.color}20`} color={e.color}>
-                  {e.name} {e.pct}%
-                </Pill>
-              ))}
-            </div>
-            <input
-              type="text"
-              value={partnerContactDraft}
-              onChange={(e) => setPartnerContactDraft(e.target.value)}
-              placeholder={`Mobile ou e-mail de ${familyProfile.partenaire} (optionnel)`}
-              autoComplete="tel email"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: `1.5px solid ${C.border}`,
-                fontSize: 12,
-                background: C.surface,
-                marginBottom: 10,
-              }}
-            />
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setEquitePlanText('');
-                  setEquiteTab('semaine');
-                  setModalEquite(true);
-                }}
-                style={{
-                  borderRadius: 10,
-                  border: 'none',
-                  padding: '8px 10px',
-                  background: C.terraXL,
-                  color: C.terra,
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-              >
-                Score équité hebdo
-              </button>
-              <button
-                type="button"
-                disabled={partnerNotifyLoading}
-                onClick={() => void notifyPartnerReal()}
-                style={{
-                  borderRadius: 10,
-                  border: 'none',
-                  padding: '8px 10px',
-                  background: C.alex,
-                  color: '#fff',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  opacity: partnerNotifyLoading ? 0.65 : 1,
-                }}
-              >
-                {partnerNotifyLoading ? 'Envoi…' : `Notifier ${familyProfile.partenaire}`}
-              </button>
-              <button type="button" onClick={() => goMainTab('moi')} style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: '8px 10px', background: C.white, fontSize: 11, fontWeight: 700, color: C.text2 }}>
-                Zone « Moi »
-              </button>
-            </div>
-          </GlassCard>
-          <p style={{ fontSize: 11, color: C.text3, lineHeight: 1.45, margin: 0 }}>
-            La carte complète charge mentale reste sur l&apos;accueil ; ici, raccourcis depuis le hub Plus.
-          </p>
-        </div>,
+        <FamilleTabPanel
+          C={C}
+          equity={equity}
+          partenaireName={familyProfile.partenaire}
+          partnerContactDraft={partnerContactDraft}
+          onPartnerContactChange={setPartnerContactDraft}
+          partnerNotifyLoading={partnerNotifyLoading}
+          onOpenEquiteModal={() => {
+            setEquitePlanText('');
+            setEquiteTab('semaine');
+            setModalEquite(true);
+          }}
+          onNotifyPartner={() => void notifyPartnerReal()}
+          onGoMoi={() => goMainTab('moi')}
+        />,
       );
     }
 
@@ -3682,157 +3621,28 @@ export default function HomePage() {
                   </div>
                 </div>
               ) : null}
-              {modalEquite ? (
-                <div style={{ position: 'absolute', inset: 0, zIndex: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                  <button
-                    type="button"
-                    aria-label="Fermer"
-                    onClick={() => {
-                      setModalEquite(false);
-                      setEquitePlanText('');
-                    }}
-                    style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', border: 'none', cursor: 'pointer' }}
-                  />
-                  <div style={{ position: 'relative', width: '100%', maxHeight: '92%', background: C.white, borderRadius: '22px 22px 0 0', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '16px 18px 12px', borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: '0 auto 10px' }} />
-                      <h3 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 4px' }}>Score équité</h3>
-                      <p style={{ fontSize: 11, color: C.text2, margin: '0 0 10px' }}>Rapport hebdomadaire (aperçu)</p>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {(
-                          [
-                            ['semaine', 'Semaine'],
-                            ['categories', 'Domaines'],
-                            ['plan', 'Plan'],
-                          ] as const
-                        ).map(([id, label]) => (
-                          <button
-                            type="button"
-                            key={id}
-                            onClick={() => {
-                              setEquiteTab(id);
-                              if (id === 'plan') void loadEquitePlan();
-                            }}
-                            style={{
-                              flex: 1,
-                              padding: '6px 4px',
-                              borderRadius: 12,
-                              border: `1.5px solid ${equiteTab === id ? C.terra : C.border}`,
-                              background: equiteTab === id ? C.terra : 'transparent',
-                              color: equiteTab === id ? '#fff' : C.text2,
-                              fontSize: 9.5,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px 28px' }}>
-                      {equiteTab === 'semaine' ? (
-                        <>
-                          {(() => {
-                            const w = equityWeeks[0];
-                            return (
-                              <div style={{ background: C.redL, borderRadius: 16, padding: 14, marginBottom: 12, border: `1.5px solid ${C.red}33` }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: C.red, marginBottom: 8 }}>DÉSÉQUILIBRE DÉTECTÉ</div>
-                                <div style={{ display: 'flex', gap: 3, height: 14, borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
-                                  <div style={{ flex: w.joanne, background: C.terra }} />
-                                  <div style={{ flex: w.alex, background: C.alex }} />
-                                  <div style={{ flex: w.lea, background: C.mint }} />
-                                </div>
-                                <div style={{ display: 'flex', gap: 12 }}>
-                                  {[
-                                    { n: familyProfile.prenom, p: w.joanne, t: w.tasks.joanne, c: C.terra },
-                                    { n: familyProfile.partenaire, p: w.alex, t: w.tasks.alex, c: C.alex },
-                                    { n: familyProfile.enfant, p: w.lea, t: w.tasks.lea, c: C.mint },
-                                  ].map((x) => (
-                                    <div key={x.n} style={{ flex: 1, textAlign: 'center' }}>
-                                      <div style={{ fontSize: 18, fontWeight: 800, color: x.c }}>{x.p}%</div>
-                                      <div style={{ fontSize: 10, color: C.text2, fontWeight: 600 }}>{x.n}</div>
-                                      <div style={{ fontSize: 9, color: C.text3 }}>{x.t} tâches</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                          <GlassCard style={{ padding: 14, marginBottom: 10 }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>Évolution 4 semaines</div>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              {equityWeeks.map((w, i) => (
-                                <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-                                  <div style={{ height: 56, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', marginBottom: 4 }}>
-                                    <div style={{ width: '100%', height: `${(w.joanne / 100) * 56}px`, background: `${C.terra}99`, borderRadius: '4px 4px 0 0' }} />
-                                  </div>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? C.terra : C.text3 }}>{w.joanne}%</div>
-                                  <div style={{ fontSize: 8, color: C.text3, lineHeight: 1.3 }}>{i === 0 ? 'Ce sem.' : i === 1 ? 'Sem. -1' : `-${i} sem.`}</div>
-                                </div>
-                              ))}
-                            </div>
-                            <div style={{ marginTop: 10, fontSize: 11, color: C.text2, fontStyle: 'italic' }}>
-                              {familyProfile.prenom} porte en moyenne environ <strong style={{ color: C.terra }}>69 %</strong> de la charge visible — l&apos;objectif équitable tourne autour de 33 % chacun.
-                            </div>
-                          </GlassCard>
-                        </>
-                      ) : null}
-                      {equiteTab === 'categories' ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {equityCategories.map((cat, i) => (
-                            <GlassCard key={i} style={{ padding: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                                <span style={{ fontSize: 13, fontWeight: 700 }}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                    <EquityGlyphIcon glyph={cat.glyph} size={15} color={C.text} />
-                                    {cat.label}
-                                  </span>
-                                </span>
-                                {cat.joanne > 80 ? <Pill color={C.red} bg={C.redL}>{familyProfile.prenom}</Pill> : null}
-                              </div>
-                              <div style={{ display: 'flex', gap: 2, height: 8, borderRadius: 8, overflow: 'hidden' }}>
-                                <div style={{ flex: cat.joanne, background: C.terra }} />
-                                <div style={{ flex: cat.alex, background: C.alex }} />
-                                <div style={{ flex: cat.lea, background: C.mint }} />
-                              </div>
-                              <div style={{ display: 'flex', gap: 10, marginTop: 6, fontSize: 10, color: C.text3 }}>
-                                <span>
-                                  <strong style={{ color: C.terra }}>{cat.joanne}%</strong> {familyProfile.prenom}
-                                </span>
-                                <span>
-                                  <strong style={{ color: C.alex }}>{cat.alex}%</strong> {familyProfile.partenaire}
-                                </span>
-                                <span>
-                                  <strong style={{ color: C.mint }}>{cat.lea}%</strong> {familyProfile.enfant}
-                                </span>
-                              </div>
-                            </GlassCard>
-                          ))}
-                        </div>
-                      ) : null}
-                      {equiteTab === 'plan' ? (
-                        <>
-                          <div style={{ background: C.sageL, borderRadius: 14, padding: 14, marginBottom: 12, border: `1.5px solid ${C.sage}33` }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: C.sage, marginBottom: 6 }}>PLAN ALFRED</div>
-                            {equitePlanLoading ? <div style={{ fontSize: 13, color: C.text2 }}>Alfred rédige ton plan…</div> : <p style={{ fontSize: 13, color: C.text, lineHeight: 1.55, margin: 0 }}>{equitePlanText}</p>}
-                          </div>
-                          {equitySuggestions.map((s, i) => (
-                            <GlassCard key={i} style={{ padding: 14, marginBottom: 8, borderColor: C.alex + '44' }}>
-                              <div style={{ fontSize: 13, fontWeight: 700 }}>{s.task}</div>
-                              <div style={{ fontSize: 12, color: C.text2, marginTop: 4 }}>
-                                {s.from} → <strong style={{ color: C.alex }}>{s.to}</strong> · <span style={{ color: C.green }}>{s.save}</span>
-                              </div>
-                              <button type="button" onClick={() => alfred.setAssistantInput(`Message pour ${s.to} : peux-tu prendre la tâche « ${s.task} » ?`)} style={{ marginTop: 8, width: '100%', padding: 8, borderRadius: 10, border: 'none', background: C.alex, color: '#fff', fontSize: 11, fontWeight: 700 }}>
-                                Proposer via Alfred
-                              </button>
-                            </GlassCard>
-                          ))}
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+              <EquiteModal
+                C={C}
+                open={modalEquite}
+                prenom={familyProfile.prenom}
+                partenaire={familyProfile.partenaire}
+                enfant={familyProfile.enfant}
+                equiteTab={equiteTab}
+                onEquiteTabChange={(id) => {
+                  setEquiteTab(id);
+                  if (id === 'plan') void loadEquitePlan();
+                }}
+                equityWeeks={equityWeeks}
+                equityCategories={equityCategories}
+                equitySuggestions={equitySuggestions}
+                equitePlanText={equitePlanText}
+                equitePlanLoading={equitePlanLoading}
+                onClose={() => {
+                  setModalEquite(false);
+                  setEquitePlanText('');
+                }}
+                onAlfredPrompt={(text) => alfred.setAssistantInput(text)}
+              />
             </div>
           )}
 
