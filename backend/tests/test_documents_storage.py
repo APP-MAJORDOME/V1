@@ -76,10 +76,11 @@ def _install_fake_redis():
 
 
 def _login(client: TestClient, email: str = "docs@majordome.test") -> str:
-    response = client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": "test12345", "full_name": "Docs User"},
-    )
+    payload = {"email": email, "password": "test12345", "full_name": "Docs User"}
+    reg = client.post("/api/v1/auth/register", json=payload)
+    if reg.status_code == 200:
+        return reg.json()["access_token"]
+    response = client.post("/api/v1/auth/login", json=payload)
     assert response.status_code == 200
     return response.json()["access_token"]
 

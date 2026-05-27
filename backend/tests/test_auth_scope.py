@@ -30,13 +30,18 @@ def _cleanup_db():
     Base.metadata.create_all(bind=engine)
 
 
+def _session(client: TestClient, email: str, *, full_name: str = "Test User"):
+    payload = {"email": email, "password": "test12345", "full_name": full_name}
+    reg = client.post("/api/v1/auth/register", json=payload)
+    if reg.status_code == 200:
+        return reg
+    response = client.post("/api/v1/auth/login", json=payload)
+    assert response.status_code == 200, response.text
+    return response
+
+
 def _login(client: TestClient, email: str) -> str:
-    response = client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": "test12345", "full_name": "Test User"},
-    )
-    assert response.status_code == 200
-    return response.json()["access_token"]
+    return _session(client, email).json()["access_token"]
 
 
 def test_requires_bearer_token_for_protected_routes():
@@ -104,11 +109,7 @@ def test_create_task_complete_and_summary_updates():
 def test_patch_task_invalid_assignee_returns_400():
     _cleanup_db()
     client = TestClient(app)
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "badassign@majordome.test", "password": "test12345", "full_name": "X"},
-    )
-    assert login.status_code == 200
+    login = _session(client, "badassign@majordome.test", full_name="X")
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     created = client.post("/api/v1/tasks", headers=headers, json={"title": "T", "task_type": "manual_task"})
@@ -122,11 +123,7 @@ def test_patch_task_invalid_assignee_returns_400():
 def test_patch_task_assign_to_household_member():
     _cleanup_db()
     client = TestClient(app)
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "assignok@majordome.test", "password": "test12345", "full_name": "Owner"},
-    )
-    assert login.status_code == 200
+    login = _session(client, "assignok@majordome.test", full_name="Owner")
     body = login.json()
     token = body["access_token"]
     hid = body["household_id"]
@@ -153,11 +150,7 @@ def test_patch_task_assign_to_household_member():
 def test_patch_task_clears_assignee_with_null():
     _cleanup_db()
     client = TestClient(app)
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "clearassign@majordome.test", "password": "test12345", "full_name": "Owner"},
-    )
-    assert login.status_code == 200
+    login = _session(client, "clearassign@majordome.test", full_name="Owner")
     body = login.json()
     token = body["access_token"]
     hid = body["household_id"]
@@ -214,11 +207,7 @@ def test_partner_inbox_returns_json_list():
 def test_partner_inbox_query_returns_task_assigned_to_matching_member():
     _cleanup_db()
     client = TestClient(app)
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "pinboxfilter@majordome.test", "password": "test12345", "full_name": "Owner"},
-    )
-    assert login.status_code == 200
+    login = _session(client, "pinboxfilter@majordome.test", full_name="Owner")
     body = login.json()
     token = body["access_token"]
     hid = body["household_id"]
@@ -246,11 +235,7 @@ def test_partner_inbox_query_returns_task_assigned_to_matching_member():
 def test_partner_delegation_notify_owner_assigns_lists_and_public_ack():
     _cleanup_db()
     client = TestClient(app)
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "delegowner@majordome.test", "password": "test12345", "full_name": "Owner"},
-    )
-    assert login.status_code == 200
+    login = _session(client, "delegowner@majordome.test", full_name="Owner")
     body = login.json()
     token = body["access_token"]
     hid = body["household_id"]
@@ -305,15 +290,8 @@ def test_partner_delegation_notify_owner_assigns_lists_and_public_ack():
 def test_partner_delegation_notify_non_owner_forbidden():
     _cleanup_db()
     client = TestClient(app)
-    login_a = client.post(
-        "/api/v1/auth/login",
-        json={"email": "delowna@majordome.test", "password": "test12345", "full_name": "A"},
-    )
-    login_b = client.post(
-        "/api/v1/auth/login",
-        json={"email": "delownb@majordome.test", "password": "test12345", "full_name": "B"},
-    )
-    assert login_a.status_code == 200 and login_b.status_code == 200
+    login_a = _session(client, "delowna@majordome.test", full_name="A")
+    login_b = _session(client, "delownb@majordome.test", full_name="B")
     hid_a = login_a.json()["household_id"]
     uid_b = login_b.json()["user_id"]
     token_a = login_a.json()["access_token"]
@@ -338,11 +316,7 @@ def test_partner_delegation_notify_non_owner_forbidden():
 def test_households_list_get_one_and_members_empty_then_synced():
     _cleanup_db()
     client = TestClient(app)
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "hhlist@majordome.test", "password": "test12345", "full_name": "Proprio"},
-    )
-    assert login.status_code == 200
+    login = _session(client, "hhlist@majordome.test", full_name="Proprio")
     hid = login.json()["household_id"]
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -391,15 +365,8 @@ def test_household_profile_sync_empty_names_returns_empty_list():
 def test_get_other_users_household_returns_404():
     _cleanup_db()
     client = TestClient(app)
-    login_a = client.post(
-        "/api/v1/auth/login",
-        json={"email": "hha@majordome.test", "password": "test12345", "full_name": "A"},
-    )
-    login_b = client.post(
-        "/api/v1/auth/login",
-        json={"email": "hhb@majordome.test", "password": "test12345", "full_name": "B"},
-    )
-    assert login_a.status_code == 200 and login_b.status_code == 200
+    login_a = _session(client, "hha@majordome.test", full_name="A")
+    login_b = _session(client, "hhb@majordome.test", full_name="B")
     hid_b = login_b.json()["household_id"]
     token_a = login_a.json()["access_token"]
     r = client.get(f"/api/v1/households/{hid_b}", headers={"Authorization": f"Bearer {token_a}"})
@@ -410,15 +377,8 @@ def test_get_other_users_household_returns_404():
 def test_household_profile_sync_forbidden_for_non_owner_token():
     _cleanup_db()
     client = TestClient(app)
-    login_a = client.post(
-        "/api/v1/auth/login",
-        json={"email": "syncown@majordome.test", "password": "test12345", "full_name": "A"},
-    )
-    login_b = client.post(
-        "/api/v1/auth/login",
-        json={"email": "syncother@majordome.test", "password": "test12345", "full_name": "B"},
-    )
-    assert login_a.status_code == 200 and login_b.status_code == 200
+    login_a = _session(client, "syncown@majordome.test", full_name="A")
+    login_b = _session(client, "syncother@majordome.test", full_name="B")
     hid_a = login_a.json()["household_id"]
     uid_b = login_b.json()["user_id"]
     forged = create_access_token(user_id=uid_b, household_id=hid_a)
@@ -1061,15 +1021,8 @@ def test_events_create_and_sync_unsupported_provider_returns_400():
 def test_login_rejects_household_id_not_owned():
     _cleanup_db()
     client = TestClient(app)
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"email": "loginowna@majordome.test", "password": "test12345", "full_name": "A"},
-    ).status_code == 200
-    login_b = client.post(
-        "/api/v1/auth/login",
-        json={"email": "loginownb@majordome.test", "password": "test12345", "full_name": "B"},
-    )
-    assert login_b.status_code == 200
+    _session(client, "loginowna@majordome.test", full_name="A")
+    login_b = _session(client, "loginownb@majordome.test", full_name="B")
     hid_b = login_b.json()["household_id"]
     r = client.post(
         "/api/v1/auth/login",
@@ -1120,15 +1073,8 @@ def test_put_event_update_unknown_id_returns_404():
 def test_put_event_update_other_household_returns_404():
     _cleanup_db()
     client = TestClient(app)
-    login_a = client.post(
-        "/api/v1/auth/login",
-        json={"email": "evputha@majordome.test", "password": "test12345", "full_name": "A"},
-    )
-    login_b = client.post(
-        "/api/v1/auth/login",
-        json={"email": "evputhb@majordome.test", "password": "test12345", "full_name": "B"},
-    )
-    assert login_a.status_code == 200 and login_b.status_code == 200
+    login_a = _session(client, "evputha@majordome.test", full_name="A")
+    login_b = _session(client, "evputhb@majordome.test", full_name="B")
     headers_a = {"Authorization": f"Bearer {login_a.json()['access_token']}"}
     headers_b = {"Authorization": f"Bearer {login_b.json()['access_token']}"}
     start = datetime.now(timezone.utc) + timedelta(days=18)

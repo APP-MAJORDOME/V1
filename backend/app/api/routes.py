@@ -21,6 +21,7 @@ from app.core.security import (
     decode_token,
     get_current_auth_context,
     hash_password,
+    is_token_revoked,
     revoke_token,
     verify_password,
 )
@@ -66,9 +67,11 @@ from app.schemas.schemas import (
     AgentRealtimeWebRtcResponse,
     AgentRealtimeStatusResponse,
     LoginRequest,
+    RegisterRequest,
     LoginResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
+    LogoutRequest,
     LogoutResponse,
     APIError,
     HouseholdRead,
@@ -393,36 +396,93 @@ def google_oauth_callback(
     return RedirectResponse(url=f"{redirect_base}/?google_oauth=connected", status_code=303)
 
 
-@router.post("/auth/login", response_model=LoginResponse)
-def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
-    rid = getattr(request.state, "request_id", None)
-    fp = email_fingerprint(payload.email)
-    user = db.query(User).filter(User.email == payload.email).first()
-    is_new_user = user is None
-    if user is None:
-        user = User(email=payload.email, password_hash=hash_password(payload.password), full_name=payload.full_name)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    else:
-        if user.password_hash is None:
-            user.password_hash = hash_password(payload.password)
-            db.commit()
-            db.refresh(user)
-        elif not verify_password(payload.password, user.password_hash):
-            log_event(
-                "auth_login",
-                request_id=rid,
-                outcome="failure",
-                reason="invalid_credentials",
-                email_fp=fp,
-            )
-            raise api_error("invalid_credentials", "Invalid email or password.", 401)
+def _normalize_auth_email(email: str) -> str:
+    return email.strip().lower()
 
-    requested_household_id = payload.household_id
+
+def _resolve_household_for_user(
+    db: Session,
+    *,
+    user: User,
+    requested_household_id: int | None,
+) -> Household:
     if requested_household_id is not None:
         household = db.get(Household, requested_household_id)
         if household is None or household.owner_user_id != user.id:
+            raise api_error("household_forbidden", "You cannot access this household.", 403)
+        return household
+    household = db.query(Household).filter(Household.owner_user_id == user.id).order_by(Household.id.asc()).first()
+    if household is None:
+        household = Household(name=f"Foyer de {user.full_name}", owner_user_id=user.id)
+        db.add(household)
+        db.commit()
+        db.refresh(household)
+    return household
+
+
+def _issue_login_tokens(db: Session, *, user: User, household_id: int | None = None) -> LoginResponse:
+    household = _resolve_household_for_user(db, user=user, requested_household_id=household_id)
+    token = create_access_token(user_id=user.id, household_id=household.id)
+    refresh_token = create_refresh_token(user_id=user.id, household_id=household.id)
+    return LoginResponse(
+        access_token=token,
+        refresh_token=refresh_token,
+        user_id=user.id,
+        household_id=household.id,
+    )
+
+
+@router.post("/auth/register", response_model=LoginResponse)
+def register(request: Request, payload: RegisterRequest, db: Session = Depends(get_db)):
+    rid = getattr(request.state, "request_id", None)
+    email = _normalize_auth_email(payload.email)
+    fp = email_fingerprint(email)
+    if db.query(User).filter(User.email == email).first() is not None:
+        log_event("auth_register", request_id=rid, outcome="failure", reason="email_already_registered", email_fp=fp)
+        raise api_error("email_already_registered", "An account with this email already exists.", 409)
+    user = User(email=email, password_hash=hash_password(payload.password), full_name=payload.full_name)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    response = _issue_login_tokens(db, user=user)
+    log_event(
+        "auth_register",
+        request_id=rid,
+        outcome="success",
+        email_fp=fp,
+        user_id=user.id,
+        household_id=response.household_id,
+    )
+    return response
+
+
+@router.post("/auth/login", response_model=LoginResponse)
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+    rid = getattr(request.state, "request_id", None)
+    email = _normalize_auth_email(payload.email)
+    fp = email_fingerprint(email)
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        log_event("auth_login", request_id=rid, outcome="failure", reason="invalid_credentials", email_fp=fp)
+        raise api_error("invalid_credentials", "Invalid email or password.", 401)
+    if user.password_hash is None:
+        user.password_hash = hash_password(payload.password)
+        db.commit()
+        db.refresh(user)
+    elif not verify_password(payload.password, user.password_hash):
+        log_event(
+            "auth_login",
+            request_id=rid,
+            outcome="failure",
+            reason="invalid_credentials",
+            email_fp=fp,
+        )
+        raise api_error("invalid_credentials", "Invalid email or password.", 401)
+
+    try:
+        response = _issue_login_tokens(db, user=user, household_id=payload.household_id)
+    except HTTPException as exc:
+        if exc.detail and isinstance(exc.detail, dict) and exc.detail.get("code") == "household_forbidden":
             log_event(
                 "auth_login",
                 request_id=rid,
@@ -430,29 +490,20 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
                 reason="household_forbidden",
                 email_fp=fp,
                 user_id=user.id,
-                requested_household_id=requested_household_id,
+                requested_household_id=payload.household_id,
             )
-            raise api_error("household_forbidden", "You cannot access this household.", 403)
-    else:
-        household = db.query(Household).filter(Household.owner_user_id == user.id).order_by(Household.id.asc()).first()
-        if household is None:
-            household = Household(name=f"Foyer de {user.full_name}", owner_user_id=user.id)
-            db.add(household)
-            db.commit()
-            db.refresh(household)
+        raise
 
-    token = create_access_token(user_id=user.id, household_id=household.id)
-    refresh_token = create_refresh_token(user_id=user.id, household_id=household.id)
     log_event(
         "auth_login",
         request_id=rid,
         outcome="success",
         email_fp=fp,
         user_id=user.id,
-        household_id=household.id,
-        is_new_user=is_new_user,
+        household_id=response.household_id,
+        is_new_user=False,
     )
-    return LoginResponse(access_token=token, refresh_token=refresh_token, user_id=user.id, household_id=household.id)
+    return response
 
 
 @router.post("/auth/refresh", response_model=RefreshTokenResponse)
@@ -463,12 +514,17 @@ def auth_refresh(request: Request, payload: RefreshTokenRequest):
         token_type = str(token_payload.get("type"))
         if token_type != "refresh":
             raise ValueError("invalid_token_type")
+        jti = str(token_payload.get("jti", ""))
+        if is_token_revoked(jti):
+            raise ValueError("revoked_token")
         user_id = int(token_payload.get("sub"))
         household_id = int(token_payload.get("household_id"))
     except Exception:
         log_event("auth_refresh", request_id=rid, outcome="failure", reason="invalid_refresh_token")
         raise api_error("invalid_refresh_token", "Refresh token is invalid.", 401)
+    revoke_token(payload.refresh_token)
     new_access_token = create_access_token(user_id=user_id, household_id=household_id)
+    new_refresh_token = create_refresh_token(user_id=user_id, household_id=household_id)
     log_event(
         "auth_refresh",
         request_id=rid,
@@ -476,13 +532,19 @@ def auth_refresh(request: Request, payload: RefreshTokenRequest):
         user_id=user_id,
         household_id=household_id,
     )
-    return RefreshTokenResponse(access_token=new_access_token)
+    return RefreshTokenResponse(access_token=new_access_token, refresh_token=new_refresh_token)
 
 
 @router.post("/auth/logout", response_model=LogoutResponse)
-def logout(request: Request, auth: AuthContext = Depends(get_current_auth_context)):
+def logout(
+    request: Request,
+    payload: LogoutRequest | None = None,
+    auth: AuthContext = Depends(get_current_auth_context),
+):
     rid = getattr(request.state, "request_id", None)
     revoke_token(auth.token)
+    if payload and payload.refresh_token:
+        revoke_token(payload.refresh_token)
     log_event(
         "auth_logout",
         request_id=rid,

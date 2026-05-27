@@ -78,11 +78,17 @@ def verify_password(plain_password: str, password_hash: str | None) -> bool:
         return False
 
 
-def _is_token_revoked(jti: str) -> bool:
+def is_token_revoked(jti: str) -> bool:
+    if not jti:
+        return False
     try:
         return bool(redis_client.get(f"auth:revoked:{jti}"))
     except Exception:
         return False
+
+
+def _is_token_revoked(jti: str) -> bool:
+    return is_token_revoked(jti)
 
 
 def revoke_token(token: str) -> None:

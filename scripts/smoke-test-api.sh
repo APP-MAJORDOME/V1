@@ -50,6 +50,10 @@ REFRESH_RESPONSE="$(curl -fsS -X POST "${API_BASE}/api/v1/auth/refresh" \
   -H "Content-Type: application/json" \
   -d "{\"refresh_token\":\"${REFRESH_TOKEN}\"}")"
 NEW_TOKEN="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("token_type")=="bearer", p; print(p["access_token"])' <<< "${REFRESH_RESPONSE}")"
+ROTATED_REFRESH="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); print(p.get("refresh_token") or "")' <<< "${REFRESH_RESPONSE}")"
+if [[ -n "${ROTATED_REFRESH}" ]]; then
+  REFRESH_TOKEN="${ROTATED_REFRESH}"
+fi
 AUTH_HEADER="Authorization: Bearer ${NEW_TOKEN}"
 
 echo "[smoke] briefing"
@@ -158,7 +162,10 @@ curl -fsS -X DELETE "${API_BASE}/api/v1/documents/${DOC_ID}" -H "${AUTH_HEADER}"
 rm -f "${PNG_TMP}" "${PNG_OUT}"
 
 echo "[smoke] logout"
-LOGOUT_RESPONSE="$(curl -fsS -X POST "${API_BASE}/api/v1/auth/logout" -H "${AUTH_HEADER}")"
+LOGOUT_RESPONSE="$(curl -fsS -X POST "${API_BASE}/api/v1/auth/logout" \
+  -H "${AUTH_HEADER}" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"${REFRESH_TOKEN}\"}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("status")=="logged_out", p' <<< "${LOGOUT_RESPONSE}"
 
 echo "[smoke] revoked token should fail"

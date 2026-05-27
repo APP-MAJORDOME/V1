@@ -62,6 +62,13 @@ def _install_fake_redis():
     main_module.redis.from_url = lambda *args, **kwargs: fake_redis
 
 
+def _register(client: TestClient, email: str = "session@majordome.test", password: str = "test12345"):
+    return client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": password, "full_name": "Session User"},
+    )
+
+
 def _login(client: TestClient, email: str = "session@majordome.test", password: str = "test12345"):
     response = client.post(
         "/api/v1/auth/login",
@@ -75,20 +82,27 @@ def test_login_refresh_and_logout_flow():
     _install_fake_redis()
     client = TestClient(app)
 
-    login_response = _login(client)
-    assert login_response.status_code == 200
-    login_json = login_response.json()
+    register_response = _register(client)
+    assert register_response.status_code == 200
+    login_json = register_response.json()
     assert "access_token" in login_json
     assert "refresh_token" in login_json
 
     refresh_response = client.post("/api/v1/auth/refresh", json={"refresh_token": login_json["refresh_token"]})
     assert refresh_response.status_code == 200
-    refreshed_access_token = refresh_response.json()["access_token"]
+    refresh_json = refresh_response.json()
+    refreshed_access_token = refresh_json["access_token"]
+    rotated_refresh = refresh_json.get("refresh_token")
+    assert rotated_refresh
 
     protected_ok = client.get("/api/v1/events", headers={"Authorization": f"Bearer {refreshed_access_token}"})
     assert protected_ok.status_code == 200
 
-    logout_response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {refreshed_access_token}"})
+    logout_response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {refreshed_access_token}"},
+        json={"refresh_token": rotated_refresh},
+    )
     assert logout_response.status_code == 200
     assert logout_response.json()["status"] == "logged_out"
 
@@ -96,18 +110,30 @@ def test_login_refresh_and_logout_flow():
     assert protected_after_logout.status_code == 401
     assert protected_after_logout.json()["detail"]["code"] == "invalid_bearer_token"
 
+    refresh_after_logout = client.post("/api/v1/auth/refresh", json={"refresh_token": rotated_refresh})
+    assert refresh_after_logout.status_code == 401
+
 
 def test_login_rejects_invalid_password():
     _cleanup_db()
     _install_fake_redis()
     client = TestClient(app)
 
-    create_user = _login(client, email="wrong-pass@majordome.test", password="test12345")
+    create_user = _register(client, email="wrong-pass@majordome.test", password="test12345")
     assert create_user.status_code == 200
 
     wrong_password = _login(client, email="wrong-pass@majordome.test", password="badpass123")
     assert wrong_password.status_code == 401
     assert wrong_password.json()["detail"]["code"] == "invalid_credentials"
+
+
+def test_login_rejects_unknown_user():
+    _cleanup_db()
+    _install_fake_redis()
+    client = TestClient(app)
+    r = _login(client, email="nobody@majordome.test")
+    assert r.status_code == 401
+    assert r.json()["detail"]["code"] == "invalid_credentials"
 
 
 def test_refresh_rejects_garbage_token():
@@ -123,7 +149,7 @@ def test_refresh_rejects_access_token():
     _cleanup_db()
     _install_fake_redis()
     client = TestClient(app)
-    login_json = _login(client, email="refresh-type@majordome.test").json()
+    login_json = _register(client, email="refresh-type@majordome.test").json()
     r = client.post("/api/v1/auth/refresh", json={"refresh_token": login_json["access_token"]})
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "invalid_refresh_token"

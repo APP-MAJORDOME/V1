@@ -7,6 +7,9 @@ const browserDefaultBase =
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || browserDefaultBase;
 
+export const AUTH_TOKEN_EVENT = 'majordome:auth-token';
+export const AUTH_LOGOUT_EVENT = 'majordome:auth-logout';
+
 type RequestOptions = {
   token?: string;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -15,12 +18,23 @@ type RequestOptions = {
   _retried?: boolean;
 };
 
+function notifyAuthToken(accessToken: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(AUTH_TOKEN_EVENT, { detail: { accessToken } }));
+}
+
+function notifyAuthLogout() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(AUTH_LOGOUT_EVENT));
+}
+
 function logoutIfUnauthorized(code: string | undefined) {
   if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('majordome_access_token');
       localStorage.removeItem('majordome_refresh_token');
     }
+    notifyAuthLogout();
   }
 }
 
@@ -52,6 +66,7 @@ async function tryRefreshAccessToken(): Promise<string | null> {
     if (!data.access_token) return null;
     localStorage.setItem('majordome_access_token', data.access_token);
     if (data.refresh_token) localStorage.setItem('majordome_refresh_token', data.refresh_token);
+    notifyAuthToken(data.access_token);
     return data.access_token;
   } catch {
     return null;
@@ -85,9 +100,15 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     }
     logoutIfUnauthorized(code);
     if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
-      throw new Error('Session expiree. Merci de te reconnecter.');
+      throw new Error('Session expirée. Merci de te reconnecter.');
     }
-    throw new Error(message || text || `API error ${res.status}`);
+    const err = new Error(message || text || `API error ${res.status}`) as Error & {
+      status?: number;
+      code?: string;
+    };
+    err.status = res.status;
+    err.code = code;
+    throw err;
   }
   return res.json();
 }
@@ -98,6 +119,10 @@ export async function getJson<T>(path: string, token?: string): Promise<T> {
 
 export async function postJson<T>(path: string, body: unknown, token?: string): Promise<T> {
   return requestJson<T>(path, { method: 'POST', body, token });
+}
+
+export async function putJson<T>(path: string, body: unknown, token?: string): Promise<T> {
+  return requestJson<T>(path, { method: 'PUT', body, token });
 }
 
 export async function patchJson<T>(path: string, body: unknown, token?: string): Promise<T> {
@@ -133,7 +158,7 @@ export async function postFormData<T>(path: string, formData: FormData, token?: 
     const text = await res.text();
     const { code, message } = detailFromResponseBody(text);
     if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
-      throw new Error('Session expiree. Merci de te reconnecter.');
+      throw new Error('Session expirée. Merci de te reconnecter.');
     }
     throw new Error(message || text || `API error ${res.status}`);
   }
@@ -146,7 +171,7 @@ export async function downloadAuthed(path: string, token: string): Promise<{ blo
     const text = await res.text();
     const { code, message } = detailFromResponseBody(text);
     if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
-      throw new Error('Session expiree. Merci de te reconnecter.');
+      throw new Error('Session expirée. Merci de te reconnecter.');
     }
     throw new Error(message || text || `API error ${res.status}`);
   }
@@ -177,10 +202,4 @@ export function saveBlobAsFile(blob: Blob, filename: string): void {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-/** Met à jour le token d’accès en localStorage (après refresh transparent). */
-export function syncStoredAccessToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('majordome_access_token');
 }

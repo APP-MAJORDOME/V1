@@ -32,11 +32,12 @@ class HouseholdMemberRead(BaseModel):
 
 
 class ConnectedAccountRead(BaseModel):
+    """Compte connecté exposé à l’API — sans secrets OAuth (stockés côté serveur uniquement)."""
+
     id: int
     user_id: int | None = None
     provider: str
     external_account_id: str | None = None
-    scopes_json: str
     status: str
     last_sync_at: datetime | None = None
     created_at: datetime
@@ -371,6 +372,12 @@ class LoginRequest(BaseModel):
     household_id: int | None = None
 
 
+class RegisterRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = "Utilisateur MajorDome"
+
+
 class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -385,7 +392,12 @@ class RefreshTokenRequest(BaseModel):
 
 class RefreshTokenResponse(BaseModel):
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = None
 
 
 class LogoutResponse(BaseModel):

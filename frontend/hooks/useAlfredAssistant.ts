@@ -258,18 +258,44 @@ export function useAlfredAssistant({
           { command: text },
           token,
         );
+        let aiText = res.explanation || '';
+        if (agentNeedsConfirm(res)) {
+          if (!aiText.trim()) aiText = 'Je peux faire ça pour toi si tu confirmes.';
+          startTransition(() => {
+            setAssistantHistory((h) => [
+              ...h,
+              { who: 'user', text, id: `u-${Date.now()}` },
+              {
+                who: 'ai',
+                text: aiText,
+                id: `ai-${Date.now()}`,
+                pendingConfirm: {
+                  command: text,
+                  intent: res.intent,
+                  label: confirmLabelForIntent(res.intent),
+                  proposal: res.proposal,
+                },
+              },
+            ]);
+          });
+          return;
+        }
         const execution = await onExecuteIntent(text, res).catch(
           () => ({ done: false }) as AgentExecutionResult,
         );
         if (execution.done && execution.message) {
-          startTransition(() => {
-            setAssistantHistory((h) => [
-              ...h,
-              { who: 'ai', text: execution.message!, id: `ai-${Date.now()}` },
-            ]);
-          });
-          onToast('success', execution.message);
+          aiText = execution.message;
+        } else if (!aiText.trim()) {
+          aiText = `${res.intent} (${res.mode})`;
         }
+        startTransition(() => {
+          setAssistantHistory((h) => [
+            ...h,
+            { who: 'user', text, id: `u-${Date.now()}` },
+            { who: 'ai', text: aiText, id: `ai-${Date.now()}` },
+          ]);
+        });
+        if (execution.done && execution.message) onToast('success', execution.message);
       } catch {
         onToast('error', 'Impossible d’exécuter la commande vocale.');
       } finally {

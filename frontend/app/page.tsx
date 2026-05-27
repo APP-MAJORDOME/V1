@@ -3,12 +3,15 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AUTH_LOGOUT_EVENT,
+  AUTH_TOKEN_EVENT,
   deleteJson,
   downloadAuthed,
   getJson,
   patchJson,
   postFormData,
   postJson,
+  putJson,
   saveBlobAsFile,
 } from '../lib/api';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
@@ -640,6 +643,7 @@ export default function HomePage() {
   const [token, setToken] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1416,23 +1420,29 @@ export default function HomePage() {
     }
   }
 
-  async function login() {
+  function applyAuthSession(res: LoginResponse) {
+    localStorage.setItem('majordome_access_token', res.access_token);
+    localStorage.setItem('majordome_refresh_token', res.refresh_token);
+    const emLogin = email.trim().toLowerCase();
+    if (emLogin) {
+      localStorage.setItem(LAYOUT_USER_EMAIL_KEY, emLogin);
+      setLayoutUserEmail(emLogin);
+      setHomeLayout(loadHomeLayoutForUser(emLogin));
+    }
+    setToken(res.access_token);
+  }
+
+  async function submitAuth() {
     setLoading(true);
     setError('');
+    const path = authMode === 'register' ? '/api/v1/auth/register' : '/api/v1/auth/login';
+    const payload = { email, password, full_name: 'Utilisateur MajorDome' };
     try {
-      const res = await postJson<LoginResponse>('/api/v1/auth/login', { email, password, full_name: 'Utilisateur MajorDome' });
-      localStorage.setItem('majordome_access_token', res.access_token);
-      localStorage.setItem('majordome_refresh_token', res.refresh_token);
-      const emLogin = email.trim().toLowerCase();
-      if (emLogin) {
-        localStorage.setItem(LAYOUT_USER_EMAIL_KEY, emLogin);
-        setLayoutUserEmail(emLogin);
-        setHomeLayout(loadHomeLayoutForUser(emLogin));
-      }
-      setToken(res.access_token);
-      setInfo('Connexion reussie.');
-      pushToast('success', 'Connexion réussie');
-      void notifySystem('MajorDome', 'Connexion réussie. Bienvenue.');
+      const res = await postJson<LoginResponse>(path, payload);
+      applyAuthSession(res);
+      setInfo(authMode === 'register' ? 'Compte créé. Bienvenue !' : 'Connexion réussie.');
+      pushToast('success', authMode === 'register' ? 'Compte créé' : 'Connexion réussie');
+      void notifySystem('MajorDome', 'Bienvenue dans MajorDome.');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de connexion';
       setError(msg);
@@ -1442,7 +1452,7 @@ export default function HomePage() {
     }
   }
 
-  function logout() {
+  const clearSession = useCallback(() => {
     alfred.disconnectRealtime();
     localStorage.removeItem('majordome_access_token');
     localStorage.removeItem('majordome_refresh_token');
@@ -1468,6 +1478,31 @@ export default function HomePage() {
     setOpps([]);
     setConflicts([]);
     setDocVault([]);
+  }, [alfred]);
+
+  useEffect(() => {
+    const onToken = (ev: Event) => {
+      const tok = (ev as CustomEvent<{ accessToken?: string }>).detail?.accessToken;
+      if (tok) setToken(tok);
+    };
+    const onLogout = () => {
+      clearSession();
+      pushToast('info', 'Session expirée — reconnecte-toi.');
+    };
+    window.addEventListener(AUTH_TOKEN_EVENT, onToken);
+    window.addEventListener(AUTH_LOGOUT_EVENT, onLogout);
+    return () => {
+      window.removeEventListener(AUTH_TOKEN_EVENT, onToken);
+      window.removeEventListener(AUTH_LOGOUT_EVENT, onLogout);
+    };
+  }, [clearSession]);
+
+  function logout() {
+    const refresh = localStorage.getItem('majordome_refresh_token');
+    if (token) {
+      void postJson('/api/v1/auth/logout', { refresh_token: refresh ?? undefined }, token).catch(() => undefined);
+    }
+    clearSession();
     pushToast('info', 'Déconnexion effectuée');
   }
 
@@ -1644,14 +1679,7 @@ export default function HomePage() {
     if (!token) return;
     setError('');
     try {
-      const response = await fetch(`/api/v1/events/${eventId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) {
-        const body = await response.text();
-        throw new Error(body || 'Suppression impossible');
-      }
+      await deleteJson(`/api/v1/events/${eventId}`, token);
       setInfo('Evenement supprime.');
       pushToast('success', 'Événement supprimé');
       void notifySystem('Agenda', 'Événement supprimé');
@@ -1681,40 +1709,31 @@ export default function HomePage() {
     }
     setError('');
     try {
-      const response = await fetch(`/api/v1/events/${editingEventId}/update-and-sync`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      await putJson(
+        `/api/v1/events/${editingEventId}/update-and-sync`,
+        {
           title: editTitle.trim(),
           starts_at: new Date(editStart).toISOString(),
           ends_at: new Date(editEnd).toISOString(),
           expected_updated_at: editExpectedUpdatedAt || undefined,
-        }),
-      });
-      if (!response.ok) {
-        let parsedMessage = '';
-        try {
-          const body = await response.json();
-          parsedMessage = body?.detail?.message || body?.detail || '';
-          if (response.status === 409) {
-            parsedMessage = "Conflit detecte: l'evenement a ete modifie ailleurs. J'ai recharge ton agenda.";
-            await loadData(token);
-          }
-        } catch {
-          parsedMessage = await response.text();
-        }
-        throw new Error(parsedMessage || 'Modification impossible');
-      }
+        },
+        token,
+      );
       setInfo('Evenement modifie et synchronise.');
       pushToast('success', 'Événement modifié');
       void notifySystem('Agenda', `Événement modifié: ${editTitle.trim()}`);
       setEditingEventId(null);
       await loadData(token);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Erreur modification';
+      const err = e as Error & { status?: number };
+      if (err.status === 409) {
+        const msg = "Conflit détecté : l'événement a été modifié ailleurs. Agenda rechargé.";
+        setError(msg);
+        pushToast('info', msg);
+        await loadData(token);
+        return;
+      }
+      const msg = err.message || 'Erreur modification';
       setError(msg);
       pushToast('error', msg);
     }
@@ -3658,8 +3677,12 @@ export default function HomePage() {
                 <MajordomeWordmark maxHeight={32} />
               </div>
               <div style={{ flex: 1, padding: 18, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', touchAction: 'pan-y' }}>
-              <h2 style={{ margin: 0, color: C.text }}>Connexion</h2>
-              <p style={{ color: C.text2, fontSize: 13 }}>Connecte-toi pour utiliser MajorDome.</p>
+              <h2 style={{ margin: 0, color: C.text }}>{authMode === 'register' ? 'Créer un compte' : 'Connexion'}</h2>
+              <p style={{ color: C.text2, fontSize: 13 }}>
+                {authMode === 'register'
+                  ? 'Inscris ton foyer pour commencer avec MajorDome.'
+                  : 'Connecte-toi pour utiliser MajorDome.'}
+              </p>
               {error ? (
                 <p role="alert" style={{ margin: '0 0 12px', padding: '10px 12px', borderRadius: 12, background: C.redL, color: C.red, fontSize: 13, fontWeight: 600 }}>
                   {error}
@@ -3676,7 +3699,7 @@ export default function HomePage() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void login();
+                  void submitAuth();
                 }}
                 style={{ display: 'grid', gap: 10 }}
                 autoComplete="on"
@@ -3701,7 +3724,7 @@ export default function HomePage() {
                   <input
                     name="password"
                     type="password"
-                    autoComplete="current-password"
+                    autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value);
@@ -3716,7 +3739,34 @@ export default function HomePage() {
                   disabled={loading}
                   style={{ padding: 12, borderRadius: 12, border: 'none', background: C.terra, color: '#fff', fontWeight: 700 }}
                 >
-                  {loading ? 'Connexion…' : 'Se connecter'}
+                  {loading
+                    ? authMode === 'register'
+                      ? 'Création…'
+                      : 'Connexion…'
+                    : authMode === 'register'
+                      ? 'Créer mon compte'
+                      : 'Se connecter'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode((m) => (m === 'login' ? 'register' : 'login'));
+                    setError('');
+                    setInfo('');
+                  }}
+                  style={{
+                    padding: 10,
+                    borderRadius: 12,
+                    border: `1px solid ${C.border}`,
+                    background: C.white,
+                    color: C.text2,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {authMode === 'login'
+                    ? 'Pas encore de compte ? Créer un compte'
+                    : 'Déjà inscrit ? Se connecter'}
                 </button>
               </form>
               </div>

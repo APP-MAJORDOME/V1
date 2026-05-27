@@ -235,7 +235,9 @@ export default function SettingsPage() {
     if (!token) return;
     setLoggingOut(true);
     try {
-      await postJson('/api/v1/auth/logout', {}, token);
+      await postJson('/api/v1/auth/logout', {
+        refresh_token: localStorage.getItem('majordome_refresh_token') ?? undefined,
+      }, token);
     } catch {
       // ignore
     } finally {
