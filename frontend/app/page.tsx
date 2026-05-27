@@ -19,6 +19,8 @@ import {
   INITIAL_DONE_TASKS_LIMIT,
   DONE_HISTORY_FETCH_LIMIT,
 } from '../lib/constants';
+import { BottomTabBar, type AppTabId } from '../components/BottomTabBar';
+import { TodayHome, type TodayUrgency } from '../components/TodayHome';
 import { defaultDemoCoupons, defaultDemoFridge } from '../lib/demoData';
 import {
   fridgeExpiryTone,
@@ -26,6 +28,7 @@ import {
   partitionCoupons,
   sortFridgeByExpiry,
 } from '../lib/expiry';
+import { computeMentalWeather } from '../lib/mentalLoad';
 import {
   computeBudgetUsedPct,
   computeDemoEquityShares,
@@ -294,8 +297,9 @@ const C = {
   mint: '#3DAF88',
 };
 
-type MainTab = 'home' | 'agenda' | 'moi' | 'plus';
+type MainTab = 'home' | 'alfred' | 'modules' | 'moi' | 'agenda';
 type OverlayId =
+  | 'plus'
   | 'courses'
   | 'maison'
   | 'documents'
@@ -310,13 +314,6 @@ type OverlayId =
   | 'courrier'
   | 'albums'
   | 'integrations';
-
-const MAIN_NAV = [
-  { id: 'home' as const, label: 'Accueil', NavIcon: IconHome },
-  { id: 'agenda' as const, label: 'Agenda', NavIcon: IconCalendar },
-  { id: 'moi' as const, label: 'Moi', NavIcon: IconUserHeart },
-  { id: 'plus' as const, label: 'Plus', NavIcon: IconDotsGrid },
-] as const;
 
 function GlassCard({ children, style = {}, onClick }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void }) {
   return <div onClick={onClick} style={{ background: C.white, borderRadius: 20, border: `1.5px solid ${C.border}`, ...style }}>{children}</div>;
@@ -1233,13 +1230,15 @@ export default function HomePage() {
         ? `${overlay} — MajorDome`
         : mainTab === 'home'
           ? "Aujourd'hui — MajorDome"
-          : mainTab === 'agenda'
-            ? 'Agenda — MajorDome'
-            : mainTab === 'moi'
-              ? 'Moi — MajorDome'
-              : 'Modules — MajorDome';
+          : mainTab === 'alfred'
+            ? `${aiName} — MajorDome`
+            : mainTab === 'agenda'
+              ? 'Agenda — MajorDome'
+              : mainTab === 'moi'
+                ? 'Moi — MajorDome'
+                : 'Modules — MajorDome';
     document.title = title;
-  }, [clientReady, token, overlay, mainTab]);
+  }, [clientReady, token, overlay, mainTab, aiName]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2195,6 +2194,78 @@ export default function HomePage() {
     () => partitionCoupons(coupons),
     [coupons],
   );
+  const mentalWeather = useMemo(
+    () =>
+      computeMentalWeather({
+        urgentCount,
+        openTasksCount: openTasks.length,
+        fridgeExpiredCount,
+      }),
+    [urgentCount, openTasks.length, fridgeExpiredCount],
+  );
+  const todayUrgencies = useMemo((): TodayUrgency[] => {
+    const items: TodayUrgency[] = [];
+    fridge
+      .filter((f) => isExpired(f.expires_at))
+      .slice(0, 2)
+      .forEach((f) => {
+        items.push({
+          id: `fridge-${f.id}`,
+          label: `${f.label} — périmé`,
+          actionLabel: 'Frigo',
+          tone: 'danger',
+          onAction: () => {
+            setCoursesTab('frigo');
+            setOverlay('courses');
+          },
+        });
+      });
+    conflicts
+      .filter((c) => c.severity === 'high')
+      .slice(0, 2)
+      .forEach((c, i) => {
+        items.push({
+          id: `conflict-${i}`,
+          label: `Conflit : ${c.title_a} / ${c.title_b}`,
+          actionLabel: 'Agenda',
+          tone: 'warning',
+          onAction: () => {
+            setMainTab('agenda');
+            setOverlay(null);
+          },
+        });
+      });
+    openTasks.slice(0, 3 - items.length).forEach((t) => {
+      if (items.length >= 3) return;
+      items.push({
+        id: `task-${t.id}`,
+        label: t.title,
+        actionLabel: 'Voir',
+        tone: 'warning',
+        onAction: () => {
+          setMainTab('home');
+          setOverlay(null);
+        },
+      });
+    });
+    return items.slice(0, 3);
+  }, [fridge, conflicts, openTasks]);
+  const hubModuleBadges = useMemo((): Partial<Record<HubKey, string>> => {
+    const badges: Partial<Record<HubKey, string>> = {};
+    if (fridgeExpiredCount > 0) badges.courses = `${fridgeExpiredCount} DLC`;
+    const docUrgent = docVault.filter((d) => d.urgent).length;
+    if (docUrgent > 0) badges.documents = `${docUrgent}`;
+    return badges;
+  }, [fridgeExpiredCount, docVault]);
+  const showDebordeeCta = useMemo(
+    () => openTasks.length >= 5 || mentalWeather.level === 'heavy',
+    [openTasks.length, mentalWeather.level],
+  );
+  const showMorningMoodCard = useMemo(() => {
+    if (homeMood !== null) return false;
+    const h = new Date().getHours();
+    return h >= 5 && h < 12;
+  }, [homeMood]);
   const equity = useMemo(
     () =>
       computeDemoEquityShares(openTasks.length, doneTasks.length, familyProfile, {
@@ -2359,8 +2430,30 @@ export default function HomePage() {
 
   function goMainTab(t: MainTab) {
     setMainTab(t);
+    if (t === 'alfred') {
+      setOverlay('assistant');
+      return;
+    }
+    if (t === 'modules') {
+      setOverlay('plus');
+      return;
+    }
     setOverlay(null);
   }
+
+  function handleBottomTab(tab: AppTabId) {
+    if (tab === 'home') goMainTab('home');
+    else if (tab === 'alfred') goMainTab('alfred');
+    else if (tab === 'modules') goMainTab('modules');
+    else goMainTab('moi');
+  }
+
+  const bottomTabActive: AppTabId = useMemo(() => {
+    if (overlay === 'assistant' || mainTab === 'alfred') return 'alfred';
+    if (overlay === 'plus' || mainTab === 'modules') return 'modules';
+    if (mainTab === 'moi') return 'moi';
+    return 'home';
+  }, [overlay, mainTab]);
 
   function openHubModule(hubKey: HubKey) {
     if (hubKey === 'wallet') {
@@ -2376,7 +2469,9 @@ export default function HomePage() {
   }
 
   const Screen = () => {
-    const layer = overlay ?? mainTab;
+    const layer: MainTab | OverlayId =
+      overlay ??
+      (mainTab === 'modules' ? 'plus' : mainTab === 'alfred' ? 'assistant' : mainTab);
     const sec = (id: HomeSectionId) => homeLayout.sections[id] !== false;
     const wrapOv = (title: string, body: React.ReactNode) => (
       <OverlayChrome title={title} onBack={() => setOverlay(null)} white={C.white} border={C.border} text={C.text}>
@@ -2386,73 +2481,42 @@ export default function HomePage() {
 
     if (layer === 'home') {
       return (
-        <div style={{ padding: '12px 18px 0', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
-          {token && !sec('hero_banner') ? (
-            <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setHomeLayoutEditorOpen(true)}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: C.terra,
-                  background: C.terraXL,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 12,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                }}
-              >
-                Personnaliser l&apos;accueil
-              </button>
-            </div>
-          ) : null}
+        <div style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
           {sec('hero_banner') ? (
-          <div style={{ padding: '12px 18px 20px', background: C.white, borderRadius: 22, marginBottom: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 12, color: C.text2, margin: '0 0 2px' }} suppressHydrationWarning>
-                  {clientTodayLabel || '\u00a0'}
-                </p>
-                <h1 style={{ fontSize: 25, margin: 0, color: C.text }} suppressHydrationWarning>
-                  Bonjour {familyProfile.prenom || 'toi'}
-                </h1>
-                <p style={{ fontSize: 14, color: C.text2, marginTop: 6, whiteSpace: 'nowrap' }}>
-                  Tu as <strong style={{ color: C.terra }}>{urgentCount} urgence(s)</strong> aujourd&apos;hui.
-                </p>
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                    <strong>CHARGE MENTALE</strong>
-                    <strong style={{ color: C.terra }}>{loadPct}% allegee</strong>
-                  </div>
-                  <div style={{ height: 10, borderRadius: 10, background: C.surface2, marginTop: 6 }}>
-                    <div style={{ width: `${loadPct}%`, height: '100%', borderRadius: 10, background: `linear-gradient(90deg, ${C.blush}, ${C.terra})` }} />
-                  </div>
-                </div>
-              </div>
-              {token ? (
-                <button
-                  type="button"
-                  onClick={() => setHomeLayoutEditorOpen(true)}
-                  style={{
-                    flexShrink: 0,
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: C.terra,
-                    background: C.terraXL,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 12,
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Personnaliser
-                </button>
-              ) : null}
-            </div>
-          </div>
+            <TodayHome
+              C={C}
+              clientTodayLabel={clientTodayLabel}
+              firstName={familyProfile.prenom}
+              weather={mentalWeather}
+              urgencies={todayUrgencies}
+              eventsToday={nextEvents.length}
+              openTasksCount={openTasks.length}
+              remindersCount={fridgeAlerts.length}
+              hubShortcuts={homeLayout.hubShortcuts}
+              moduleBadges={hubModuleBadges}
+              onOpenHub={openHubModule}
+              onOpenAgenda={() => goMainTab('agenda')}
+              onOpenTasks={() => {
+                setOverlay(null);
+                setMainTab('home');
+              }}
+              onPersonalize={() => setHomeLayoutEditorOpen(true)}
+              showPersonalize={Boolean(token)}
+              showDebordee={sec('debordee') && showDebordeeCta}
+              onDebordee={() => {
+                setDebordeeResult(null);
+                setModalDebordee('confirm');
+              }}
+              showMorningMood={sec('mood') && showMorningMoodCard}
+              morningMood={homeMood}
+              onMorningMood={(i) => {
+                setHomeMood(i);
+                pushToast('success', 'Humeur enregistrée');
+              }}
+              partenaireName={familyProfile.partenaire}
+            />
           ) : null}
+          <div style={{ padding: '0 16px 24px' }}>
           {sec('stats_pair') ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
             <GlassCard style={{ padding: 12 }}>
@@ -2722,7 +2786,7 @@ export default function HomePage() {
             </button>
           </GlassCard>
           ) : null}
-          {sec('debordee') ? (
+          {sec('debordee') && !sec('hero_banner') ? (
           <GlassCard style={{ padding: 14, marginBottom: 14, background: C.redL, border: `1.5px solid ${C.red}55` }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
               <IconLifebuoy size={18} color={C.red} strokeWidth={1.65} />
@@ -2775,7 +2839,7 @@ export default function HomePage() {
             ))}
           </GlassCard>
           ) : null}
-          {sec('mood') ? (
+          {sec('mood') && !sec('hero_banner') ? (
           <GlassCard style={{ padding: 14, marginBottom: 14, background: C.lilacL }}>
             <div style={{ fontSize: 11, color: C.text2, marginBottom: 8, fontWeight: 700 }}>COMMENT TU TE SENS CE MATIN ?</div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -2993,6 +3057,7 @@ export default function HomePage() {
             </ul>
           </GlassCard>
           ) : null}
+          </div>
         </div>
       );
     }
@@ -3891,7 +3956,10 @@ export default function HomePage() {
           >
             <button
               type="button"
-              onClick={() => setOverlay(null)}
+              onClick={() => {
+                setOverlay(null);
+                setMainTab('home');
+              }}
               style={{
                 flexShrink: 0,
                 marginTop: 2,
@@ -5120,75 +5188,8 @@ export default function HomePage() {
             </div>
           )}
 
-          {token && onboardingDone && postLoginSetupDone && overlay === null ? (
-            <div style={{ position: 'relative', paddingTop: 12, background: C.white, borderTop: `1px solid ${C.border}` }}>
-              <button
-                type="button"
-                aria-label={`Ouvrir ${aiName}`}
-                title={aiName}
-                onClick={() => setOverlay('assistant')}
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: -26,
-                  transform: 'translateX(-50%)',
-                  width: 54,
-                  height: 54,
-                  borderRadius: '50%',
-                  border: 'none',
-                  background: `linear-gradient(145deg, ${C.terra}, ${C.terraL})`,
-                  boxShadow: '0 10px 28px rgba(217,107,82,0.45)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  zIndex: 42,
-                }}
-              >
-                <IconSparkleAI size={26} color="#fff" strokeWidth={1.8} />
-              </button>
-              <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', padding: '10px 4px 20px' }}>
-                {MAIN_NAV.map((item) => {
-                  const on = item.id === mainTab;
-                  const NavIc = item.NavIcon;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => goMainTab(item.id)}
-                      style={{
-                        background: on ? C.terraXL : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 2,
-                        padding: '6px 8px',
-                        borderRadius: 14,
-                        minWidth: 0,
-                        flex: 1,
-                        maxWidth: 92,
-                      }}
-                    >
-                      <NavIc size={20} color={on ? C.terra : C.text3} strokeWidth={1.65} />
-                      <span
-                        style={{
-                          fontSize: 9,
-                          color: on ? C.terra : C.text3,
-                          fontWeight: on ? 700 : 500,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {item.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          {token && onboardingDone && postLoginSetupDone ? (
+            <BottomTabBar active={bottomTabActive} aiName={aiName} C={C} onSelect={handleBottomTab} />
           ) : null}
           {error || info ? null : null}
           {toasts.length > 0 ? (

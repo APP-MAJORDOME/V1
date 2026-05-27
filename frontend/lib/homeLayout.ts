@@ -45,27 +45,27 @@ export const HOME_SECTION_LABELS: Record<HomeSectionId, string> = {
   relief_checklist: 'Ce qui manque pour soulager 100%',
 };
 
-/** Raccourcis Univers sur l’accueil : défaut équilibré. */
-export const DEFAULT_HOME_HUB_SHORTCUTS: HubKey[] = ['courses', 'documents', 'famille', 'recettes', 'messages', 'courrier'];
+/** Raccourcis sur l’accueil — 4 modules max (Sprint 2). */
+export const DEFAULT_HOME_HUB_SHORTCUTS: HubKey[] = ['courses', 'documents', 'routines', 'recettes'];
 
 export const DEFAULT_HOME_SECTIONS: Record<HomeSectionId, boolean> = {
   hero_banner: true,
-  hub_shortcuts_row: true,
-  stats_pair: true,
-  coffre_strip: true,
-  equity: true,
+  hub_shortcuts_row: false,
+  stats_pair: false,
+  coffre_strip: false,
+  equity: false,
   debordee: true,
-  budget: true,
+  budget: false,
   mood: true,
-  alfred_teaser: true,
-  agenda_snippet: true,
-  tasks_feed: true,
-  self_care: true,
-  priorities: true,
-  recent_done: true,
-  opportunities: true,
-  child_tracking: true,
-  relief_checklist: true,
+  alfred_teaser: false,
+  agenda_snippet: false,
+  tasks_feed: false,
+  self_care: false,
+  priorities: false,
+  recent_done: false,
+  opportunities: false,
+  child_tracking: false,
+  relief_checklist: false,
 };
 
 export type HomeLayoutConfig = {
