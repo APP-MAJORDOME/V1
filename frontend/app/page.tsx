@@ -106,6 +106,8 @@ import { CollapsibleSection } from '../components/CollapsibleSection';
 import { AppLoader, MajordomeMark, MajordomeWordmark } from '../components/BrandLogo';
 import { LoginAuthScreen } from '../components/LoginAuthScreen';
 import { MoiTabPanel } from '../components/MoiTabPanel';
+import { AgendaTabPanel } from '../components/AgendaTabPanel';
+import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton } from '../components/taskUi';
 import {
   executeAgentIntent as runAgentIntent,
   type AgentExecutionResult,
@@ -349,247 +351,6 @@ function GlassCard({ children, style = {}, onClick }: { children: React.ReactNod
 
 function Pill({ children, bg, color }: { children: React.ReactNode; bg: string; color: string }) {
   return <span style={{ fontSize: 10, fontWeight: 700, color, background: bg, borderRadius: 20, padding: '3px 8px' }}>{children}</span>;
-}
-
-function TaskAssignSelect({
-  taskId,
-  assigned_member_id,
-  members,
-  token,
-  busy,
-  onAssign,
-  compact,
-}: {
-  taskId: number;
-  assigned_member_id?: number | null;
-  members: HouseholdMemberRow[];
-  token: string;
-  busy: boolean;
-  onAssign: (taskId: number, next: number | null) => void | Promise<void>;
-  compact?: boolean;
-}) {
-  if (!token || members.length === 0 || taskId <= 0) return null;
-  const v = assigned_member_id == null ? '' : String(assigned_member_id);
-  const sorted = [...members].sort((a, b) => a.display_name.localeCompare(b.display_name, 'fr'));
-  return (
-    <select
-      aria-label="Assigner la tâche"
-      title="Qui porte cette tâche ?"
-      value={v}
-      disabled={busy}
-      onChange={(e) => {
-        const raw = e.target.value;
-        void onAssign(taskId, raw === '' ? null : Number(raw));
-      }}
-      style={{
-        fontSize: compact ? 10 : 11,
-        fontWeight: 600,
-        color: C.text2,
-        border: `1px solid ${C.border}`,
-        borderRadius: 8,
-        padding: compact ? '3px 6px' : '4px 8px',
-        background: C.surface,
-        maxWidth: compact ? 118 : 168,
-      }}
-    >
-      <option value="">Foyer</option>
-      {sorted.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.display_name}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function TaskDoneButton({
-  taskId,
-  token,
-  busyDone,
-  onDone,
-}: {
-  taskId: number;
-  token: string;
-  busyDone: boolean;
-  onDone: (taskId: number) => void | Promise<void>;
-}) {
-  if (!token || taskId <= 0) return null;
-  return (
-    <button
-      type="button"
-      disabled={busyDone}
-      onClick={() => void onDone(taskId)}
-      style={{
-        fontSize: 10,
-        fontWeight: 800,
-        borderRadius: 8,
-        border: `1px solid ${C.green}`,
-        background: C.greenL,
-        color: C.green,
-        padding: '4px 10px',
-        cursor: busyDone ? 'wait' : 'pointer',
-        flexShrink: 0,
-      }}
-    >
-      {busyDone ? '…' : 'Fait'}
-    </button>
-  );
-}
-
-function RecentDoneTasksCard({
-  sortedDone,
-  token,
-  reopenBusyId,
-  onReopen,
-  compact,
-  previewFirst = 8,
-  onRefreshDoneFromServer,
-  refreshDoneBusy,
-  onLoadMoreDonePage,
-  loadMoreDoneBusy,
-  donePagingExhausted,
-  serverDoneTotal,
-}: {
-  sortedDone: TaskItem[];
-  token: string;
-  reopenBusyId: number | null;
-  onReopen: (taskId: number) => void;
-  compact?: boolean;
-  previewFirst?: number;
-  onRefreshDoneFromServer?: () => void;
-  refreshDoneBusy?: boolean;
-  onLoadMoreDonePage?: () => void;
-  loadMoreDoneBusy?: boolean;
-  donePagingExhausted?: boolean;
-  serverDoneTotal?: number | null;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const pad = compact ? 12 : 14;
-  const mb = compact ? 10 : 18;
-  const titleFs = compact ? 12 : 14;
-  const visible = expanded ? sortedDone : sortedDone.slice(0, previewFirst);
-  const hasMore = sortedDone.length > previewFirst;
-
-  return (
-    <GlassCard style={{ padding: pad, marginBottom: mb, background: C.greenL, border: `1.5px solid ${C.green}33` }}>
-      <strong style={{ fontSize: titleFs, color: C.green, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <IconCheckSmall size={15} color={C.green} strokeWidth={2} />
-        Récemment terminées
-      </strong>
-      <p style={{ fontSize: 11, color: C.text2, margin: '6px 0 8px', lineHeight: 1.45 }}>
-        {compact
-          ? 'Rouvre une tâche si la coche était trop rapide.'
-          : 'Les dernières coches — tu peux rouvrir une tâche si c’était une erreur.'}
-      </p>
-      {onRefreshDoneFromServer ? (
-        <p style={{ fontSize: 10, color: C.text3, margin: '-2px 0 8px', lineHeight: 1.4 }}>
-          {compact
-            ? `Astuce : « Page suivante » puis fusion rapide — deux boutons ci-dessous.`
-            : `Au lancement : jusqu’à ${INITIAL_DONE_TASKS_LIMIT} terminées récentes. « Page suivante » enchaîne par paquets ; « Fusion rapide » recharge les ${DONE_HISTORY_FETCH_LIMIT} premières depuis le début.`}
-        </p>
-      ) : null}
-      {typeof serverDoneTotal === 'number' ? (
-        <div style={{ fontSize: 10, color: C.text2, margin: '-4px 0 10px', lineHeight: 1.45 }}>
-          <strong>Foyer</strong> : {serverDoneTotal} terminée(s) au total · {sortedDone.length} chargée(s) dans l’app
-          {serverDoneTotal > sortedDone.length
-            ? ' — poursuis avec « Page suivante » ou « Fusion rapide ».'
-            : ' — tout est chargé côté terminées.'}
-        </div>
-      ) : null}
-      {sortedDone.length === 0 ? (
-        <div style={{ fontSize: 12, color: C.text2 }}>Aucune tâche terminée pour l’instant.</div>
-      ) : (
-        <>
-          {visible.map((t) => (
-            <div key={t.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 12, color: C.text3, textDecoration: 'line-through' }}>{t.title}</div>
-              <div style={{ fontSize: 10, color: C.text2, marginTop: 2 }}>
-                {t.updated_at ? `Terminée le ${new Date(t.updated_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}` : 'Terminée'}
-              </div>
-              <button
-                type="button"
-                disabled={reopenBusyId === t.id || !token}
-                onClick={() => void onReopen(t.id)}
-                style={{
-                  marginTop: 6,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  borderRadius: 8,
-                  border: `1px solid ${C.text3}`,
-                  background: C.white,
-                  color: C.text2,
-                  padding: '4px 10px',
-                  cursor: reopenBusyId === t.id ? 'wait' : 'pointer',
-                }}
-              >
-                {reopenBusyId === t.id ? '…' : 'Rouvrir'}
-              </button>
-            </div>
-          ))}
-          {hasMore ? (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              style={{
-                marginTop: 8,
-                fontSize: 11,
-                fontWeight: 700,
-                border: 'none',
-                background: 'transparent',
-                color: C.green,
-                cursor: 'pointer',
-                padding: 0,
-              }}
-            >
-              {expanded ? 'Réduire' : `Voir plus (${sortedDone.length - previewFirst} autres)`}
-            </button>
-          ) : null}
-        </>
-      )}
-      {token && onLoadMoreDonePage && !donePagingExhausted ? (
-        <button
-          type="button"
-          disabled={Boolean(loadMoreDoneBusy || refreshDoneBusy)}
-          onClick={() => void onLoadMoreDonePage()}
-          style={{
-            marginTop: sortedDone.length === 0 ? 8 : 10,
-            fontSize: 10,
-            fontWeight: 700,
-            borderRadius: 8,
-            border: `1px solid ${C.sage}`,
-            background: C.sageL,
-            color: C.sage,
-            padding: '6px 10px',
-            cursor: loadMoreDoneBusy || refreshDoneBusy ? 'wait' : 'pointer',
-            width: '100%',
-          }}
-        >
-          {loadMoreDoneBusy ? 'Chargement…' : `Page suivante (+${INITIAL_DONE_TASKS_LIMIT} terminées)`}
-        </button>
-      ) : null}
-      {token && onRefreshDoneFromServer ? (
-        <button
-          type="button"
-          disabled={refreshDoneBusy || Boolean(loadMoreDoneBusy)}
-          onClick={() => void onRefreshDoneFromServer()}
-          style={{
-            marginTop: sortedDone.length === 0 && !(onLoadMoreDonePage && !donePagingExhausted) ? 8 : 10,
-            fontSize: 10,
-            fontWeight: 700,
-            borderRadius: 8,
-            border: `1px dashed ${C.green}`,
-            background: C.white,
-            color: C.green,
-            padding: '6px 10px',
-            cursor: refreshDoneBusy || loadMoreDoneBusy ? 'wait' : 'pointer',
-            width: '100%',
-          }}
-        >
-          {refreshDoneBusy ? 'Synchronisation…' : `Fusion rapide : ${DONE_HISTORY_FETCH_LIMIT} terminées depuis le début`}
-        </button>
-      ) : null}
-    </GlassCard>
-  );
 }
 
 function AppBrandMark({ height = 24 }: { height?: number }) {
@@ -2914,6 +2675,7 @@ export default function HomePage() {
                   <div style={{ fontSize: 11, color: C.text2 }}>{t.due_at ? new Date(t.due_at).toLocaleString('fr-FR') : 'Sans echeance'}</div>
                   <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <TaskAssignSelect
+                      C={C}
                       taskId={t.id}
                       assigned_member_id={t.assigned_member_id}
                       members={householdMembers}
@@ -2922,7 +2684,7 @@ export default function HomePage() {
                       onAssign={assignTaskMember}
                       compact
                     />
-                    <TaskDoneButton taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={completeTaskById} />
+                    <TaskDoneButton C={C} taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={completeTaskById} />
                   </div>
                 </div>
               ))}
@@ -2984,6 +2746,7 @@ export default function HomePage() {
                     </Pill>
                   ) : null}
                   <TaskAssignSelect
+                    C={C}
                     taskId={t.id}
                     assigned_member_id={t.assigned_member_id}
                     members={householdMembers}
@@ -2992,7 +2755,7 @@ export default function HomePage() {
                     onAssign={assignTaskMember}
                     compact
                   />
-                  <TaskDoneButton taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={completeTaskById} />
+                  <TaskDoneButton C={C} taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={completeTaskById} />
                 </div>
               ))}
               {openTasks.length === 0 ? <div style={{ fontSize: 12, color: C.text2 }}>Aucune priorite en attente.</div> : null}
@@ -3001,6 +2764,7 @@ export default function HomePage() {
           ) : null}
           {sec('recent_done') ? (
           <RecentDoneTasksCard
+            C={C}
             sortedDone={sortedDoneTasks}
             token={token}
             reopenBusyId={taskReopenBusyId}
@@ -3071,202 +2835,88 @@ export default function HomePage() {
     }
 
     if (layer === 'agenda') {
-      const googleConnected = accounts.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
-      const appleConnected = accounts.some((a) => a.provider === 'apple_calendar' && a.status === 'connected');
-      const appleSyncPossible = appleConnected && appleCaldavAvailable !== false;
       return (
-        <div style={{ padding: '14px 18px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
-          <h2 style={{ margin: '0 0 10px', color: C.text }}>Agenda familial</h2>
-          <GlassCard style={{ padding: 12, marginBottom: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Ajouter depuis l application</div>
-            <div style={{ display: 'grid', gap: 6 }}>
-              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
-                Titre
-                <input id="event-title" value={newEventTitle} onChange={(e) => setNewEventTitle(e.target.value)} placeholder="Ex. RDV pédiatre" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
-                Début
-                <input id="event-start" value={newEventStart} onChange={(e) => setNewEventStart(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
-                Fin
-                <input id="event-end" value={newEventEnd} onChange={(e) => setNewEventEnd(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-              </label>
-              {appleConnected && appleCaldavAvailable === false ? (
-                <div style={{ fontSize: 11, color: C.sun, lineHeight: 1.4, padding: '6px 8px', borderRadius: 10, background: '#FFF8E6', border: `1px solid ${C.border}` }}>
-                  Apple : synchronisation indisponible sur ce serveur — événements seulement dans l’app (voir Paramètres → Connexions).
-                </div>
-              ) : null}
-              <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
-                Synchroniser avec
-                <select id="event-provider" value={newEventProvider} onChange={(e) => setNewEventProvider(e.target.value as 'none' | 'google_calendar' | 'apple_calendar')} style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}>
-                  <option value="google_calendar" disabled={!googleConnected}>Google Calendar</option>
-                  <option value="apple_calendar" disabled={!appleSyncPossible}>Apple Calendar</option>
-                  <option value="none">Application seulement</option>
-                </select>
-              </label>
-              <button onClick={createEventFromApp} disabled={creatingEvent} style={{ borderRadius: 10, border: 'none', background: C.terra, color: '#fff', padding: 8, fontWeight: 700 }}>
-                {creatingEvent ? 'Creation...' : 'Creer evenement'}
-              </button>
-            </div>
-          </GlassCard>
-          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.sageL }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <IconMeal size={16} color={C.sage} strokeWidth={1.65} />
-              Plan repas (jour)
-            </div>
-            <input
-              type="date"
-              value={selectedMealDay}
-              onChange={(e) => setSelectedMealDay(e.target.value)}
-              style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
-            />
-            <input
-              placeholder="Repas midi"
-              value={selectedMeal.lunch}
-              onChange={(e) =>
-                setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, lunch: e.target.value } }))
-              }
-              style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
-            />
-            <input
-              placeholder="Repas soir"
-              value={selectedMeal.dinner}
-              onChange={(e) =>
-                setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, dinner: e.target.value } }))
-              }
-              style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
-            />
-            <input
-              placeholder="Ingredients manquants (virgules)"
-              value={selectedMeal.missing.join(', ')}
-              onChange={(e) =>
-                setMealPlans((m) => ({
-                  ...m,
-                  [selectedMealDay]: {
-                    ...selectedMeal,
-                    missing: e.target.value.split(',').map((x) => x.trim()).filter(Boolean),
-                  },
-                }))
-              }
-              style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 8 }}
-            />
-            <button
-              onClick={() => {
-                const missingToAdd = selectedMeal.missing.filter((it) => !courses.some((c) => c.label.toLowerCase() === it.toLowerCase()));
-                if (missingToAdd.length === 0) {
-                  setInfo('Aucun ingredient nouveau a ajouter.');
-                  return;
-                }
-                for (const it of missingToAdd) void addCourseItem(it);
-                setInfo('Ingredients ajoutes a Courses.');
-              }}
-              style={{ borderRadius: 10, border: 'none', background: C.sage, color: '#fff', padding: 8, fontWeight: 700, width: '100%' }}
-            >
-              Generer courses depuis repas
-            </button>
-          </GlassCard>
-          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: C.terra, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <IconCheckSmall size={15} color={C.terra} strokeWidth={2} />
-              Tâches ouvertes
-            </div>
-            <p style={{ fontSize: 11, color: C.text2, margin: '0 0 8px', lineHeight: 1.45 }}>
-              Tri par échéance — assigner ou marquer fait sans passer par l’accueil.
-            </p>
-            {taskSummary != null ? (
-              <p style={{ fontSize: 10, color: C.text3, margin: '-4px 0 8px', lineHeight: 1.4 }}>
-                Dans l’app : {agendaOpenTasks.length} ouverte(s) · Sur le foyer (serveur) : {taskSummary.open_count}
-              </p>
-            ) : null}
-            {agendaOpenTasks.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.text2 }}>Rien en attente.</div>
-            ) : (
-              agendaOpenTasks.slice(0, 14).map((t) => (
-                <div key={t.id} style={{ padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                    <span>{t.title}</span>
-                    {primaryMemberId != null && t.assigned_member_id === primaryMemberId ? (
-                      <Pill bg={C.terraXL} color={C.terra}>
-                        → {familyProfile.prenom}
-                      </Pill>
-                    ) : null}
-                    {partnerMemberId != null && t.assigned_member_id === partnerMemberId ? (
-                      <Pill bg={C.alexXL} color={C.alex}>
-                        → {familyProfile.partenaire}
-                      </Pill>
-                    ) : null}
-                    {childMemberId != null && t.assigned_member_id === childMemberId ? (
-                      <Pill bg="#FFF8E8" color="#B8860B">
-                        → {familyProfile.enfant}
-                      </Pill>
-                    ) : null}
-                  </div>
-                  <div style={{ fontSize: 11, color: C.text2, marginTop: 4 }}>{t.due_at ? new Date(t.due_at).toLocaleString('fr-FR') : 'Sans échéance'}</div>
-                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <TaskAssignSelect
-                      taskId={t.id}
-                      assigned_member_id={t.assigned_member_id}
-                      members={householdMembers}
-                      token={token}
-                      busy={taskAssignBusyId === t.id}
-                      onAssign={assignTaskMember}
-                      compact
-                    />
-                    <TaskDoneButton taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={completeTaskById} />
-                  </div>
-                </div>
-              ))
-            )}
-          </GlassCard>
-          <RecentDoneTasksCard
-            sortedDone={sortedDoneTasks}
-            token={token}
-            reopenBusyId={taskReopenBusyId}
-            onReopen={reopenTaskById}
-            compact
-            onRefreshDoneFromServer={refreshDoneTasksFromServer}
-            refreshDoneBusy={doneHistoryRefreshBusy}
-            onLoadMoreDonePage={loadMoreDoneTasksPage}
-            loadMoreDoneBusy={doneHistoryMoreBusy}
-            donePagingExhausted={doneHistoryPagingExhausted}
-            serverDoneTotal={taskSummary?.done_count ?? null}
-          />
-          {urgentCount > 0 ? (
-            <div style={{ background: C.redL, padding: 10, borderRadius: 12, color: C.red, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <IconAlertOutline size={18} color={C.red} strokeWidth={1.65} />
-              {urgentCount} conflit(s) detecte(s)
-            </div>
-          ) : null}
-          {nextEvents.map((e) => (
-            <GlassCard key={e.id} style={{ padding: 12, marginBottom: 8 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{e.title}</div>
-              <div style={{ fontSize: 11, color: C.text2 }}>{new Date(e.starts_at).toLocaleString('fr-FR')}</div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
-                <button onClick={() => beginEdit(e)} style={{ borderRadius: 8, border: `1px solid ${C.border}`, background: '#fff', color: C.text2, fontSize: 11, padding: '4px 8px' }}>
-                  Modifier
-                </button>
-                <button onClick={() => deleteEventFromApp(e.id)} style={{ borderRadius: 8, border: `1px solid ${C.border}`, background: '#fff', color: C.text2, fontSize: 11, padding: '4px 8px' }}>
-                  Annuler
-                </button>
-              </div>
-            </GlassCard>
-          ))}
-          {editingEventId !== null ? (
-            <GlassCard style={{ padding: 12, marginTop: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Modifier l evenement</div>
-              <div style={{ display: 'grid', gap: 6 }}>
-                <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Titre evenement" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-                <input value={editStart} onChange={(e) => setEditStart(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-                <input value={editEnd} onChange={(e) => setEditEnd(e.target.value)} type="datetime-local" style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={saveEditEvent} style={{ borderRadius: 10, border: 'none', background: C.terra, color: '#fff', padding: 8, fontWeight: 700 }}>Enregistrer</button>
-                  <button onClick={() => setEditingEventId(null)} style={{ borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.text2, padding: 8 }}>Annuler</button>
-                </div>
-              </div>
-            </GlassCard>
-          ) : null}
-        </div>
+        <AgendaTabPanel
+          C={C}
+          token={token}
+          accounts={accounts}
+          appleCaldavAvailable={appleCaldavAvailable}
+          newEventTitle={newEventTitle}
+          onNewEventTitleChange={setNewEventTitle}
+          newEventStart={newEventStart}
+          onNewEventStartChange={setNewEventStart}
+          newEventEnd={newEventEnd}
+          onNewEventEndChange={setNewEventEnd}
+          newEventProvider={newEventProvider}
+          onNewEventProviderChange={setNewEventProvider}
+          creatingEvent={creatingEvent}
+          onCreateEvent={createEventFromApp}
+          selectedMealDay={selectedMealDay}
+          onSelectedMealDayChange={setSelectedMealDay}
+          selectedMeal={selectedMeal}
+          onMealLunchChange={(v) =>
+            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, lunch: v } }))
+          }
+          onMealDinnerChange={(v) =>
+            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, dinner: v } }))
+          }
+          onMealMissingChange={(raw) =>
+            setMealPlans((m) => ({
+              ...m,
+              [selectedMealDay]: {
+                ...selectedMeal,
+                missing: raw.split(',').map((x) => x.trim()).filter(Boolean),
+              },
+            }))
+          }
+          onGenerateCoursesFromMeal={() => {
+            const missingToAdd = selectedMeal.missing.filter(
+              (it) => !courses.some((c) => c.label.toLowerCase() === it.toLowerCase()),
+            );
+            if (missingToAdd.length === 0) {
+              setInfo('Aucun ingredient nouveau a ajouter.');
+              return;
+            }
+            for (const it of missingToAdd) void addCourseItem(it);
+            setInfo('Ingredients ajoutes a Courses.');
+          }}
+          agendaOpenTasks={agendaOpenTasks}
+          taskSummary={taskSummary}
+          familyNames={{
+            prenom: familyProfile.prenom,
+            partenaire: familyProfile.partenaire,
+            enfant: familyProfile.enfant,
+          }}
+          primaryMemberId={primaryMemberId}
+          partnerMemberId={partnerMemberId}
+          childMemberId={childMemberId}
+          householdMembers={householdMembers}
+          taskAssignBusyId={taskAssignBusyId}
+          taskCompleteBusyId={taskCompleteBusyId}
+          onAssignTask={assignTaskMember}
+          onCompleteTask={completeTaskById}
+          sortedDoneTasks={sortedDoneTasks}
+          taskReopenBusyId={taskReopenBusyId}
+          onReopenTask={reopenTaskById}
+          onRefreshDoneFromServer={refreshDoneTasksFromServer}
+          doneHistoryRefreshBusy={doneHistoryRefreshBusy}
+          onLoadMoreDonePage={loadMoreDoneTasksPage}
+          doneHistoryMoreBusy={doneHistoryMoreBusy}
+          doneHistoryPagingExhausted={doneHistoryPagingExhausted}
+          urgentCount={urgentCount}
+          nextEvents={nextEvents}
+          editingEventId={editingEventId}
+          editTitle={editTitle}
+          onEditTitleChange={setEditTitle}
+          editStart={editStart}
+          onEditStartChange={setEditStart}
+          editEnd={editEnd}
+          onEditEndChange={setEditEnd}
+          onBeginEditEvent={beginEdit}
+          onDeleteEvent={deleteEventFromApp}
+          onSaveEditEvent={saveEditEvent}
+          onCancelEditEvent={() => setEditingEventId(null)}
+        />
       );
     }
 
@@ -3944,6 +3594,7 @@ export default function HomePage() {
                                 </Pill>
                               ) : null}
                               <TaskAssignSelect
+                                C={C}
                                 taskId={u.id}
                                 assigned_member_id={u.assigned_member_id}
                                 members={householdMembers}
@@ -3952,7 +3603,7 @@ export default function HomePage() {
                                 onAssign={assignTaskMember}
                                 compact
                               />
-                              <TaskDoneButton taskId={u.id} token={token} busyDone={taskCompleteBusyId === u.id} onDone={completeTaskById} />
+                              <TaskDoneButton C={C} taskId={u.id} token={token} busyDone={taskCompleteBusyId === u.id} onDone={completeTaskById} />
                             </div>
                           ))}
                         </div>
@@ -4132,6 +3783,7 @@ export default function HomePage() {
                               style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'stretch' }}
                             >
                               <TaskAssignSelect
+                                C={C}
                                 taskId={t.id}
                                 assigned_member_id={aid}
                                 members={householdMembers}
@@ -4140,7 +3792,7 @@ export default function HomePage() {
                                 onAssign={assignTaskMember}
                                 compact
                               />
-                              <TaskDoneButton taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={completeTaskById} />
+                              <TaskDoneButton C={C} taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={completeTaskById} />
                             </div>
                             <button
                               type="button"
