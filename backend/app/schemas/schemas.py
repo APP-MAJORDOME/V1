@@ -401,6 +401,54 @@ class CouponPatch(BaseModel):
     discount: str | None = Field(None, min_length=1, max_length=64)
 
 
+class BudgetEnvelopeRead(BaseModel):
+    id: int
+    household_id: int
+    slug: str
+    label: str
+    spent: int
+    budget_cap: int
+    color: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BudgetEnvelopeCreate(BaseModel):
+    slug: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=255)
+    spent: int = Field(default=0, ge=0, le=9_999_999)
+    budget_cap: int = Field(default=0, ge=0, le=9_999_999)
+    color: str = Field(default="#6BA898", min_length=4, max_length=32)
+
+
+class BudgetEnvelopePatch(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=255)
+    spent: int | None = Field(None, ge=0, le=9_999_999)
+    budget_cap: int | None = Field(None, ge=0, le=9_999_999)
+    color: str | None = Field(None, min_length=4, max_length=32)
+
+
+class MealPlanRead(BaseModel):
+    id: int
+    household_id: int
+    day_key: str
+    lunch: str
+    dinner: str
+    missing: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MealPlanUpsert(BaseModel):
+    lunch: str = Field(default="", max_length=2000)
+    dinner: str = Field(default="", max_length=2000)
+    missing: list[str] = Field(default_factory=list)
+
+
 class RoutineCreate(BaseModel):
     household_id: int | None = None
     name: str

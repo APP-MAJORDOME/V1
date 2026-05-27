@@ -140,6 +140,25 @@ COUPON_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/wallet/coupons" \
 COUPON_ID="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); print(p["id"])' <<< "${COUPON_CREATED}")"
 curl -fsS -X DELETE "${API_BASE}/api/v1/wallet/coupons/${COUPON_ID}" -H "${AUTH_HEADER}" >/dev/null
 
+echo "[smoke] budget envelopes"
+BUDGET_LIST="$(curl -fsS "${API_BASE}/api/v1/budget/envelopes" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${BUDGET_LIST}"
+BUDGET_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/budget/envelopes" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d '{"slug":"smoke-courses","label":"Smoke courses","spent":10,"budget_cap":200,"color":"#6BA898"}')"
+curl -fsS -X PATCH "${API_BASE}/api/v1/budget/envelopes/smoke-courses" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d '{"spent":25}' >/dev/null
+curl -fsS -X DELETE "${API_BASE}/api/v1/budget/envelopes/smoke-courses" -H "${AUTH_HEADER}" >/dev/null
+
+echo "[smoke] meal plans"
+MEAL_LIST="$(curl -fsS "${API_BASE}/api/v1/meal-plans" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${MEAL_LIST}"
+curl -fsS -X PUT "${API_BASE}/api/v1/meal-plans/2026-05-27" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d '{"lunch":"Smoke salade","dinner":"Smoke pâtes","missing":["Basilic"]}' >/dev/null
+curl -fsS -X DELETE "${API_BASE}/api/v1/meal-plans/2026-05-27" -H "${AUTH_HEADER}" >/dev/null
+
 echo "[smoke] partner inbox"
 PARTNER_INBOX="$(curl -fsS "${API_BASE}/api/v1/tasks/partner-inbox" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${PARTNER_INBOX}"

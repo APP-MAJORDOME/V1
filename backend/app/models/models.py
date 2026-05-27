@@ -172,6 +172,29 @@ class HouseholdCoupon(Base, TimestampMixin):
     discount: Mapped[str] = mapped_column(String(64))
 
 
+class HouseholdBudgetEnvelope(Base, TimestampMixin):
+    __tablename__ = "household_budget_envelopes"
+    __table_args__ = (Index("ix_household_budget_envelopes_household_slug", "household_id", "slug", unique=True),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    slug: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(255))
+    spent: Mapped[int] = mapped_column(Integer, default=0)
+    budget_cap: Mapped[int] = mapped_column(Integer, default=0)
+    color: Mapped[str] = mapped_column(String(32), default="#6BA898")
+
+
+class HouseholdMealPlan(Base, TimestampMixin):
+    __tablename__ = "household_meal_plans"
+    __table_args__ = (Index("ix_household_meal_plans_household_day", "household_id", "day_key", unique=True),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    day_key: Mapped[str] = mapped_column(String(10))
+    lunch: Mapped[str] = mapped_column(Text, default="")
+    dinner: Mapped[str] = mapped_column(Text, default="")
+    missing_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
 class TaskDelegation(Base, TimestampMixin):
     """Délégation notifiée au partenaire (tâches + lien d’accusé + relances worker)."""
 

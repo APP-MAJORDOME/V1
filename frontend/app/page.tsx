@@ -136,6 +136,19 @@ import {
   type Coupon,
   type WalletCard,
 } from '../lib/wallet';
+import {
+  DEFAULT_BUDGET_ENVELOPES,
+  fetchBudgetEnvelopes,
+  mapBudgetToUi,
+  syncBudgetEnvelopes,
+  type BudgetItem,
+} from '../lib/budget';
+import {
+  fetchMealPlans,
+  mapMealPlansToRecord,
+  upsertMealPlan,
+  type MealPlan,
+} from '../lib/meals';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -273,8 +286,6 @@ function formatDocStorageShort(usedBytes: number, quotaBytes: number | null): st
   const pct = quotaBytes > 0 ? Math.min(100, Math.round((usedBytes / quotaBytes) * 100)) : 0;
   return `Stockage PJ : ${fmt(usedBytes)} / ${fmt(quotaBytes)} (${pct} %)`;
 }
-type BudgetItem = { id: string; label: string; spent: number; budget: number; color: string };
-type MealPlan = { lunch: string; dinner: string; missing: string[] };
 type FridgeItem = { id: number; label: string; expires_at: string; qty: number };
 type UiToast = { id: string; kind: 'success' | 'error' | 'info'; text: string };
 
@@ -702,11 +713,7 @@ export default function HomePage() {
   const [moiMood, setMoiMood] = useState(3);
   const [budgetEditing, setBudgetEditing] = useState(false);
   const [sleep, setSleep] = useState(7);
-  const [budget, setBudget] = useState<BudgetItem[]>([
-    { id: 'courses', label: 'Courses', spent: 0, budget: 400, color: C.sage },
-    { id: 'loisirs', label: 'Loisirs', spent: 0, budget: 140, color: C.lilac },
-    { id: 'enfants', label: 'Enfants', spent: 0, budget: 220, color: C.terra },
-  ]);
+  const [budget, setBudget] = useState<BudgetItem[]>(DEFAULT_BUDGET_ENVELOPES);
   /** Vide au premier rendu (SSR = client), puis rempli dans useEffect — évite jour UTC ≠ jour local. */
   const [selectedMealDay, setSelectedMealDay] = useState('');
   /** Libellé date du jour uniquement côté client (évite hydratation #425 dans le hero). */
@@ -777,6 +784,7 @@ export default function HomePage() {
   const doneNextOffsetRef = useRef(INITIAL_DONE_TASKS_LIMIT);
   const docPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const docAttachmentReplaceRef = useRef<HTMLInputElement | null>(null);
+  const mealsHydratedRef = useRef(false);
 
   function seedDocsForFamily(f: FamilyProfile): DocVaultItem[] {
     const J = f.prenom || 'Joanne';
@@ -1184,11 +1192,7 @@ export default function HomePage() {
       const pcontact = localStorage.getItem('majordome_partner_contact');
       if (pcontact) setPartnerContactDraft(pcontact);
 
-      const savedBudget = localStorage.getItem('majordome_budget');
-      const savedMeals = localStorage.getItem('majordome_meal_plans');
       const savedMoments = localStorage.getItem('majordome_self_moments');
-      if (savedBudget) setBudget(JSON.parse(savedBudget));
-      if (savedMeals) setMealPlans(JSON.parse(savedMeals));
       if (savedMoments) setSelfMoments(JSON.parse(savedMoments));
       const savedJournal = localStorage.getItem('majordome_journal');
       const savedCycle = localStorage.getItem('majordome_cycle_day');
@@ -1246,12 +1250,6 @@ export default function HomePage() {
     setPostLoginSetupResolved(true);
   }, [token]);
 
-  useEffect(() => {
-    localStorage.setItem('majordome_budget', JSON.stringify(budget));
-  }, [budget]);
-  useEffect(() => {
-    localStorage.setItem('majordome_meal_plans', JSON.stringify(mealPlans));
-  }, [mealPlans]);
   useEffect(() => {
     localStorage.setItem('majordome_self_moments', JSON.stringify(selfMoments));
   }, [selfMoments]);
@@ -1586,6 +1584,107 @@ export default function HomePage() {
       }
       setWalletCards(walletCardRows.map(mapWalletCardToUi));
       setCoupons(couponRows.map(mapCouponToUi));
+
+      let budgetRows = await fetchBudgetEnvelopes(accessToken).catch(() => []);
+      if (budgetRows.length === 0 && typeof window !== 'undefined') {
+        const legacyRaw = localStorage.getItem('majordome_budget');
+        let seed: BudgetItem[] = DEFAULT_BUDGET_ENVELOPES;
+        if (legacyRaw) {
+          try {
+            const arr = JSON.parse(legacyRaw) as unknown[];
+            if (Array.isArray(arr) && arr.length > 0) {
+              const imported: BudgetItem[] = [];
+              for (const item of arr) {
+                if (!item || typeof item !== 'object') continue;
+                const id =
+                  typeof (item as { id?: string }).id === 'string'
+                    ? (item as { id: string }).id.trim()
+                    : '';
+                const label =
+                  typeof (item as { label?: string }).label === 'string'
+                    ? (item as { label: string }).label.trim()
+                    : '';
+                if (!id || !label) continue;
+                imported.push({
+                  id,
+                  label,
+                  spent:
+                    typeof (item as { spent?: number }).spent === 'number'
+                      ? (item as { spent: number }).spent
+                      : 0,
+                  budget:
+                    typeof (item as { budget?: number }).budget === 'number'
+                      ? (item as { budget: number }).budget
+                      : 0,
+                  color:
+                    typeof (item as { color?: string }).color === 'string'
+                      ? (item as { color: string }).color
+                      : '#6BA898',
+                });
+              }
+              if (imported.length > 0) seed = imported;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        try {
+          await syncBudgetEnvelopes(seed, accessToken);
+          if (legacyRaw) localStorage.removeItem('majordome_budget');
+          pushToast('success', 'Budget synchronisé avec le foyer');
+          budgetRows = await fetchBudgetEnvelopes(accessToken);
+        } catch {
+          /* ignore */
+        }
+      }
+      setBudget(budgetRows.length > 0 ? budgetRows.map(mapBudgetToUi) : DEFAULT_BUDGET_ENVELOPES);
+
+      mealsHydratedRef.current = false;
+      let mealRows = await fetchMealPlans(accessToken).catch(() => []);
+      if (mealRows.length === 0 && typeof window !== 'undefined') {
+        const legacyRaw = localStorage.getItem('majordome_meal_plans');
+        if (legacyRaw) {
+          try {
+            const parsed = JSON.parse(legacyRaw) as Record<string, unknown>;
+            if (parsed && typeof parsed === 'object') {
+              let imported = 0;
+              for (const [dayKey, rawPlan] of Object.entries(parsed)) {
+                if (!rawPlan || typeof rawPlan !== 'object') continue;
+                const lunch =
+                  typeof (rawPlan as { lunch?: string }).lunch === 'string'
+                    ? (rawPlan as { lunch: string }).lunch
+                    : '';
+                const dinner =
+                  typeof (rawPlan as { dinner?: string }).dinner === 'string'
+                    ? (rawPlan as { dinner: string }).dinner
+                    : '';
+                const missingRaw = (rawPlan as { missing?: unknown }).missing;
+                const missing = Array.isArray(missingRaw)
+                  ? missingRaw.map((x) => String(x).trim()).filter(Boolean)
+                  : [];
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) continue;
+                try {
+                  await upsertMealPlan(dayKey, { lunch, dinner, missing }, accessToken);
+                  imported += 1;
+                } catch {
+                  /* ignore */
+                }
+              }
+              if (imported > 0) {
+                localStorage.removeItem('majordome_meal_plans');
+                pushToast('success', `${imported} plan(s) repas importé(s)`);
+                mealRows = await fetchMealPlans(accessToken);
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      setMealPlans(mapMealPlansToRecord(mealRows));
+      window.setTimeout(() => {
+        mealsHydratedRef.current = true;
+      }, 0);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de chargement';
       setError(msg);
@@ -1599,6 +1698,31 @@ export default function HomePage() {
   useEffect(() => {
     if (token) loadData(token);
   }, [token]);
+
+  useEffect(() => {
+    mealsHydratedRef.current = false;
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || !mealsHydratedRef.current || !selectedMealDay) return;
+    const plan = mealPlans[selectedMealDay];
+    if (!plan) return;
+    const t = window.setTimeout(() => {
+      void upsertMealPlan(selectedMealDay, plan, token).catch(() => {});
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [mealPlans, selectedMealDay, token]);
+
+  async function saveBudgetToServer() {
+    if (!token) return;
+    try {
+      await syncBudgetEnvelopes(budget, token);
+      pushToast('success', 'Budget enregistré ✓');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Synchronisation budget impossible';
+      pushToast('error', msg);
+    }
+  }
 
   useEffect(() => {
     if (!modalCoffre) setDocEdit(null);
@@ -3459,7 +3583,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => {
                   if (budgetEditing) {
-                    pushToast('success', 'Budget enregistré ✓');
+                    void saveBudgetToServer();
                   }
                   setBudgetEditing((v) => !v);
                 }}

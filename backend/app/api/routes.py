@@ -56,6 +56,8 @@ from app.models.models import (
     HouseholdFridgeItem,
     HouseholdWalletCard,
     HouseholdCoupon,
+    HouseholdBudgetEnvelope,
+    HouseholdMealPlan,
 )
 from app.schemas.schemas import (
     HouseholdCreate,
@@ -96,6 +98,11 @@ from app.schemas.schemas import (
     CouponRead,
     CouponCreate,
     CouponPatch,
+    BudgetEnvelopeRead,
+    BudgetEnvelopeCreate,
+    BudgetEnvelopePatch,
+    MealPlanRead,
+    MealPlanUpsert,
     RoutineRead,
     OpportunityRead,
     AccountSyncResponse,
@@ -1565,6 +1572,184 @@ def delete_coupon(
     row = db.get(HouseholdCoupon, coupon_id)
     if not row or row.household_id != auth.household_id:
         raise api_error("coupon_not_found", "Coupon introuvable.", 404)
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted"}
+
+
+_DAY_KEY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _meal_plan_to_read(row: HouseholdMealPlan) -> MealPlanRead:
+    try:
+        missing = json.loads(row.missing_json or "[]")
+        if not isinstance(missing, list):
+            missing = []
+        missing = [str(x).strip() for x in missing if str(x).strip()]
+    except json.JSONDecodeError:
+        missing = []
+    return MealPlanRead(
+        id=row.id,
+        household_id=row.household_id,
+        day_key=row.day_key,
+        lunch=row.lunch or "",
+        dinner=row.dinner or "",
+        missing=missing,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get("/budget/envelopes", response_model=list[BudgetEnvelopeRead])
+def list_budget_envelopes(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    return (
+        db.query(HouseholdBudgetEnvelope)
+        .filter(HouseholdBudgetEnvelope.household_id == auth.household_id)
+        .order_by(HouseholdBudgetEnvelope.slug.asc(), HouseholdBudgetEnvelope.id.asc())
+        .limit(50)
+        .all()
+    )
+
+
+@router.post("/budget/envelopes", response_model=BudgetEnvelopeRead)
+def create_budget_envelope(
+    payload: BudgetEnvelopeCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    slug = payload.slug.strip().lower()
+    label = payload.label.strip()
+    if not slug or not label:
+        raise api_error("invalid_budget_envelope", "Slug et libellé requis.", 400)
+    existing = (
+        db.query(HouseholdBudgetEnvelope)
+        .filter(HouseholdBudgetEnvelope.household_id == auth.household_id, HouseholdBudgetEnvelope.slug == slug)
+        .first()
+    )
+    if existing:
+        raise api_error("budget_envelope_exists", "Cette enveloppe existe déjà.", 409)
+    row = HouseholdBudgetEnvelope(
+        household_id=auth.household_id,
+        slug=slug,
+        label=label,
+        spent=payload.spent,
+        budget_cap=payload.budget_cap,
+        color=payload.color,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/budget/envelopes/{slug}", response_model=BudgetEnvelopeRead)
+def patch_budget_envelope(
+    slug: str,
+    payload: BudgetEnvelopePatch,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    key = slug.strip().lower()
+    row = (
+        db.query(HouseholdBudgetEnvelope)
+        .filter(HouseholdBudgetEnvelope.household_id == auth.household_id, HouseholdBudgetEnvelope.slug == key)
+        .first()
+    )
+    if not row:
+        raise api_error("budget_envelope_not_found", "Enveloppe introuvable.", 404)
+    data = payload.model_dump(exclude_unset=True)
+    if "label" in data and data["label"] is not None:
+        data["label"] = data["label"].strip()
+        if not data["label"]:
+            raise api_error("invalid_budget_envelope", "Le libellé est requis.", 400)
+    for key_name, value in data.items():
+        setattr(row, key_name, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/budget/envelopes/{slug}")
+def delete_budget_envelope(
+    slug: str,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    key = slug.strip().lower()
+    row = (
+        db.query(HouseholdBudgetEnvelope)
+        .filter(HouseholdBudgetEnvelope.household_id == auth.household_id, HouseholdBudgetEnvelope.slug == key)
+        .first()
+    )
+    if not row:
+        raise api_error("budget_envelope_not_found", "Enveloppe introuvable.", 404)
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/meal-plans", response_model=list[MealPlanRead])
+def list_meal_plans(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    rows = (
+        db.query(HouseholdMealPlan)
+        .filter(HouseholdMealPlan.household_id == auth.household_id)
+        .order_by(HouseholdMealPlan.day_key.desc(), HouseholdMealPlan.id.desc())
+        .limit(120)
+        .all()
+    )
+    return [_meal_plan_to_read(r) for r in rows]
+
+
+@router.put("/meal-plans/{day_key}", response_model=MealPlanRead)
+def upsert_meal_plan(
+    day_key: str,
+    payload: MealPlanUpsert,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    key = day_key.strip()
+    if not _DAY_KEY_RE.match(key):
+        raise api_error("invalid_meal_day", "Date invalide (YYYY-MM-DD).", 400)
+    missing = [str(x).strip() for x in payload.missing if str(x).strip()][:50]
+    row = (
+        db.query(HouseholdMealPlan)
+        .filter(HouseholdMealPlan.household_id == auth.household_id, HouseholdMealPlan.day_key == key)
+        .first()
+    )
+    if row:
+        row.lunch = payload.lunch.strip()
+        row.dinner = payload.dinner.strip()
+        row.missing_json = json.dumps(missing, ensure_ascii=False)
+    else:
+        row = HouseholdMealPlan(
+            household_id=auth.household_id,
+            day_key=key,
+            lunch=payload.lunch.strip(),
+            dinner=payload.dinner.strip(),
+            missing_json=json.dumps(missing, ensure_ascii=False),
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _meal_plan_to_read(row)
+
+
+@router.delete("/meal-plans/{day_key}")
+def delete_meal_plan(
+    day_key: str,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    key = day_key.strip()
+    if not _DAY_KEY_RE.match(key):
+        raise api_error("invalid_meal_day", "Date invalide (YYYY-MM-DD).", 400)
+    row = (
+        db.query(HouseholdMealPlan)
+        .filter(HouseholdMealPlan.household_id == auth.household_id, HouseholdMealPlan.day_key == key)
+        .first()
+    )
+    if not row:
+        raise api_error("meal_plan_not_found", "Plan repas introuvable.", 404)
     db.delete(row)
     db.commit()
     return {"status": "deleted"}
