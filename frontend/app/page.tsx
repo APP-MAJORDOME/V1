@@ -23,7 +23,7 @@ import {
 } from '../lib/constants';
 import { BottomTabBar, type AppTabId } from '../components/BottomTabBar';
 import { TodayHome, type TodayUrgency } from '../components/TodayHome';
-import { defaultDemoCoupons, defaultDemoFridge } from '../lib/demoData';
+import { defaultDemoCoupons } from '../lib/demoData';
 import {
   fridgeExpiryTone,
   isExpired,
@@ -120,6 +120,12 @@ import {
   mapGroceryToCourse,
   patchGroceryItem,
 } from '../lib/grocery';
+import {
+  createFridgeItem,
+  deleteFridgeItem,
+  fetchFridgeItems,
+  mapFridgeToUi,
+} from '../lib/fridge';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
@@ -879,6 +885,22 @@ export default function HomePage() {
     }
   }
 
+  async function reloadFridgeFromServer(accessToken: string) {
+    const rows = await fetchFridgeItems(accessToken);
+    setFridge(rows.map(mapFridgeToUi));
+  }
+
+  async function removeFridgeItem(id: number) {
+    if (!token) return;
+    setFridge((prev) => prev.filter((f) => f.id !== id));
+    try {
+      await deleteFridgeItem(id, token);
+    } catch {
+      void reloadFridgeFromServer(token);
+      pushToast('error', 'Retrait du frigo impossible');
+    }
+  }
+
   const onExecuteIntentRef = useRef<
     (command: string, interpreted: AgentInterpretResponse) => Promise<AgentExecutionResult>
   >(async () => ({ done: false }));
@@ -1163,13 +1185,10 @@ export default function HomePage() {
       if (savedBudget) setBudget(JSON.parse(savedBudget));
       if (savedMeals) setMealPlans(JSON.parse(savedMeals));
       if (savedMoments) setSelfMoments(JSON.parse(savedMoments));
-      const savedFridge = localStorage.getItem('majordome_fridge');
       const savedWalletCards = localStorage.getItem('majordome_wallet_cards');
       const savedCoupons = localStorage.getItem('majordome_wallet_coupons');
       const savedJournal = localStorage.getItem('majordome_journal');
       const savedCycle = localStorage.getItem('majordome_cycle_day');
-      if (savedFridge) setFridge(JSON.parse(savedFridge));
-      else setFridge(defaultDemoFridge());
       if (savedWalletCards) setWalletCards(JSON.parse(savedWalletCards));
       if (savedCoupons) setCoupons(JSON.parse(savedCoupons));
       else setCoupons(defaultDemoCoupons());
@@ -1252,9 +1271,6 @@ export default function HomePage() {
   useEffect(() => {
     localStorage.setItem('majordome_self_moments', JSON.stringify(selfMoments));
   }, [selfMoments]);
-  useEffect(() => {
-    localStorage.setItem('majordome_fridge', JSON.stringify(fridge));
-  }, [fridge]);
   useEffect(() => {
     localStorage.setItem('majordome_wallet_cards', JSON.stringify(walletCards));
   }, [walletCards]);
@@ -1489,6 +1505,47 @@ export default function HomePage() {
         }
       }
       setCourses(groceryRows.map(mapGroceryToCourse));
+
+      let fridgeRows = await fetchFridgeItems(accessToken).catch(() => []);
+      if (fridgeRows.length === 0 && typeof window !== 'undefined') {
+        const legacyRaw = localStorage.getItem('majordome_fridge');
+        if (legacyRaw) {
+          try {
+            const arr = JSON.parse(legacyRaw) as unknown[];
+            if (Array.isArray(arr) && arr.length > 0) {
+              let imported = 0;
+              for (const item of arr) {
+                if (!item || typeof item !== 'object') continue;
+                const label =
+                  typeof (item as { label?: string }).label === 'string'
+                    ? (item as { label: string }).label.trim()
+                    : '';
+                const expires_at =
+                  typeof (item as { expires_at?: string }).expires_at === 'string'
+                    ? (item as { expires_at: string }).expires_at
+                    : '';
+                const qty =
+                  typeof (item as { qty?: number }).qty === 'number' ? (item as { qty: number }).qty : 1;
+                if (!label || !expires_at) continue;
+                try {
+                  await createFridgeItem({ label, expires_at, qty }, accessToken);
+                  imported += 1;
+                } catch {
+                  /* ignore */
+                }
+              }
+              if (imported > 0) {
+                localStorage.removeItem('majordome_fridge');
+                pushToast('success', `${imported} produit(s) importé(s) vers le frigo`);
+                fridgeRows = await fetchFridgeItems(accessToken);
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      setFridge(fridgeRows.map(mapFridgeToUi));
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de chargement';
       setError(msg);
@@ -3001,7 +3058,6 @@ export default function HomePage() {
           activeCoupons={activeCoupons}
           expiredCoupons={expiredCoupons}
           walletCards={walletCards}
-          setFridge={setFridge}
           partnerName={familyProfile.partenaire}
           onAddCourse={() => {
             if (!newCourse.trim()) return;
@@ -3013,6 +3069,7 @@ export default function HomePage() {
           onRemoveCourse={(id) => void removeCourseItem(id)}
           onDelegateCourse={(id) => void delegateCourseItem(id)}
           onClearDoneCourses={() => void clearDoneCourseItems()}
+          onRemoveFridgeItem={(id) => void removeFridgeItem(id)}
           pushToast={pushToast}
         />,
       );

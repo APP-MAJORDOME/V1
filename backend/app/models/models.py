@@ -141,6 +141,18 @@ class GroceryItem(Base, TimestampMixin):
     delegated: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class HouseholdFridgeItem(Base, TimestampMixin):
+    """Produit suivi dans le frigo du foyer (DLC)."""
+
+    __tablename__ = "household_fridge_items"
+    __table_args__ = (Index("ix_household_fridge_items_household_expires", "household_id", "expires_at"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    label: Mapped[str] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    qty: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class TaskDelegation(Base, TimestampMixin):
     """Délégation notifiée au partenaire (tâches + lien d’accusé + relances worker)."""
 

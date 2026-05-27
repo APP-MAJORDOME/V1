@@ -53,6 +53,7 @@ from app.models.models import (
     HouseholdMemoryFact,
     TaskDelegation,
     GroceryItem,
+    HouseholdFridgeItem,
 )
 from app.schemas.schemas import (
     HouseholdCreate,
@@ -84,6 +85,9 @@ from app.schemas.schemas import (
     GroceryItemRead,
     GroceryItemCreate,
     GroceryItemPatch,
+    FridgeItemRead,
+    FridgeItemCreate,
+    FridgeItemPatch,
     RoutineRead,
     OpportunityRead,
     AccountSyncResponse,
@@ -1342,6 +1346,74 @@ def delete_grocery_item(
     row = db.get(GroceryItem, item_id)
     if not row or row.household_id != auth.household_id:
         raise api_error("grocery_item_not_found", "Article introuvable.", 404)
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/fridge/items", response_model=list[FridgeItemRead])
+def list_fridge_items(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    return (
+        db.query(HouseholdFridgeItem)
+        .filter(HouseholdFridgeItem.household_id == auth.household_id)
+        .order_by(HouseholdFridgeItem.expires_at.asc(), HouseholdFridgeItem.id.asc())
+        .limit(500)
+        .all()
+    )
+
+
+@router.post("/fridge/items", response_model=FridgeItemRead)
+def create_fridge_item(
+    payload: FridgeItemCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    label = payload.label.strip()
+    if not label:
+        raise api_error("invalid_fridge_label", "Le libellé est requis.", 400)
+    row = HouseholdFridgeItem(
+        household_id=auth.household_id,
+        label=label,
+        expires_at=payload.expires_at,
+        qty=payload.qty,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/fridge/items/{item_id}", response_model=FridgeItemRead)
+def patch_fridge_item(
+    item_id: int,
+    payload: FridgeItemPatch,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(HouseholdFridgeItem, item_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("fridge_item_not_found", "Produit introuvable.", 404)
+    data = payload.model_dump(exclude_unset=True)
+    if "label" in data and data["label"] is not None:
+        data["label"] = data["label"].strip()
+        if not data["label"]:
+            raise api_error("invalid_fridge_label", "Le libellé est requis.", 400)
+    for key, value in data.items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/fridge/items/{item_id}")
+def delete_fridge_item(
+    item_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(HouseholdFridgeItem, item_id)
+    if not row or row.household_id != auth.household_id:
+        raise api_error("fridge_item_not_found", "Produit introuvable.", 404)
     db.delete(row)
     db.commit()
     return {"status": "deleted"}

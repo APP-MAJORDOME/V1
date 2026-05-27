@@ -111,6 +111,16 @@ GROCERY_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/grocery/items" \
 GROCERY_ID="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("label")=="Smoke test lait"; print(p["id"])' <<< "${GROCERY_CREATED}")"
 curl -fsS -X DELETE "${API_BASE}/api/v1/grocery/items/${GROCERY_ID}" -H "${AUTH_HEADER}" >/dev/null
 
+echo "[smoke] fridge items"
+FRIDGE_LIST="$(curl -fsS "${API_BASE}/api/v1/fridge/items" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${FRIDGE_LIST}"
+FRIDGE_EXPIRES="$(python3 -c 'from datetime import datetime,timedelta,timezone; print((datetime.now(timezone.utc)+timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
+FRIDGE_CREATED="$(curl -fsS -X POST "${API_BASE}/api/v1/fridge/items" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d "{\"label\":\"Smoke test yaourt\",\"expires_at\":\"${FRIDGE_EXPIRES}\",\"qty\":1}")"
+FRIDGE_ID="$(python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); print(p["id"])' <<< "${FRIDGE_CREATED}")"
+curl -fsS -X DELETE "${API_BASE}/api/v1/fridge/items/${FRIDGE_ID}" -H "${AUTH_HEADER}" >/dev/null
+
 echo "[smoke] partner inbox"
 PARTNER_INBOX="$(curl -fsS "${API_BASE}/api/v1/tasks/partner-inbox" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list), p' <<< "${PARTNER_INBOX}"

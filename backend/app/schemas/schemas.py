@@ -329,6 +329,30 @@ class GroceryItemPatch(BaseModel):
     delegated: bool | None = None
 
 
+class FridgeItemRead(BaseModel):
+    id: int
+    household_id: int
+    label: str
+    expires_at: datetime
+    qty: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FridgeItemCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=512)
+    expires_at: datetime
+    qty: int = Field(default=1, ge=1, le=999)
+
+
+class FridgeItemPatch(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=512)
+    expires_at: datetime | None = None
+    qty: int | None = Field(None, ge=1, le=999)
+
+
 class RoutineCreate(BaseModel):
     household_id: int | None = None
     name: str

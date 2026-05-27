@@ -73,13 +73,13 @@ export function CoursesPanel({
   activeCoupons,
   expiredCoupons,
   walletCards,
-  setFridge,
   partnerName,
   onAddCourse,
   onToggleCourse,
   onRemoveCourse,
   onDelegateCourse,
   onClearDoneCourses,
+  onRemoveFridgeItem,
   pushToast,
 }: {
   C: Record<string, string>;
@@ -95,13 +95,13 @@ export function CoursesPanel({
   activeCoupons: Coupon[];
   expiredCoupons: Coupon[];
   walletCards: WalletCard[];
-  setFridge: React.Dispatch<React.SetStateAction<FridgeItem[]>>;
   partnerName: string;
   onAddCourse: () => void;
   onToggleCourse: (id: number, nextDone: boolean) => void;
   onRemoveCourse: (id: number) => void;
   onDelegateCourse: (id: number) => void;
   onClearDoneCourses: () => void;
+  onRemoveFridgeItem: (id: number) => void;
   pushToast: (kind: 'success' | 'error' | 'info', text: string) => void;
 }) {
   const openCount = courses.filter((c) => !c.done).length;
@@ -291,7 +291,7 @@ export function CoursesPanel({
                     aria-label={`Retirer ${f.label}`}
                     onClick={() => {
                       if (!window.confirm(`Retirer « ${f.label} » du frigo ?`)) return;
-                      setFridge((prev) => prev.filter((x) => x.id !== f.id));
+                      onRemoveFridgeItem(f.id);
                       pushToast('info', `${f.label} retiré du frigo`);
                     }}
                     style={{
