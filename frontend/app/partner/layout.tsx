@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Vue partenaire — MajorDome',
+  title: { absolute: 'Vue partenaire — MajorDome' },
   description: 'Tâches déléguées et vue simplifiée pour le partenaire du foyer.',
   robots: { index: false, follow: false },
 };

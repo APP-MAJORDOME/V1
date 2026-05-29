@@ -105,6 +105,7 @@ export function GlobalSearchPalette({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Tâche, événement, document…"
+            aria-label="Recherche globale"
             style={{
               flex: 1,
               border: 'none',

@@ -3,6 +3,7 @@ import { ServiceWorkerRegister } from '../components/ServiceWorkerRegister';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://majordom.eu'),
   title: {
     default: 'MajorDome — Majordome familial',
     template: '%s — MajorDome',
@@ -22,6 +23,10 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'fr_FR',
     siteName: 'MajorDome',
+    images: [{ url: '/majordome-mark.png', width: 512, height: 512, alt: 'MajorDome' }],
+  },
+  alternates: {
+    canonical: 'https://majordom.eu/',
   },
   twitter: {
     card: 'summary',

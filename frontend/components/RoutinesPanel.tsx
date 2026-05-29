@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useClientCalendar } from '../hooks/useClientCalendar';
 import { IconBoltSoft, IconCheckSmall } from './md-icons';
 
 const LS_KEY = 'majordome.v1.routines-v9';
@@ -13,16 +14,6 @@ export type RoutineRow = {
   days?: number[];
   doneDates: string[];
 };
-
-function todayIso(): string {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
-}
-
-function todayDowMon0(): number {
-  const js = new Date().getDay();
-  return (js + 6) % 7;
-}
 
 const SEED: RoutineRow[] = [
   { id: 'rt1', title: 'Aérer les chambres', emoji: '🪟', cadence: 'daily', doneDates: [] },
@@ -68,11 +59,12 @@ function ProgressRing({ pct, size, color, track }: { pct: number; size: number; 
 }
 
 export function RoutinesPanel({ C, userName }: { C: Record<string, string>; userName?: string }) {
+  const cal = useClientCalendar();
   const [rows, setRows] = useState<RoutineRow[]>(SEED);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
-  const today = todayIso();
-  const dow = todayDowMon0();
+  const today = cal.todayIso;
+  const dow = cal.ready ? (cal.dayOfWeekIndex + 6) % 7 : 0;
 
   useEffect(() => {
     setRows(loadRoutines());
@@ -99,11 +91,13 @@ export function RoutinesPanel({ C, userName }: { C: Record<string, string>; user
   const allDone = todayList.length > 0 && doneToday === todayList.length;
 
   const streak = useMemo(() => {
+    if (!cal.ready || !cal.todayIso) return 0;
     const dailies = rows.filter((r) => r.cadence === 'daily');
     if (dailies.length === 0) return 0;
     let s = 0;
+    const base = new Date(`${cal.todayIso}T12:00:00`);
     for (let off = 0; off < 30; off++) {
-      const d = new Date();
+      const d = new Date(base);
       d.setDate(d.getDate() - off);
       const iso = d.toISOString().slice(0, 10);
       const allDoneDay = dailies.every((r) => r.doneDates.includes(iso));
@@ -111,7 +105,7 @@ export function RoutinesPanel({ C, userName }: { C: Record<string, string>; user
       else break;
     }
     return s;
-  }, [rows]);
+  }, [rows, cal.ready, cal.todayIso]);
 
   function markDone(id: string) {
     const row = rows.find((r) => r.id === id);

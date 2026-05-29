@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { getJson, postJson } from '../../lib/api';
+import { useIsClient } from '../../hooks/useIsClient';
+import { formatDateTimeFr } from '../../lib/formatClientDate';
 
 type HouseholdMember = {
   id: number;
@@ -73,8 +75,10 @@ const C = {
 };
 
 export default function PartnerPage() {
+  const client = useIsClient();
   const [token, setToken] = useState('');
   const [partnerName, setPartnerName] = useState('Partenaire');
+  const [primaryName, setPrimaryName] = useState('');
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [members, setMembers] = useState<HouseholdMember[]>([]);
   const [partnerMemberId, setPartnerMemberId] = useState<number | null>(null);
@@ -94,6 +98,7 @@ export default function PartnerPage() {
       } catch {
         /* ignore */
       }
+      setPrimaryName(fam.prenom || '');
       await postJson('/api/v1/household/profile/sync-members', {
         primary_name: fam.prenom || '',
         partner_name: fam.partenaire || '',
@@ -210,7 +215,36 @@ export default function PartnerPage() {
         ) : null}
 
         {!loading && token && tasks.length === 0 ? (
-          <p style={{ color: C.muted, fontSize: 15 }}>Rien en attente pour le moment. Profite-en.</p>
+          <div
+            style={{
+              padding: 20,
+              borderRadius: 16,
+              border: `1px dashed ${C.border}`,
+              background: `${C.card}99`,
+              textAlign: 'center',
+            }}
+          >
+            <p style={{ color: C.text, fontSize: 16, fontWeight: 700, margin: '0 0 8px' }}>Rien en attente pour le moment</p>
+            <p style={{ color: C.muted, fontSize: 13, lineHeight: 1.5, margin: '0 0 14px' }}>
+              Quand {primaryName || 'ton partenaire'} te délègue une tâche, elle apparaîtra ici avec un bouton « Marquer fait ».
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link
+                href="/"
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  background: C.accent,
+                  color: '#0f172a',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  textDecoration: 'none',
+                }}
+              >
+                Ouvrir MajorDome
+              </Link>
+            </div>
+          </div>
         ) : null}
 
         {!loading && token && tasks.length > 0 && partnerMemberId == null ? (
@@ -257,7 +291,9 @@ export default function PartnerPage() {
                 })()}
               </div>
               {task.due_at ? (
-                <div style={{ fontSize: 12, color: C.muted }}>Échéance : {new Date(task.due_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</div>
+                <div style={{ fontSize: 12, color: C.muted }} suppressHydrationWarning>
+                  Échéance : {formatDateTimeFr(task.due_at, client)}
+                </div>
               ) : (
                 <div style={{ fontSize: 12, color: C.muted }}>Pas d’échéance précise</div>
               )}

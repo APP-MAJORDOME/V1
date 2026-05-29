@@ -27,6 +27,8 @@ import type { BudgetItem } from '../lib/budget';
 import type { HomeSectionId } from '../lib/homeLayout';
 import type { MentalWeather } from '../lib/mentalLoad';
 import type { EquityShare } from '../lib/selectors';
+import { useIsClient } from '../hooks/useIsClient';
+import { formatDateFr, formatDateTimeFr } from '../lib/formatClientDate';
 
 function GlassCard({
   C,
@@ -173,6 +175,7 @@ export function HomeTabPanel({
   onRefreshDoneFromServer: () => void;
   onLoadMoreDonePage: () => void;
 }) {
+  const client = useIsClient();
   return (
     <div style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
       {isSectionVisible('hero_banner') ? (
@@ -379,6 +382,7 @@ export function HomeTabPanel({
       value={partnerContactDraft}
       onChange={(e) => onPartnerContactChange(e.target.value)}
       placeholder={`Mobile (+33…) ou e-mail de ${family.partenaire} (optionnel)`}
+      aria-label={`Contact de ${family.partenaire}, mobile ou e-mail`}
       autoComplete="tel email"
       style={{
         width: '100%',
@@ -540,7 +544,7 @@ export function HomeTabPanel({
   </strong>
   <div style={{ marginTop: 8, fontSize: 12, color: C.text2 }}>
     {weekEvents.slice(0, 5).map((e) => (
-      <div key={e.id} style={{ marginBottom: 6 }}>{new Date(e.starts_at).toLocaleDateString('fr-FR')} · {e.title}</div>
+      <div key={e.id} style={{ marginBottom: 6 }} suppressHydrationWarning>{formatDateFr(e.starts_at, client)} · {e.title}</div>
     ))}
   </div>
 </GlassCard>
@@ -577,7 +581,7 @@ export function HomeTabPanel({
             </Pill>
           ) : null}
         </div>
-        <div style={{ fontSize: 11, color: C.text2 }}>{t.due_at ? new Date(t.due_at).toLocaleString('fr-FR') : 'Sans echeance'}</div>
+        <div style={{ fontSize: 11, color: C.text2 }} suppressHydrationWarning>{t.due_at ? formatDateTimeFr(t.due_at, client) : 'Sans echeance'}</div>
         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <TaskAssignSelect
             C={C}
@@ -711,7 +715,7 @@ export function HomeTabPanel({
     </div>
     <div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
       <IconCalendar size={14} color={C.terra} strokeWidth={1.65} />
-      Prochain RDV: {weekEvents[0] ? new Date(weekEvents[0].starts_at).toLocaleDateString('fr-FR') : 'A planifier'}
+      Prochain RDV: <span suppressHydrationWarning>{weekEvents[0] ? formatDateFr(weekEvents[0].starts_at, client) : 'A planifier'}</span>
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <IconSchoolBag size={14} color={C.sun} strokeWidth={1.65} />

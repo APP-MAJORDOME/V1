@@ -168,6 +168,7 @@ export function MoiTabPanel({
           step={0.5}
           value={sleep}
           onChange={(e) => onSleepChange(Number(e.target.value))}
+          aria-label="Heures de sommeil"
           aria-valuemin={3}
           aria-valuemax={11}
           aria-valuenow={sleep}
@@ -305,6 +306,7 @@ export function MoiTabPanel({
                     Dépensé
                     <input
                       type="number"
+                      aria-label={`Montant dépensé pour ${b.label}`}
                       value={b.spent}
                       onChange={(e) =>
                         onBudgetChange((prev) =>
@@ -324,6 +326,7 @@ export function MoiTabPanel({
                     Budget
                     <input
                       type="number"
+                      aria-label={`Budget prévu pour ${b.label}`}
                       value={b.budget}
                       onChange={(e) =>
                         onBudgetChange((prev) =>

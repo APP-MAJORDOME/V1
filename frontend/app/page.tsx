@@ -92,6 +92,8 @@ import { DebordeeModal, type DebordeeResult } from '../components/DebordeeModal'
 import { AlexModal } from '../components/AlexModal';
 import { CoffreModal } from '../components/CoffreModal';
 import { formatDocStorageShort, docCategoryForApi } from '../lib/documentsUi';
+import { filterOutTestTasks, isTestTaskTitle } from '../lib/taskHygiene';
+import { formatDateFr, formatDateTimeFr } from '../lib/formatClientDate';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton } from '../components/taskUi';
 import {
   executeAgentIntent as runAgentIntent,
@@ -316,7 +318,13 @@ function AppBrandMark({ height = 24 }: { height?: number }) {
   return <MajordomeMark size={Math.round(height * 2.2)} />;
 }
 
-function StatusBar({ onOpenSearch }: { onOpenSearch?: () => void }) {
+function StatusBar({
+  onOpenSearch,
+  headerBg,
+}: {
+  onOpenSearch?: () => void;
+  headerBg?: string;
+}) {
   /** null jusqu’au montage client — évite décalage SSR/heure locale (hydratation #425). */
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -339,7 +347,8 @@ function StatusBar({ onOpenSearch }: { onOpenSearch?: () => void }) {
         paddingRight: 'max(16px, env(safe-area-inset-right, 0px))',
         paddingBottom: 0,
         color: ink,
-        background: C.bg,
+        background: headerBg ?? C.bg,
+        transition: 'background 0.35s ease',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, minHeight: 22 }}>
@@ -445,6 +454,7 @@ export default function HomePage() {
   const [selectedMealDay, setSelectedMealDay] = useState('');
   /** Libellé date du jour uniquement côté client (évite hydratation #425 dans le hero). */
   const [clientTodayLabel, setClientTodayLabel] = useState('');
+  const [clientHour, setClientHour] = useState<number | null>(null);
   const [mealPlans, setMealPlans] = useState<Record<string, MealPlan>>({});
   const [selfMoments, setSelfMoments] = useState<SelfMoment[]>(DEFAULT_SELF_MOMENTS);
   const [journal, setJournal] = useState('');
@@ -930,6 +940,7 @@ export default function HomePage() {
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
     );
     setClientTodayLabel(d.toLocaleDateString('fr-FR'));
+    setClientHour(d.getHours());
 
     const stored = localStorage.getItem('majordome_access_token');
     if (stored) setToken(stored);
@@ -1060,9 +1071,15 @@ export default function HomePage() {
                 accessToken,
               ),
             ]);
+            const testOpen = openRows.filter((t) => isTestTaskTitle(t.title));
+            for (const t of testOpen) {
+              void postJson<TaskItem>(`/api/v1/tasks/${t.id}/complete`, {}, accessToken).catch(() => {});
+            }
+            const cleanOpen = filterOutTestTasks(openRows);
+            const cleanDone = filterOutTestTasks(doneRows);
             return {
-              merged: mergeTasksById(openRows, doneRows),
-              donePagingExhausted: doneRows.length < INITIAL_DONE_TASKS_LIMIT,
+              merged: mergeTasksById(cleanOpen, cleanDone),
+              donePagingExhausted: cleanDone.length < INITIAL_DONE_TASKS_LIMIT,
             };
           } catch {
             const all = await getJson<TaskItem[]>('/api/v1/tasks', accessToken);
@@ -2033,10 +2050,9 @@ export default function HomePage() {
     [openTasks.length, mentalWeather.level],
   );
   const showMorningMoodCard = useMemo(() => {
-    if (homeMood !== null) return false;
-    const h = new Date().getHours();
-    return h >= 5 && h < 12;
-  }, [homeMood]);
+    if (homeMood !== null || clientHour === null) return false;
+    return clientHour >= 5 && clientHour < 12;
+  }, [homeMood, clientHour]);
   const equity = useMemo(
     () =>
       computeDemoEquityShares(openTasks.length, doneTasks.length, familyProfile, {
@@ -2084,7 +2100,7 @@ export default function HomePage() {
         id: `task-open-${t.id}`,
         kind: 'task',
         title: t.title,
-        subtitle: t.due_at ? `Échéance ${new Date(t.due_at).toLocaleDateString('fr-FR')}` : 'Tâche ouverte',
+        subtitle: t.due_at ? `Échéance ${formatDateFr(t.due_at, clientReady)}` : 'Tâche ouverte',
         onSelect: () => {
           setMainTab('home');
           setOverlay(null);
@@ -2108,7 +2124,7 @@ export default function HomePage() {
         id: `ev-${ev.id}`,
         kind: 'event',
         title: ev.title,
-        subtitle: new Date(ev.starts_at).toLocaleString('fr-FR'),
+        subtitle: formatDateTimeFr(ev.starts_at, clientReady),
         onSelect: () => {
           setMainTab('agenda');
           setOverlay(null);
@@ -2127,7 +2143,7 @@ export default function HomePage() {
       });
     }
     return out;
-  }, [openTasks, sortedDoneTasks, events, docVault]);
+  }, [openTasks, sortedDoneTasks, events, docVault, clientReady]);
 
   const alexTasksList = useMemo(() => {
     const glyphs = ['g:bin', 'g:shop', 'g:bag', 'g:wrench', 'g:meal'];
@@ -2135,7 +2151,7 @@ export default function HomePage() {
       id: t.id,
       icon: glyphs[i % glyphs.length],
       label: t.title,
-      urgency: t.due_at ? `Pour le ${new Date(t.due_at).toLocaleDateString('fr-FR')}` : 'Cette semaine',
+      urgency: t.due_at ? `Pour le ${formatDateFr(t.due_at, clientReady)}` : 'Cette semaine',
       color: C.alex,
       assigned_member_id: t.assigned_member_id,
     }));
@@ -2152,7 +2168,7 @@ export default function HomePage() {
     ];
     const merged = [...fromApi, ...defaults].slice(0, 5);
     return merged.map((x, i) => ({ ...x, id: fromApi[i]?.id ?? x.id }));
-  }, [openTasks, familyProfile]);
+  }, [openTasks, familyProfile, clientReady]);
 
   async function notifyPartnerReal() {
     if (!token) {
@@ -2691,10 +2707,6 @@ export default function HomePage() {
           isListening={alfred.isListening}
           autoSpeak={alfred.autoSpeak}
           setAutoSpeak={alfred.setAutoSpeak}
-          onBack={() => {
-            setOverlay(null);
-            setMainTab('home');
-          }}
           onClearMemory={() => void alfred.clearAlfredMemoryAll()}
           onSend={() => void alfred.sendAssistant()}
           onToggleVoice={alfred.toggleVoiceListening}
@@ -2730,6 +2742,9 @@ export default function HomePage() {
 
   return (
     <>
+      <a href="#main" className="skip-link">
+        Aller au contenu principal
+      </a>
       <style>{`*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body{overscroll-behavior-y:none;}::-webkit-scrollbar{display:none;}`}</style>
       <div className="app-outer" style={{ position: 'relative' }}>
         <a
@@ -2753,6 +2768,7 @@ export default function HomePage() {
         <div className="app-device" style={{ background: C.bg }}>
           <div style={{ position: 'relative' }}>
             <StatusBar
+              headerBg={mainTab === 'home' && token ? mentalWeather.bg : undefined}
               onOpenSearch={
                 token && onboardingDone && postLoginSetupDone ? () => setGlobalSearchOpen(true) : undefined
               }
@@ -2812,7 +2828,7 @@ export default function HomePage() {
               Wordmark={MajordomeWordmark}
             />
           ) : (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+            <main id="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
               <div
                 style={{
                   flexShrink: 0,
@@ -2930,7 +2946,7 @@ export default function HomePage() {
                 }}
                 onAlfredPrompt={(text) => alfred.setAssistantInput(text)}
               />
-            </div>
+            </main>
           )}
 
           {token && onboardingDone && postLoginSetupDone ? (

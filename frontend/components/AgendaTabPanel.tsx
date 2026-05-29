@@ -3,6 +3,8 @@
 import { IconAlertOutline, IconCheckSmall, IconMeal } from './md-icons';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton, type TaskUiItem, type TaskUiMember } from './taskUi';
 import type { MealPlan } from '../lib/meals';
+import { useIsClient } from '../hooks/useIsClient';
+import { formatDateTimeFr } from '../lib/formatClientDate';
 
 function GlassCard({
   C,
@@ -140,6 +142,7 @@ export function AgendaTabPanel({
   onSaveEditEvent: () => void | Promise<void>;
   onCancelEditEvent: () => void;
 }) {
+  const client = useIsClient();
   const googleConnected = accounts.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
   const appleConnected = accounts.some((a) => a.provider === 'apple_calendar' && a.status === 'connected');
   const appleSyncPossible = appleConnected && appleCaldavAvailable !== false;
@@ -167,6 +170,7 @@ export function AgendaTabPanel({
               value={newEventTitle}
               onChange={(e) => onNewEventTitleChange(e.target.value)}
               placeholder="Ex. RDV pédiatre"
+              aria-label="Titre de l'événement"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             />
           </label>
@@ -177,6 +181,7 @@ export function AgendaTabPanel({
               value={newEventStart}
               onChange={(e) => onNewEventStartChange(e.target.value)}
               type="datetime-local"
+              aria-label="Date et heure de début"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             />
           </label>
@@ -187,6 +192,7 @@ export function AgendaTabPanel({
               value={newEventEnd}
               onChange={(e) => onNewEventEndChange(e.target.value)}
               type="datetime-local"
+              aria-label="Date et heure de fin"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             />
           </label>
@@ -214,6 +220,7 @@ export function AgendaTabPanel({
               onChange={(e) =>
                 onNewEventProviderChange(e.target.value as 'none' | 'google_calendar' | 'apple_calendar')
               }
+              aria-label="Calendrier de synchronisation"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             >
               <option value="google_calendar" disabled={!googleConnected}>
@@ -244,24 +251,28 @@ export function AgendaTabPanel({
           type="date"
           value={selectedMealDay}
           onChange={(e) => onSelectedMealDayChange(e.target.value)}
+          aria-label="Jour du plan repas"
           style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
         />
         <input
           placeholder="Repas midi"
           value={selectedMeal.lunch}
           onChange={(e) => onMealLunchChange(e.target.value)}
+          aria-label="Repas du midi"
           style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
         />
         <input
           placeholder="Repas soir"
           value={selectedMeal.dinner}
           onChange={(e) => onMealDinnerChange(e.target.value)}
+          aria-label="Repas du soir"
           style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
         />
         <input
           placeholder="Ingredients manquants (virgules)"
           value={selectedMeal.missing.join(', ')}
           onChange={(e) => onMealMissingChange(e.target.value)}
+          aria-label="Ingrédients manquants"
           style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 8 }}
         />
         <button
@@ -326,8 +337,8 @@ export function AgendaTabPanel({
                   </Pill>
                 ) : null}
               </div>
-              <div style={{ fontSize: 11, color: C.text2, marginTop: 4 }}>
-                {t.due_at ? new Date(t.due_at).toLocaleString('fr-FR') : 'Sans échéance'}
+              <div style={{ fontSize: 11, color: C.text2, marginTop: 4 }} suppressHydrationWarning>
+                {t.due_at ? formatDateTimeFr(t.due_at, client) : 'Sans échéance'}
               </div>
               <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <TaskAssignSelect
@@ -386,7 +397,7 @@ export function AgendaTabPanel({
       {nextEvents.map((e) => (
         <GlassCard C={C} key={e.id} style={{ padding: 12, marginBottom: 8 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{e.title}</div>
-          <div style={{ fontSize: 11, color: C.text2 }}>{new Date(e.starts_at).toLocaleString('fr-FR')}</div>
+          <div style={{ fontSize: 11, color: C.text2 }} suppressHydrationWarning>{formatDateTimeFr(e.starts_at, client)}</div>
           <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
             <button
               type="button"
@@ -427,18 +438,21 @@ export function AgendaTabPanel({
               value={editTitle}
               onChange={(e) => onEditTitleChange(e.target.value)}
               placeholder="Titre evenement"
+              aria-label="Titre de l'événement à modifier"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             />
             <input
               value={editStart}
               onChange={(e) => onEditStartChange(e.target.value)}
               type="datetime-local"
+              aria-label="Nouvelle date et heure de début"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             />
             <input
               value={editEnd}
               onChange={(e) => onEditEndChange(e.target.value)}
               type="datetime-local"
+              aria-label="Nouvelle date et heure de fin"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             />
             <div style={{ display: 'flex', gap: 6 }}>

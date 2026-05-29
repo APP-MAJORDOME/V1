@@ -14,6 +14,7 @@ import {
   IconFlowerOutline,
 } from './md-icons';
 import type { HomeLayoutConfig } from '../lib/homeLayout';
+import { maskEmail } from '../lib/maskEmail';
 import {
   POST_LOGIN_INTEREST_OPTIONS,
   type PostLoginInterestId,
@@ -123,7 +124,9 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
         <div style={{ width: '100%', maxWidth: 340, marginBottom: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: C.text2 }}>Étape {step + 1} / {TOTAL_STEPS}</span>
-            <span style={{ fontSize: 10, color: C.text3 }}>{userEmail}</span>
+            <span style={{ fontSize: 10, color: C.text3 }} suppressHydrationWarning>
+              {maskEmail(userEmail)}
+            </span>
           </div>
           <div style={{ height: 6, borderRadius: 6, background: C.surface3, overflow: 'hidden' }}>
             <div
@@ -163,6 +166,7 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
               value={profile.prenom}
               onChange={(e) => setProfile((p) => ({ ...p, prenom: e.target.value }))}
               placeholder="Ton prénom"
+              aria-label="Ton prénom"
               style={{ width: '100%', maxWidth: 340, padding: '14px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 16, color: C.text }}
             />
           </>
@@ -179,18 +183,21 @@ export function WelcomeSetupWizard({ C, userEmail, initialProfile, Wordmark, onL
                 value={profile.partenaire}
                 onChange={(e) => setProfile((p) => ({ ...p, partenaire: e.target.value }))}
                 placeholder="Prénom du partenaire"
+                aria-label="Prénom du partenaire"
                 style={{ padding: '12px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 15 }}
               />
               <input
                 value={profile.enfant}
                 onChange={(e) => setProfile((p) => ({ ...p, enfant: e.target.value }))}
                 placeholder="Prénom de l’enfant (ou des enfants)"
+                aria-label="Prénom de l'enfant"
                 style={{ padding: '12px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 15 }}
               />
               <input
                 value={profile.ageEnfant}
                 onChange={(e) => setProfile((p) => ({ ...p, ageEnfant: e.target.value }))}
                 placeholder="Âge(s) ou classe"
+                aria-label="Âge ou classe de l'enfant"
                 style={{ padding: '12px 16px', borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 15 }}
               />
             </div>

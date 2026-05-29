@@ -29,6 +29,7 @@ export function BottomTabBar({
 }) {
   return (
     <nav
+      role="tablist"
       aria-label="Navigation principale"
       style={{
         position: 'relative',
@@ -52,7 +53,9 @@ export function BottomTabBar({
             <button
               key={tab.id}
               type="button"
+              role="tab"
               className="ui-press"
+              aria-selected={on}
               aria-current={on ? 'page' : undefined}
               onClick={() => onSelect(tab.id)}
               style={{

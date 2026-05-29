@@ -152,6 +152,7 @@ export function CoursesPanel({
                   if (e.key === 'Enter') onAddCourse();
                 }}
                 placeholder="Ajouter un article…"
+                aria-label="Ajouter un article à la liste de courses"
                 style={{
                   flex: 1,
                   borderRadius: 12,

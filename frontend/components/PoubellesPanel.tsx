@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useClientCalendar } from '../hooks/useClientCalendar';
 import { IconTrash } from './md-icons';
 
 const LS_KEY = 'majordome.v1.trash-schedule';
@@ -29,6 +30,7 @@ function loadSlots(): TrashSlot[] {
 }
 
 export function PoubellesPanel({ C }: { C: Record<string, string> }) {
+  const cal = useClientCalendar();
   const [slots, setSlots] = useState<TrashSlot[]>(DEFAULT_SLOTS);
 
   useEffect(() => {
@@ -59,8 +61,8 @@ export function PoubellesPanel({ C }: { C: Record<string, string> }) {
     persist(slots.filter((s) => s.id !== id));
   }
 
-  const today = WEEKDAYS[new Date().getDay()];
-  const dueToday = slots.filter((s) => s.weekday === today);
+  const today = cal.ready ? WEEKDAYS[cal.dayOfWeekIndex] : '';
+  const dueToday = cal.ready ? slots.filter((s) => s.weekday === today) : [];
 
   return (
     <div style={{ padding: '14px 18px 28px' }}>
@@ -141,6 +143,7 @@ export function PoubellesPanel({ C }: { C: Record<string, string> }) {
             <input
               value={s.types}
               onChange={(e) => updateSlot(s.id, { types: e.target.value })}
+              aria-label={`Types de déchets pour ${s.weekday}`}
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 10, fontSize: 13 }}
             />
           </div>

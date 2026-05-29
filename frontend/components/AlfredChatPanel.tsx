@@ -40,7 +40,6 @@ export function AlfredChatPanel({
   isListening,
   autoSpeak,
   setAutoSpeak,
-  onBack,
   onClearMemory,
   onSend,
   onToggleVoice,
@@ -69,7 +68,6 @@ export function AlfredChatPanel({
   isListening: boolean;
   autoSpeak: boolean;
   setAutoSpeak: (v: boolean) => void;
-  onBack: () => void;
   onClearMemory: () => void;
   onSend: () => void;
   onToggleVoice: () => void;
@@ -127,30 +125,23 @@ export function AlfredChatPanel({
           background: C.white,
         }}
       >
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button
-            type="button"
-            onClick={onBack}
-            style={{
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              padding: '8px 12px',
-              background: C.white,
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            ← Retour
-          </button>
-          <div style={{ flex: 1 }}>
-            <strong style={{ fontSize: 16, color: C.text }}>{aiName}</strong>
-            <div style={{ fontSize: 11, color: C.text2 }}>
-              {alfredMemoryCount} note{alfredMemoryCount !== 1 ? 's' : ''} mémorisée{alfredMemoryCount !== 1 ? 's' : ''}
-            </div>
+        <div>
+          <strong style={{ fontSize: 16, color: C.text }}>{aiName}</strong>
+          <div style={{ fontSize: 11, color: C.text2 }}>
+            {alfredMemoryCount} note{alfredMemoryCount !== 1 ? 's' : ''} mémorisée{alfredMemoryCount !== 1 ? 's' : ''}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            marginTop: 10,
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            paddingBottom: 4,
+            flexWrap: 'nowrap',
+          }}
+        >
           {suggestions.map((s) => (
             <button
               key={s}
@@ -166,10 +157,7 @@ export function AlfredChatPanel({
                 fontSize: 11,
                 fontWeight: 600,
                 cursor: 'pointer',
-                maxWidth: 200,
                 whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
               }}
             >
               {s}
@@ -351,9 +339,23 @@ export function AlfredChatPanel({
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 10, color: C.text3, flexWrap: 'wrap' }}>
           {!openAiRealtimeOn ? (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-              <input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} />
-              Lire les réponses (navigateur)
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                className="majordome-toggle"
+                checked={autoSpeak}
+                onChange={(e) => setAutoSpeak(e.target.checked)}
+                aria-label="Lire les réponses à voix haute dans le navigateur"
+              />
+              <span>Lire les réponses (navigateur)</span>
             </label>
           ) : (
             <span>Voix GPT Realtime — les actions s’exécutent dans l’app</span>

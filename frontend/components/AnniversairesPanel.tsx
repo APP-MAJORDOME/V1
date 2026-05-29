@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useClientCalendar } from '../hooks/useClientCalendar';
 import { IconGift } from './md-icons';
 
 const LS_KEY = 'majordome.v1.birthdays';
@@ -21,6 +22,7 @@ function loadBirthdays(): BirthdayRow[] {
 }
 
 export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
+  const cal = useClientCalendar();
   const [rows, setRows] = useState<BirthdayRow[]>([]);
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
@@ -54,6 +56,7 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
   }
 
   function nextBirthdayLabel(isoOrText: string): string {
+    if (!cal.ready) return isoOrText;
     const m = isoOrText.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return isoOrText;
     const month = Number(m[2]) - 1;
@@ -88,18 +91,21 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
       <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
         <input
           placeholder="Prénom"
+          aria-label="Prénom de la personne"
           value={name}
           onChange={(e) => setName(e.target.value)}
           style={{ borderRadius: 12, border: `1.5px solid ${C.border}`, padding: '10px 12px', fontSize: 13, background: C.white }}
         />
         <input
           type="date"
+          aria-label="Date d'anniversaire"
           value={date}
           onChange={(e) => setDate(e.target.value)}
           style={{ borderRadius: 12, border: `1.5px solid ${C.border}`, padding: '10px 12px', fontSize: 13, background: C.white }}
         />
         <input
           placeholder="Idée cadeau / notes (optionnel)"
+          aria-label="Idée cadeau ou notes, optionnel"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           style={{ borderRadius: 12, border: `1.5px solid ${C.border}`, padding: '10px 12px', fontSize: 13, background: C.surface }}

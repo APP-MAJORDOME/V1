@@ -86,6 +86,7 @@ export function FamilleTabPanel({
           value={partnerContactDraft}
           onChange={(e) => onPartnerContactChange(e.target.value)}
           placeholder={`Mobile ou e-mail de ${partenaireName} (optionnel)`}
+          aria-label={`Contact de ${partenaireName}`}
           autoComplete="tel email"
           style={{
             width: '100%',

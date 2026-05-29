@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { deleteJson, getJson, postJson } from '../../lib/api';
 import { newToastId } from '../../lib/clientId';
 import { TOAST_DURATION_MS } from '../../lib/constants';
+import { LAYOUT_USER_EMAIL_KEY } from '../../lib/homeLayout';
+import { maskEmail } from '../../lib/maskEmail';
 
 type ConnectedAccount = { id: number; provider: string; status: string; last_sync_at?: string | null };
 type IntegrationStatus = { provider: string; configured: boolean; connected: boolean; status: string };
@@ -41,6 +43,7 @@ export default function SettingsPage() {
   const [doctolibSummary, setDoctolibSummary] = useState<DoctolibSummary | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const [accountEmail, setAccountEmail] = useState('');
   const [appleId, setAppleId] = useState('');
   const [appleAppPassword, setAppleAppPassword] = useState('');
   const [appleCalendarUrl, setAppleCalendarUrl] = useState('');
@@ -111,6 +114,8 @@ export default function SettingsPage() {
     if (!stored) return;
     setToken(stored);
     if (storedRefresh) setRefreshToken(storedRefresh);
+    const em = localStorage.getItem(LAYOUT_USER_EMAIL_KEY);
+    if (em) setAccountEmail(em);
     loadData(stored);
     const storedAiName = localStorage.getItem('majordome_ai_name');
     if (!storedAiName) {
@@ -369,9 +374,15 @@ export default function SettingsPage() {
                     </p>
                   )}
                   <div style={{ display: 'grid', gap: 6 }}>
-                    <Input value={appleId} onChange={setAppleId} placeholder="Apple ID (ex: a***@icloud.com)" type="email" />
-                    <Input value={appleAppPassword} onChange={setAppleAppPassword} placeholder="Mot de passe app" type="password" />
-                    <Input value={appleCalendarUrl} onChange={setAppleCalendarUrl} placeholder="URL calendrier (optionnel)" />
+                    <Input
+                      value={appleId}
+                      onChange={setAppleId}
+                      placeholder="Apple ID (ex: a***@icloud.com)"
+                      type="email"
+                      ariaLabel="Identifiant Apple pour le calendrier"
+                    />
+                    <Input value={appleAppPassword} onChange={setAppleAppPassword} placeholder="Mot de passe app" type="password" ariaLabel="Mot de passe d'application Apple" />
+                    <Input value={appleCalendarUrl} onChange={setAppleCalendarUrl} placeholder="URL calendrier (optionnel)" ariaLabel="URL du calendrier Apple, optionnel" />
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <Btn onClick={connectApple} disabled={syncingApple || appleIntegration?.configured === false}>
@@ -389,8 +400,8 @@ export default function SettingsPage() {
 
                 <Card title="Home Assistant (Home iOS)">
                   <div style={{ display: 'grid', gap: 6 }}>
-                    <Input value={haBaseUrl} onChange={setHaBaseUrl} placeholder="URL Home Assistant" />
-                    <Input value={haAccessToken} onChange={setHaAccessToken} placeholder="Long-lived token" type="password" />
+                    <Input value={haBaseUrl} onChange={setHaBaseUrl} placeholder="URL Home Assistant" ariaLabel="URL de Home Assistant" />
+                    <Input value={haAccessToken} onChange={setHaAccessToken} placeholder="Long-lived token" type="password" ariaLabel="Jeton d'accès Home Assistant" />
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <Btn onClick={connectHome}>{syncingHome ? '...' : 'Connecter'}</Btn>
@@ -418,13 +429,17 @@ export default function SettingsPage() {
                 <Card title="État du compte">
                   <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text2 }}>
                     <li>Session: active</li>
+                    <li>
+                      E-mail de connexion:{' '}
+                      <strong style={{ color: C.text }}>{accountEmail ? maskEmail(accountEmail) : '—'}</strong>
+                    </li>
                     <li>Refresh token: {refreshToken ? 'present' : 'absent'}</li>
                     <li>Google: {googleAccount ? 'connecte' : 'non connecte'}</li>
                     <li>Apple: {appleAccount ? 'connecte' : 'non connecte'}</li>
                   </ul>
                   <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
                     <label style={{ fontSize: 11, color: C.text2 }}>Nom de l IA</label>
-                    <Input value={aiName} onChange={setAiName} placeholder="Nom de l IA (ex: Alfred)" />
+                    <Input value={aiName} onChange={setAiName} placeholder="Nom de l IA (ex: Alfred)" ariaLabel="Nom de l'assistant IA" />
                     <div>
                       <Btn onClick={saveAiName}>Enregistrer</Btn>
                     </div>
@@ -439,6 +454,7 @@ export default function SettingsPage() {
                   value={memoryDraft}
                   onChange={(e) => setMemoryDraft(e.target.value)}
                   placeholder="Ex.: Léa a de la fièvre depuis hier — RDV pédiatre lundi."
+                  aria-label="Nouveau fait à mémoriser pour Alfred"
                   style={{ width: '100%', minHeight: 76, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, resize: 'vertical' }}
                 />
                 <div style={{ marginTop: 8 }}>
@@ -559,13 +575,26 @@ function Btn({ children, onClick, light, disabled }: { children: React.ReactNode
   );
 }
 
-function Input({ value, onChange, placeholder, type = 'text' }: { value: string; onChange: (v: string) => void; placeholder: string; type?: string }) {
+function Input({
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  type?: string;
+  ariaLabel?: string;
+}) {
   return (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       type={type}
+      aria-label={ariaLabel || placeholder}
       style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', fontSize: 13, minHeight: 44, background: C.white }}
     />
   );

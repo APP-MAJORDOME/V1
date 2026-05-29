@@ -196,6 +196,7 @@ export function HomeLayoutEditor({
                   type="checkbox"
                   checked={sections[sid] !== false}
                   onChange={(e) => toggleSection(sid, e.target.checked)}
+                  aria-label={`Afficher la section ${HOME_SECTION_LABELS[sid]}`}
                   style={{ marginTop: 3 }}
                 />
                 <span style={{ fontSize: 12, color: C.text, lineHeight: 1.4 }}>

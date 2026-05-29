@@ -332,35 +332,73 @@ export function TodayHome({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={onOpenAgenda}
+        <div
+          role="group"
+          aria-label="Résumé du jour"
           style={{
-            width: '100%',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
             marginBottom: 16,
-            padding: '12px 14px',
-            borderRadius: 16,
-            border: `1.5px solid ${C.border}`,
-            background: C.white,
-            cursor: 'pointer',
-            textAlign: 'left',
-            fontSize: 14,
-            color: C.text,
           }}
         >
-          <span style={{ marginRight: 8 }}>🗓</span>
-          <strong>{eventsToday}</strong> événement{eventsToday !== 1 ? 's' : ''}
-          <span style={{ margin: '0 10px', color: C.text3 }}>·</span>
-          <span style={{ marginRight: 8 }}>✓</span>
-          <strong>{openTasksCount}</strong> tâche{openTasksCount !== 1 ? 's' : ''}
+          <button
+            type="button"
+            onClick={onOpenAgenda}
+            style={{
+              flex: '1 1 100px',
+              padding: '12px 14px',
+              borderRadius: 16,
+              border: `1.5px solid ${C.border}`,
+              background: C.white,
+              cursor: 'pointer',
+              textAlign: 'left',
+              fontSize: 14,
+              color: C.text,
+            }}
+          >
+            <span style={{ marginRight: 8 }}>🗓</span>
+            <strong>{eventsToday}</strong> événement{eventsToday !== 1 ? 's' : ''}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenTasks}
+            style={{
+              flex: '1 1 100px',
+              padding: '12px 14px',
+              borderRadius: 16,
+              border: `1.5px solid ${C.border}`,
+              background: C.white,
+              cursor: 'pointer',
+              textAlign: 'left',
+              fontSize: 14,
+              color: C.text,
+            }}
+          >
+            <span style={{ marginRight: 8 }}>✓</span>
+            <strong>{openTasksCount}</strong> tâche{openTasksCount !== 1 ? 's' : ''}
+          </button>
           {remindersCount > 0 ? (
-            <>
-              <span style={{ margin: '0 10px', color: C.text3 }}>·</span>
-              <span style={{ marginRight: 8 }}>⏰</span>
-              <strong>{remindersCount}</strong> rappel{remindersCount !== 1 ? 's' : ''}
-            </>
+            <button
+              type="button"
+              onClick={() => onOpenHub('courses')}
+              style={{
+                flex: '1 1 100px',
+                padding: '12px 14px',
+                borderRadius: 16,
+                border: `1.5px solid ${C.red}44`,
+                background: C.redL,
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontSize: 14,
+                color: C.text,
+              }}
+            >
+              <span style={{ marginRight: 8 }}>🧊</span>
+              <strong>{remindersCount}</strong> alerte{remindersCount !== 1 ? 's' : ''} frigo
+            </button>
           ) : null}
-        </button>
+        </div>
       )}
 
       {/* Modules favoris */}

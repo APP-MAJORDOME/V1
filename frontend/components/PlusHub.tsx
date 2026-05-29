@@ -36,7 +36,7 @@ export type HubKey =
   | 'albums'
   | 'integrations';
 
-/** Catalogue hub (partagé avec la personnalisation de l’accueil). */
+/** Catalogue hub (partagé avec la personnalisation de l'accueil). */
 export const PLUS_HUB_ITEMS: {
   id: HubKey;
   label: string;
@@ -59,6 +59,21 @@ export const PLUS_HUB_ITEMS: {
   { id: 'integrations', label: 'Intégrations', hint: 'Doctolib, ENT, connexions', Icon: IconLink },
 ];
 
+const HUB_CATEGORIES: { title: string; ids: HubKey[] }[] = [
+  {
+    title: 'Quotidien',
+    ids: ['courses', 'recettes', 'routines', 'maison', 'poubelles'],
+  },
+  {
+    title: 'Foyer',
+    ids: ['famille', 'messages', 'documents', 'courrier', 'albums', 'anniversaires'],
+  },
+  {
+    title: 'Outils',
+    ids: ['wallet', 'notifs', 'integrations'],
+  },
+];
+
 export const ALL_HUB_KEYS: HubKey[] = PLUS_HUB_ITEMS.map((i) => i.id);
 
 export function PlusHub({
@@ -73,6 +88,8 @@ export function PlusHub({
   userFirstName?: string;
   alfredNoteCount?: number;
 }) {
+  const byId = Object.fromEntries(PLUS_HUB_ITEMS.map((i) => [i.id, i])) as Record<HubKey, (typeof PLUS_HUB_ITEMS)[number]>;
+
   return (
     <div style={{ padding: '14px 18px 100px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -84,54 +101,90 @@ export function PlusHub({
           </p>
         </div>
       </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 10,
-        }}
-      >
-        {PLUS_HUB_ITEMS.map((i) => (
-          <button
-            key={i.id}
-            type="button"
-            onClick={() => onOpen(i.id)}
+      {HUB_CATEGORIES.map((cat) => (
+        <section key={cat.title} style={{ marginBottom: 18 }}>
+          <div
             style={{
-              textAlign: 'left',
-              padding: 14,
-              borderRadius: 18,
-              border: `1.5px solid ${C.border}`,
-              background: C.white,
-              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 800,
+              color: C.text2,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              marginBottom: 8,
             }}
           >
-            <div style={{ marginBottom: 8 }}>
-              <i.Icon size={22} color={C.terra} strokeWidth={1.65} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{i.label}</div>
-            <div style={{ fontSize: 10, color: C.text3, marginTop: 4, lineHeight: 1.35 }}>{i.hint}</div>
-          </button>
-        ))}
+            {cat.title}
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 10,
+            }}
+          >
+            {cat.ids.map((id) => {
+              const i = byId[id];
+              if (!i) return null;
+              return (
+                <button
+                  key={i.id}
+                  type="button"
+                  onClick={() => onOpen(i.id)}
+                  style={{
+                    textAlign: 'left',
+                    padding: 14,
+                    borderRadius: 18,
+                    border: `1.5px solid ${C.border}`,
+                    background: C.white,
+                    cursor: 'pointer',
+                    minHeight: 100,
+                  }}
+                >
+                  <div style={{ marginBottom: 8 }}>
+                    <i.Icon size={22} color={C.terra} strokeWidth={1.65} />
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{i.label}</div>
+                  <div style={{ fontSize: 10, color: C.text3, marginTop: 4, lineHeight: 1.35 }}>{i.hint}</div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+      <section style={{ marginBottom: 12 }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: C.text2,
+            letterSpacing: 0.8,
+            textTransform: 'uppercase',
+            marginBottom: 8,
+          }}
+        >
+          Compte
+        </div>
         <Link
           href="/settings"
           style={{
+            display: 'block',
             padding: 14,
             borderRadius: 18,
             border: `1.5px solid ${C.border}`,
             background: C.surface,
             textDecoration: 'none',
             color: C.text,
-            display: 'block',
+            minHeight: 100,
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 800 }}>Réglages</div>
           <div style={{ fontSize: 10, color: C.text3, marginTop: 4 }}>Connexions · compte</div>
         </Link>
-      </div>
+      </section>
       {userFirstName ? (
         <div
           style={{
-            marginTop: 12,
+            marginTop: 4,
             padding: 14,
             borderRadius: 18,
             background: `linear-gradient(135deg, ${C.surface}, ${C.lilacL})`,
@@ -149,12 +202,6 @@ export function PlusHub({
           </div>
         </div>
       ) : null}
-      <div style={{ marginTop: 16, padding: 14, borderRadius: 18, background: C.lilacL, border: `1px solid ${C.lilac}44` }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: C.lilac, marginBottom: 6 }}>ASTUCE</div>
-        <p style={{ margin: 0, fontSize: 12, color: C.text2, lineHeight: 1.5 }}>
-          Les écrans ouverts depuis ici se ferment avec « Retour » — tes données restent synchronisées avec le serveur (login requis pour la plupart des actions).
-        </p>
-      </div>
     </div>
   );
 }

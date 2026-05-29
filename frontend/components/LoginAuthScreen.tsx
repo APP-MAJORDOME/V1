@@ -128,6 +128,7 @@ export function LoginAuthScreen({
                 name="email"
                 type="email"
                 autoComplete="username"
+                aria-label="Adresse e-mail"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -143,6 +144,7 @@ export function LoginAuthScreen({
                 name="password"
                 type="password"
                 autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+                aria-label="Mot de passe"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);

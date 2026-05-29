@@ -170,7 +170,7 @@ export function CoffreModal({
       ) : null}
       <div style={{ background: C.surface, borderRadius: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <IconSearch size={18} color={C.text3} strokeWidth={1.65} />
-        <input value={docSearch} onChange={(e) => onDocSearchChange(e.target.value)} placeholder="Rechercher…" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13 }} />
+        <input value={docSearch} onChange={(e) => onDocSearchChange(e.target.value)} placeholder="Rechercher…" aria-label="Rechercher dans le coffre" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13 }} />
       </div>
       <div style={{ display: 'flex', gap: 5, overflowX: 'auto', paddingBottom: 4 }}>
         {DOC_CATEGORY_FILTER_IDS.map((c) => (
@@ -232,11 +232,13 @@ export function CoffreModal({
                     value={docEdit.name}
                     onChange={(e) => onDocEditChange((p) => (p ? { ...p, name: e.target.value } : null))}
                     placeholder="Nom du document"
+                    aria-label="Nom du document"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
                   />
                   <select
                     value={docEdit.category}
                     onChange={(e) => onDocEditChange((p) => (p ? { ...p, category: e.target.value } : null))}
+                    aria-label="Catégorie du document"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, background: C.white }}
                   >
                     {catSelectOptions.map((c) => (
@@ -249,6 +251,7 @@ export function CoffreModal({
                     value={docEdit.date_label}
                     onChange={(e) => onDocEditChange((p) => (p ? { ...p, date_label: e.target.value } : null))}
                     placeholder="Date (texte libre, ex. Jan. 2024)"
+                    aria-label="Date du document (texte libre)"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
                   />
                   <label style={{ fontSize: 10, color: C.text2 }}>
@@ -257,6 +260,7 @@ export function CoffreModal({
                       type="date"
                       value={docEdit.expires_date}
                       onChange={(e) => onDocEditChange((p) => (p ? { ...p, expires_date: e.target.value } : null))}
+                      aria-label="Date d'échéance du document"
                       style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
                     />
                   </label>
@@ -264,12 +268,14 @@ export function CoffreModal({
                     value={docEdit.who}
                     onChange={(e) => onDocEditChange((p) => (p ? { ...p, who: e.target.value } : null))}
                     placeholder="Qui (vide = Famille)"
+                    aria-label="Personne concernée par le document"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }}
                   />
                   <textarea
                     value={docEdit.notes}
                     onChange={(e) => onDocEditChange((p) => (p ? { ...p, notes: e.target.value } : null))}
                     placeholder="Notes internes"
+                    aria-label="Notes internes sur le document"
                     rows={3}
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }}
                   />
@@ -277,6 +283,7 @@ export function CoffreModal({
                     ref={docAttachmentReplaceRef}
                     type="file"
                     accept="image/*,application/pdf"
+                    aria-label="Pièce jointe du document"
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       const f = e.target.files?.[0];
@@ -503,6 +510,7 @@ export function CoffreModal({
           type="file"
           accept="image/*,application/pdf"
           capture="environment"
+          aria-label="Importer un document depuis la caméra ou les fichiers"
           style={{ display: 'none' }}
           onChange={(e) => {
             const f = e.target.files?.[0];
