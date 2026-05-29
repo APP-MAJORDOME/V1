@@ -460,6 +460,9 @@ class MoiWellnessRead(BaseModel):
     journal: str
     cycle_day: int
     moments: list[MoiMomentItem]
+    sleep_hours: float
+    moi_mood: int
+    home_mood: int | None = None
     updated_at: datetime
 
     model_config = {"from_attributes": True}
@@ -469,6 +472,9 @@ class MoiWellnessPut(BaseModel):
     journal: str = Field(default="", max_length=8000)
     cycle_day: int = Field(default=18, ge=1, le=28)
     moments: list[MoiMomentItem] = Field(default_factory=list)
+    sleep_hours: float = Field(default=7, ge=3, le=11)
+    moi_mood: int = Field(default=3, ge=0, le=4)
+    home_mood: int | None = Field(default=None, ge=0, le=4)
 
 
 class RoutineCreate(BaseModel):

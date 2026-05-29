@@ -88,6 +88,9 @@ def test_moi_wellness_get_and_put():
         json={
             "journal": "Belle journée en famille.",
             "cycle_day": 12,
+            "sleep_hours": 8.5,
+            "moi_mood": 4,
+            "home_mood": 2,
             "moments": [
                 {"id": "m1", "label": "Marche", "done": True},
                 {"id": "m2", "label": "Méditation", "done": False},
@@ -98,6 +101,9 @@ def test_moi_wellness_get_and_put():
     body = updated.json()
     assert body["journal"] == "Belle journée en famille."
     assert body["cycle_day"] == 12
+    assert body["sleep_hours"] == 8.5
+    assert body["moi_mood"] == 4
+    assert body["home_mood"] == 2
     assert body["moments"][0]["done"] is True
 
     again = client.get("/api/v1/moi/wellness", headers=headers).json()

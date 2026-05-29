@@ -204,6 +204,9 @@ class HouseholdMoiWellness(Base, TimestampMixin):
     journal_text: Mapped[str] = mapped_column(Text, default="")
     cycle_day: Mapped[int] = mapped_column(Integer, default=18)
     moments_json: Mapped[str] = mapped_column(Text, default="[]")
+    sleep_hours: Mapped[float] = mapped_column(Float, default=7.0)
+    moi_mood: Mapped[int] = mapped_column(Integer, default=3)
+    home_mood: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class TaskDelegation(Base, TimestampMixin):

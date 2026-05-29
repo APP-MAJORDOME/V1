@@ -1789,6 +1789,9 @@ def _moi_wellness_to_read(row: HouseholdMoiWellness) -> MoiWellnessRead:
         journal=row.journal_text or "",
         cycle_day=row.cycle_day,
         moments=moments,
+        sleep_hours=float(row.sleep_hours if row.sleep_hours is not None else 7),
+        moi_mood=int(row.moi_mood if row.moi_mood is not None else 3),
+        home_mood=row.home_mood,
         updated_at=row.updated_at,
     )
 
@@ -1802,6 +1805,9 @@ def _get_or_create_moi_wellness(db: Session, household_id: int) -> HouseholdMoiW
         journal_text="",
         cycle_day=18,
         moments_json=json.dumps(_DEFAULT_MOI_MOMENTS, ensure_ascii=False),
+        sleep_hours=7.0,
+        moi_mood=3,
+        home_mood=None,
     )
     db.add(row)
     db.commit()
@@ -1826,6 +1832,9 @@ def put_moi_wellness(
     row.journal_text = payload.journal.strip()
     row.cycle_day = payload.cycle_day
     row.moments_json = json.dumps(moments, ensure_ascii=False)
+    row.sleep_hours = float(payload.sleep_hours)
+    row.moi_mood = int(payload.moi_mood)
+    row.home_mood = payload.home_mood
     db.commit()
     db.refresh(row)
     return _moi_wellness_to_read(row)

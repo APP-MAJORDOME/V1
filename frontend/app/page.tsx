@@ -1042,10 +1042,23 @@ export default function HomePage() {
       }
       setJournalSaveStatus('saving');
       try {
-        const res = await putMoiWellness({ journal, cycle_day: cycleDay, moments: selfMoments }, token);
+        const res = await putMoiWellness(
+          {
+            journal,
+            cycle_day: cycleDay,
+            moments: selfMoments,
+            sleep_hours: sleep,
+            moi_mood: moiMood,
+            home_mood: homeMood,
+          },
+          token,
+        );
         moiDirtyRef.current = false;
         setJournal(res.journal);
         setCycleDay(res.cycle_day);
+        setSleep(res.sleep_hours);
+        setMoiMood(res.moi_mood);
+        setHomeMood(res.home_mood);
         if (res.moments.length > 0) setSelfMoments(res.moments);
         try {
           localStorage.setItem('majordome_journal', res.journal);
@@ -1069,7 +1082,7 @@ export default function HomePage() {
         }
       }
     },
-    [journal, cycleDay, selfMoments, token],
+    [journal, cycleDay, selfMoments, sleep, moiMood, homeMood, token],
   );
 
   useEffect(() => {
@@ -1078,7 +1091,7 @@ export default function HomePage() {
       void persistMoiWellness(false);
     }, 600);
     return () => window.clearTimeout(t);
-  }, [journal, cycleDay, selfMoments, token, persistMoiWellness]);
+  }, [journal, cycleDay, selfMoments, sleep, moiMood, homeMood, token, persistMoiWellness]);
 
   const onJournalChange = useCallback((text: string) => {
     moiDirtyRef.current = true;
@@ -1093,6 +1106,21 @@ export default function HomePage() {
   const onCycleDayChange = useCallback((day: number) => {
     moiDirtyRef.current = true;
     setCycleDay(day);
+  }, []);
+
+  const onSleepChange = useCallback((hours: number) => {
+    moiDirtyRef.current = true;
+    setSleep(hours);
+  }, []);
+
+  const onMoiMoodChange = useCallback((index: number) => {
+    moiDirtyRef.current = true;
+    setMoiMood(index);
+  }, []);
+
+  const onHomeMoodChange = useCallback((index: number) => {
+    moiDirtyRef.current = true;
+    setHomeMood(index);
   }, []);
 
   useEffect(() => {
@@ -1572,6 +1600,9 @@ export default function HomePage() {
                   ? Math.min(28, Math.max(1, Number(legacyCycle) || 18))
                   : wellness?.cycle_day ?? 18,
                 moments,
+                sleep_hours: wellness?.sleep_hours ?? 7,
+                moi_mood: wellness?.moi_mood ?? 3,
+                home_mood: wellness?.home_mood ?? null,
               },
               accessToken,
             );
@@ -1593,6 +1624,9 @@ export default function HomePage() {
           setJournal(mergedJournal);
           setCycleDay(wellness.cycle_day);
           setSelfMoments(wellness.moments.length > 0 ? wellness.moments : DEFAULT_SELF_MOMENTS);
+          setSleep(wellness.sleep_hours ?? 7);
+          setMoiMood(wellness.moi_mood ?? 3);
+          setHomeMood(wellness.home_mood ?? null);
           if (mergedJournal && !serverJournal) {
             moiDirtyRef.current = true;
           }
@@ -2400,10 +2434,10 @@ export default function HomePage() {
             setModalDebordee('confirm');
           }}
           onMorningMood={(i) => {
-            setHomeMood(i);
+            onHomeMoodChange(i);
             pushToast('success', 'Humeur enregistrée');
           }}
-          onHomeMoodSelect={setHomeMood}
+          onHomeMoodSelect={onHomeMoodChange}
           onRefreshTaskSummary={() => void refreshTaskSummary({ trackBusy: true })}
           onPartnerContactChange={setPartnerContactDraft}
           onNotifyPartner={() => void notifyPartnerReal()}
@@ -2603,9 +2637,9 @@ export default function HomePage() {
           aiName={aiName}
           openTaskCount={openTasks.length}
           moiMood={moiMood}
-          onMoiMoodChange={setMoiMood}
+          onMoiMoodChange={onMoiMoodChange}
           sleep={sleep}
-          onSleepChange={setSleep}
+          onSleepChange={onSleepChange}
           cycleDay={cycleDay}
           onCycleDayChange={onCycleDayChange}
           journal={journal}

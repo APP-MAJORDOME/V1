@@ -7,6 +7,9 @@ export type MoiWellnessApi = {
   journal: string;
   cycle_day: number;
   moments: SelfMoment[];
+  sleep_hours: number;
+  moi_mood: number;
+  home_mood: number | null;
   updated_at: string;
 };
 
@@ -20,9 +23,15 @@ export async function fetchMoiWellness(token: string): Promise<MoiWellnessApi> {
   return getJson<MoiWellnessApi>('/api/v1/moi/wellness', token);
 }
 
-export async function putMoiWellness(
-  payload: { journal: string; cycle_day: number; moments: SelfMoment[] },
-  token: string,
-): Promise<MoiWellnessApi> {
+export type MoiWellnessPayload = {
+  journal: string;
+  cycle_day: number;
+  moments: SelfMoment[];
+  sleep_hours: number;
+  moi_mood: number;
+  home_mood: number | null;
+};
+
+export async function putMoiWellness(payload: MoiWellnessPayload, token: string): Promise<MoiWellnessApi> {
   return putJson<MoiWellnessApi>('/api/v1/moi/wellness', payload, token);
 }
