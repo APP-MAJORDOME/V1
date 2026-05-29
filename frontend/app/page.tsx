@@ -519,6 +519,9 @@ export default function HomePage() {
   const docAttachmentReplaceRef = useRef<HTMLInputElement | null>(null);
   const mealsHydratedRef = useRef(false);
   const moiHydratedRef = useRef(false);
+  /** true si l'utilisateur a modifié Moi — évite que loadData() écrase le journal en cours. */
+  const moiDirtyRef = useRef(false);
+  const [journalSaveStatus, setJournalSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   function seedDocsForFamily(f: FamilyProfile): DocVaultItem[] {
     const J = f.prenom || 'Joanne';
@@ -1026,15 +1029,70 @@ export default function HomePage() {
 
   useEffect(() => {
     moiHydratedRef.current = false;
+    moiDirtyRef.current = false;
+    setJournalSaveStatus('idle');
   }, [token]);
 
+  const persistMoiWellness = useCallback(
+    async (showToast = false) => {
+      if (!token) {
+        if (showToast) pushToast('error', 'Connecte-toi pour enregistrer ton journal.');
+        return;
+      }
+      setJournalSaveStatus('saving');
+      try {
+        const res = await putMoiWellness({ journal, cycle_day: cycleDay, moments: selfMoments }, token);
+        moiDirtyRef.current = false;
+        setJournal(res.journal);
+        setCycleDay(res.cycle_day);
+        if (res.moments.length > 0) setSelfMoments(res.moments);
+        try {
+          localStorage.setItem('majordome_journal', res.journal);
+        } catch {
+          /* ignore */
+        }
+        setJournalSaveStatus('saved');
+        if (showToast) pushToast('success', 'Journal enregistré');
+        window.setTimeout(() => {
+          setJournalSaveStatus((s) => (s === 'saved' ? 'idle' : s));
+        }, 2500);
+      } catch {
+        try {
+          localStorage.setItem('majordome_journal', journal);
+        } catch {
+          /* ignore */
+        }
+        setJournalSaveStatus('error');
+        if (showToast) {
+          pushToast('error', "Impossible d'enregistrer sur le serveur — copie locale conservée sur cet appareil.");
+        }
+      }
+    },
+    [journal, cycleDay, selfMoments, token],
+  );
+
   useEffect(() => {
-    if (!token || !moiHydratedRef.current) return;
+    if (!token || !moiHydratedRef.current || !moiDirtyRef.current) return;
     const t = window.setTimeout(() => {
-      void putMoiWellness({ journal, cycle_day: cycleDay, moments: selfMoments }, token).catch(() => {});
-    }, 700);
+      void persistMoiWellness(false);
+    }, 600);
     return () => window.clearTimeout(t);
-  }, [journal, cycleDay, selfMoments, token]);
+  }, [journal, cycleDay, selfMoments, token, persistMoiWellness]);
+
+  const onJournalChange = useCallback((text: string) => {
+    moiDirtyRef.current = true;
+    setJournal(text);
+    try {
+      localStorage.setItem('majordome_journal', text);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onCycleDayChange = useCallback((day: number) => {
+    moiDirtyRef.current = true;
+    setCycleDay(day);
+  }, []);
 
   useEffect(() => {
     try {
@@ -1469,7 +1527,6 @@ export default function HomePage() {
         mealsHydratedRef.current = true;
       }, 0);
 
-      moiHydratedRef.current = false;
       let wellness = await fetchMoiWellness(accessToken).catch(() => null);
       if (typeof window !== 'undefined') {
         const legacyJournal = localStorage.getItem('majordome_journal');
@@ -1525,14 +1582,24 @@ export default function HomePage() {
           }
         }
       }
-      if (wellness) {
-        setJournal(wellness.journal);
-        setCycleDay(wellness.cycle_day);
-        setSelfMoments(wellness.moments.length > 0 ? wellness.moments : DEFAULT_SELF_MOMENTS);
+      if (!moiDirtyRef.current) {
+        const localJournal =
+          typeof window !== 'undefined' ? localStorage.getItem('majordome_journal') : null;
+        const serverJournal = wellness?.journal?.trim() ?? '';
+        const mergedJournal = serverJournal || localJournal || '';
+        if (wellness) {
+          setJournal(mergedJournal);
+          setCycleDay(wellness.cycle_day);
+          setSelfMoments(wellness.moments.length > 0 ? wellness.moments : DEFAULT_SELF_MOMENTS);
+          if (mergedJournal && !serverJournal) {
+            moiDirtyRef.current = true;
+          }
+        } else if (mergedJournal) {
+          setJournal(mergedJournal);
+          moiDirtyRef.current = true;
+        }
       }
-      window.setTimeout(() => {
-        moiHydratedRef.current = true;
-      }, 0);
+      moiHydratedRef.current = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de chargement';
       setError(msg);
@@ -2529,13 +2596,17 @@ export default function HomePage() {
           sleep={sleep}
           onSleepChange={setSleep}
           cycleDay={cycleDay}
-          onCycleDayChange={setCycleDay}
+          onCycleDayChange={onCycleDayChange}
           journal={journal}
-          onJournalChange={setJournal}
+          onJournalChange={onJournalChange}
+          journalSaveStatus={journalSaveStatus}
+          onJournalBlur={() => void persistMoiWellness(false)}
+          onJournalSave={() => void persistMoiWellness(true)}
           selfMoments={selfMoments}
-          onToggleSelfMoment={(id) =>
-            setSelfMoments((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)))
-          }
+          onToggleSelfMoment={(id) => {
+            moiDirtyRef.current = true;
+            setSelfMoments((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+          }}
           selfDoneCount={selfDoneCount}
           onAddSelfMomentAsTask={addSelfMomentAsTask}
           budget={budget}

@@ -44,6 +44,9 @@ export function MoiTabPanel({
   onCycleDayChange,
   journal,
   onJournalChange,
+  journalSaveStatus = 'idle',
+  onJournalBlur,
+  onJournalSave,
   selfMoments,
   onToggleSelfMoment,
   selfDoneCount,
@@ -67,6 +70,9 @@ export function MoiTabPanel({
   onCycleDayChange: (day: number) => void;
   journal: string;
   onJournalChange: (text: string) => void;
+  journalSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  onJournalBlur?: () => void;
+  onJournalSave?: () => void;
   selfMoments: SelfMoment[];
   onToggleSelfMoment: (id: string) => void;
   selfDoneCount: number;
@@ -204,6 +210,7 @@ export function MoiTabPanel({
         <textarea
           value={journal}
           onChange={(e) => onJournalChange(e.target.value)}
+          onBlur={() => onJournalBlur?.()}
           aria-label="Micro-journal du jour"
           placeholder="Ce qui t'a fait du bien aujourd'hui…"
           style={{
@@ -212,10 +219,63 @@ export function MoiTabPanel({
             borderRadius: 10,
             border: `1px solid ${C.border}`,
             padding: 8,
-            resize: 'none',
+            resize: 'vertical',
             fontSize: 14,
           }}
         />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            marginTop: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              color:
+                journalSaveStatus === 'error'
+                  ? C.red
+                  : journalSaveStatus === 'saved'
+                    ? C.green
+                    : C.text3,
+              lineHeight: 1.4,
+            }}
+            aria-live="polite"
+          >
+            {journalSaveStatus === 'saving'
+              ? 'Enregistrement…'
+              : journalSaveStatus === 'saved'
+                ? 'Enregistré sur ton foyer'
+                : journalSaveStatus === 'error'
+                  ? 'Hors ligne — sauvegardé sur cet appareil'
+                  : journal.trim()
+                    ? 'Sauvegarde automatique après la saisie'
+                    : 'Ton journal est privé et lié à ton foyer'}
+          </span>
+          <button
+            type="button"
+            onClick={() => onJournalSave?.()}
+            disabled={journalSaveStatus === 'saving'}
+            style={{
+              flexShrink: 0,
+              border: 'none',
+              borderRadius: 10,
+              padding: '8px 14px',
+              background: C.terra,
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: journalSaveStatus === 'saving' ? 'wait' : 'pointer',
+              opacity: journalSaveStatus === 'saving' ? 0.7 : 1,
+            }}
+          >
+            {journalSaveStatus === 'saving' ? '…' : 'Enregistrer'}
+          </button>
+        </div>
       </CollapsibleSection>
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
