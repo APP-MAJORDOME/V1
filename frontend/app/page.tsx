@@ -518,6 +518,7 @@ export default function HomePage() {
   const docPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const docAttachmentReplaceRef = useRef<HTMLInputElement | null>(null);
   const mealsHydratedRef = useRef(false);
+  const mealsDirtyRef = useRef(false);
   const moiHydratedRef = useRef(false);
   /** true si l'utilisateur a modifié Moi — évite que loadData() écrase le journal en cours. */
   const moiDirtyRef = useRef(false);
@@ -1478,9 +1479,10 @@ export default function HomePage() {
           /* ignore */
         }
       }
-      setBudget(budgetRows.length > 0 ? budgetRows.map(mapBudgetToUi) : DEFAULT_BUDGET_ENVELOPES);
+      if (!budgetEditing) {
+        setBudget(budgetRows.length > 0 ? budgetRows.map(mapBudgetToUi) : DEFAULT_BUDGET_ENVELOPES);
+      }
 
-      mealsHydratedRef.current = false;
       let mealRows = await fetchMealPlans(accessToken).catch(() => []);
       if (mealRows.length === 0 && typeof window !== 'undefined') {
         const legacyRaw = localStorage.getItem('majordome_meal_plans');
@@ -1522,10 +1524,10 @@ export default function HomePage() {
           }
         }
       }
-      setMealPlans(mapMealPlansToRecord(mealRows));
-      window.setTimeout(() => {
-        mealsHydratedRef.current = true;
-      }, 0);
+      if (!mealsDirtyRef.current) {
+        setMealPlans(mapMealPlansToRecord(mealRows));
+      }
+      mealsHydratedRef.current = true;
 
       let wellness = await fetchMoiWellness(accessToken).catch(() => null);
       if (typeof window !== 'undefined') {
@@ -1616,14 +1618,19 @@ export default function HomePage() {
 
   useEffect(() => {
     mealsHydratedRef.current = false;
+    mealsDirtyRef.current = false;
   }, [token]);
 
   useEffect(() => {
-    if (!token || !mealsHydratedRef.current || !selectedMealDay) return;
+    if (!token || !mealsHydratedRef.current || !selectedMealDay || !mealsDirtyRef.current) return;
     const plan = mealPlans[selectedMealDay];
     if (!plan) return;
     const t = window.setTimeout(() => {
-      void upsertMealPlan(selectedMealDay, plan, token).catch(() => {});
+      void upsertMealPlan(selectedMealDay, plan, token)
+        .then(() => {
+          mealsDirtyRef.current = false;
+        })
+        .catch(() => {});
     }, 700);
     return () => window.clearTimeout(t);
   }, [mealPlans, selectedMealDay, token]);
@@ -1632,6 +1639,7 @@ export default function HomePage() {
     if (!token) return;
     try {
       await syncBudgetEnvelopes(budget, token);
+      setBudgetEditing(false);
       pushToast('success', 'Budget enregistré ✓');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Synchronisation budget impossible';
@@ -2446,21 +2454,24 @@ export default function HomePage() {
           selectedMealDay={selectedMealDay}
           onSelectedMealDayChange={setSelectedMealDay}
           selectedMeal={selectedMeal}
-          onMealLunchChange={(v) =>
-            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, lunch: v } }))
-          }
-          onMealDinnerChange={(v) =>
-            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, dinner: v } }))
-          }
-          onMealMissingChange={(raw) =>
+          onMealLunchChange={(v) => {
+            mealsDirtyRef.current = true;
+            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, lunch: v } }));
+          }}
+          onMealDinnerChange={(v) => {
+            mealsDirtyRef.current = true;
+            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, dinner: v } }));
+          }}
+          onMealMissingChange={(raw) => {
+            mealsDirtyRef.current = true;
             setMealPlans((m) => ({
               ...m,
               [selectedMealDay]: {
                 ...selectedMeal,
                 missing: raw.split(',').map((x) => x.trim()).filter(Boolean),
               },
-            }))
-          }
+            }));
+          }}
           onGenerateCoursesFromMeal={() => {
             const missingToAdd = selectedMeal.missing.filter(
               (it) => !courses.some((c) => c.label.toLowerCase() === it.toLowerCase()),
