@@ -1,6 +1,8 @@
 'use client';
 
 import { CollapsibleSection } from './CollapsibleSection';
+import { IntimateJournalPanel } from './IntimateJournalPanel';
+import type { JournalEntry } from '../lib/journalEntries';
 import {
   IconChart,
   IconCheckSmall,
@@ -34,6 +36,7 @@ function GlassCard({
 
 export function MoiTabPanel({
   C,
+  token,
   aiName,
   openTaskCount,
   moiMood,
@@ -42,11 +45,12 @@ export function MoiTabPanel({
   onSleepChange,
   cycleDay,
   onCycleDayChange,
-  journal,
-  onJournalChange,
-  journalSaveStatus = 'idle',
-  onJournalBlur,
-  onJournalSave,
+  journalEntries,
+  journalLoading,
+  journalSelectedDay,
+  onJournalSelectedDayChange,
+  onJournalRefresh,
+  onGoAgenda,
   selfMoments,
   onToggleSelfMoment,
   selfDoneCount,
@@ -60,6 +64,7 @@ export function MoiTabPanel({
   onToast,
 }: {
   C: Record<string, string>;
+  token: string;
   aiName: string;
   openTaskCount: number;
   moiMood: number;
@@ -68,11 +73,12 @@ export function MoiTabPanel({
   onSleepChange: (hours: number) => void;
   cycleDay: number;
   onCycleDayChange: (day: number) => void;
-  journal: string;
-  onJournalChange: (text: string) => void;
-  journalSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
-  onJournalBlur?: () => void;
-  onJournalSave?: () => void;
+  journalEntries: JournalEntry[];
+  journalLoading: boolean;
+  journalSelectedDay: string;
+  onJournalSelectedDayChange: (day: string) => void;
+  onJournalRefresh: () => void | Promise<void>;
+  onGoAgenda: () => void;
   selfMoments: SelfMoment[];
   onToggleSelfMoment: (id: string) => void;
   selfDoneCount: number;
@@ -213,77 +219,16 @@ export function MoiTabPanel({
                 : 'Phase lutéale : ralentir, prioriser le sommeil.'}
         </div>
       </CollapsibleSection>
-      <CollapsibleSection title="Mon journal" C={C}>
-        <textarea
-          value={journal}
-          onChange={(e) => onJournalChange(e.target.value)}
-          onBlur={() => onJournalBlur?.()}
-          aria-label="Micro-journal du jour"
-          placeholder="Ce qui t'a fait du bien aujourd'hui…"
-          style={{
-            width: '100%',
-            minHeight: 70,
-            borderRadius: 10,
-            border: `1px solid ${C.border}`,
-            padding: 8,
-            resize: 'vertical',
-            fontSize: 14,
-          }}
-        />
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-            marginTop: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              color:
-                journalSaveStatus === 'error'
-                  ? C.red
-                  : journalSaveStatus === 'saved'
-                    ? C.green
-                    : C.text3,
-              lineHeight: 1.4,
-            }}
-            aria-live="polite"
-          >
-            {journalSaveStatus === 'saving'
-              ? 'Enregistrement…'
-              : journalSaveStatus === 'saved'
-                ? 'Enregistré sur ton foyer'
-                : journalSaveStatus === 'error'
-                  ? 'Hors ligne — sauvegardé sur cet appareil'
-                  : journal.trim()
-                    ? 'Sauvegarde automatique après la saisie'
-                    : 'Ton journal est privé et lié à ton foyer'}
-          </span>
-          <button
-            type="button"
-            onClick={() => onJournalSave?.()}
-            disabled={journalSaveStatus === 'saving'}
-            style={{
-              flexShrink: 0,
-              border: 'none',
-              borderRadius: 10,
-              padding: '8px 14px',
-              background: C.terra,
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: journalSaveStatus === 'saving' ? 'wait' : 'pointer',
-              opacity: journalSaveStatus === 'saving' ? 0.7 : 1,
-            }}
-          >
-            {journalSaveStatus === 'saving' ? '…' : 'Enregistrer'}
-          </button>
-        </div>
-      </CollapsibleSection>
+      <IntimateJournalPanel
+        C={C}
+        token={token}
+        entries={journalEntries}
+        loading={journalLoading}
+        selectedDay={journalSelectedDay}
+        onSelectedDayChange={onJournalSelectedDayChange}
+        onRefresh={onJournalRefresh}
+        onGoAgenda={onGoAgenda}
+      />
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
           <IconHeartOutline size={15} color={C.lilac} strokeWidth={1.65} />

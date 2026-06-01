@@ -52,5 +52,17 @@ export function realtimeToolToInterpret(
       return { intent: 'memory_store', mode: 'auto', proposal: { note }, explanation: '' };
     }
   }
+  if (name === 'search_web') {
+    const query = typeof args.query === 'string' ? args.query.trim() : '';
+    if (query) {
+      return { intent: 'web_search', mode: 'auto', proposal: { query }, explanation: '' };
+    }
+  }
+  if (name === 'consult_household') {
+    const query = typeof args.query === 'string' ? args.query.trim() : '';
+    if (query) {
+      return { intent: 'household_answer', mode: 'auto', proposal: { query }, explanation: '' };
+    }
+  }
   return null;
 }

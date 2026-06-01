@@ -42,6 +42,8 @@ def build_alfred_realtime_instructions(
         "Quand l’utilisateur demande une action concrète (créer une tâche, un événement, ajouter aux courses, "
         "assigner ou terminer une tâche, mémoriser une info), appelle immédiatement l’outil adapté — "
         "ne te contente pas d’expliquer comment faire. "
+        "Pour une info à jour sur Internet (météo, actualité, horaires, prix, définition), utilise search_web. "
+        "Pour le coffre, les factures, le budget, les tâches ou l’agenda déjà dans MajorDome, utilise consult_household. "
         "Après l’exécution, confirme brièvement à l’oral ce qui a été fait."
     )
     lines: list[str] = []

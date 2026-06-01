@@ -109,7 +109,14 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     err.code = code;
     throw err;
   }
-  return res.json();
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  const text = await res.text();
+  if (!text.trim()) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 export async function getJson<T>(path: string, token?: string): Promise<T> {

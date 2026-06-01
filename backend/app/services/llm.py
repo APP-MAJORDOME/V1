@@ -153,6 +153,94 @@ def interpret_with_anthropic(command: str, memory_facts: list[str] | None = None
     return parsed
 
 
+def synthesize_web_answer(
+    query: str,
+    sources: list[dict[str, str]],
+    memory_facts: list[str] | None = None,
+) -> str | None:
+    """Synthétise une réponse française à partir de résultats web."""
+    if settings.llm_provider.lower() not in {"openai", "chatgpt", "anthropic", "claude"}:
+        return None
+    if not settings.llm_api_key:
+        return None
+
+    source_lines: list[str] = []
+    for i, src in enumerate(sources[:6], start=1):
+        title = str(src.get("title") or "Sans titre").strip()
+        snippet = str(src.get("snippet") or "").strip()
+        url = str(src.get("url") or "").strip()
+        block = f"[{i}] {title}"
+        if snippet:
+            block += f"\n{snippet[:400]}"
+        if url:
+            block += f"\n{url}"
+        source_lines.append(block)
+    sources_block = "\n\n".join(source_lines) if source_lines else "(aucun extrait web)"
+
+    system_prompt = (
+        "Tu es Alfred, l’assistant familial de MajorDome. L’utilisateur pose une question ; "
+        "tu réponds en français, de façon claire et utile, en t’appuyant UNIQUEMENT sur les extraits web fournis. "
+        "Si les sources sont insuffisantes ou contradictoires, dis-le honnêtement. "
+        "Ne mentionne pas de fournisseurs techniques (OpenAI, API, modèle, RAG). "
+        "Réponse concise (3 à 8 phrases), sans lister toutes les URLs dans le corps du texte."
+    )
+    if memory_facts:
+        cleaned = [str(m).strip() for m in memory_facts if str(m).strip()][:12]
+        if cleaned:
+            block = "\n".join(f"- {c[:180]}" for c in cleaned)[:1200]
+            system_prompt += f"\n\nContexte foyer (si pertinent) :\n{block}"
+
+    user_prompt = f"Question : {query}\n\nExtraits web :\n{sources_block}"
+
+    if settings.llm_provider.lower() in {"openai", "chatgpt"}:
+        body = {
+            "model": settings.llm_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.35,
+        }
+        headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+        url = f"{settings.llm_base_url}/chat/completions"
+    else:
+        body = {
+            "model": settings.llm_model,
+            "max_tokens": 700,
+            "temperature": 0.35,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+        }
+        headers = {
+            "x-api-key": settings.llm_api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        url = f"{settings.llm_base_url}/messages"
+
+    try:
+        with httpx.Client(timeout=35) as client:
+            response = client.post(url, json=body, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        logger.warning("Web answer synthesis failed: %s", exc)
+        return None
+
+    if settings.llm_provider.lower() in {"openai", "chatgpt"}:
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        text = (choices[0].get("message") or {}).get("content") or ""
+    else:
+        content_items = payload.get("content") or []
+        text = ""
+        if content_items and isinstance(content_items, list):
+            text = str(content_items[0].get("text") or "")
+    text = str(text).strip()
+    return text[:4000] if text else None
+
+
 def _debordee_system(primary: str, partner: str, child: str) -> str:
     return (
         f"You are Alfred, household assistant for {primary}. Partner: {partner}, child: {child}. "
@@ -191,6 +279,94 @@ def debordee_with_openai(user_prompt: str, primary: str, partner: str, child: st
         return None
     content = (choices[0].get("message") or {}).get("content") or ""
     return _extract_json_payload(content)
+
+
+def answer_household_question(
+    command: str,
+    household_context: str,
+    memory_facts: list[str] | None = None,
+) -> str | None:
+    """Réponse Alfred à partir des données du foyer (coffre, budget, tâches…)."""
+    if settings.llm_provider.lower() not in {"openai", "chatgpt", "anthropic", "claude"}:
+        return None
+    if not settings.llm_api_key:
+        return None
+
+    system_prompt = (
+        "Tu es Alfred, le majordome familial de MajorDome. L’utilisateur te pose une question "
+        "ou demande un avis sur sa vie du foyer. Tu réponds en français, de façon naturelle, "
+        "précise et utile, en t’appuyant UNIQUEMENT sur le contexte applicatif fourni ci-dessous "
+        "(tâches, agenda, coffre documents, extraits de fichiers, budget, courses, frigo, mémoire). "
+        "Si une info manque (ex. pas de document, budget vide), dis-le clairement et propose "
+        "une action concrète (déposer le fichier dans le Coffre, renseigner le budget…). "
+        "Pour les achats coûteux ou le budget : sois honnête et bienveillant — compare dépenses "
+        "et plafonds des enveloppes ; tu peux déconseiller ou suggérer d’attendre / épargner / crédit "
+        "sans être moralisateur. Ne cite pas de technologies internes (API, modèle, RAG). "
+        "Réponse en 3 à 12 phrases selon la complexité."
+    )
+    if memory_facts:
+        cleaned = [str(m).strip() for m in memory_facts if str(m).strip()][:12]
+        if cleaned:
+            block = "\n".join(f"- {c[:180]}" for c in cleaned)[:1200]
+            system_prompt += f"\n\nMémoire foyer (rappels) :\n{block}"
+
+    user_prompt = (
+        f"Question utilisateur : {command.strip()}\n\n"
+        f"Données MajorDome du foyer :\n{household_context[:12000]}"
+    )
+
+    if settings.llm_provider.lower() in {"openai", "chatgpt"}:
+        body = {
+            "model": settings.llm_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.35,
+            "max_tokens": 900,
+        }
+        headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+        try:
+            with httpx.Client(timeout=45) as client:
+                response = client.post(
+                    f"{settings.llm_base_url}/chat/completions", json=body, headers=headers
+                )
+                response.raise_for_status()
+                payload = response.json()
+        except Exception as exc:
+            logger.warning("Household answer OpenAI failed: %s", exc)
+            return None
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        text = (choices[0].get("message") or {}).get("content") or ""
+        return str(text).strip()[:4000] or None
+
+    body = {
+        "model": settings.llm_model,
+        "max_tokens": 900,
+        "temperature": 0.35,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_prompt}],
+    }
+    headers = {
+        "x-api-key": settings.llm_api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=45) as client:
+            response = client.post(f"{settings.llm_base_url}/messages", json=body, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        logger.warning("Household answer Anthropic failed: %s", exc)
+        return None
+    content_items = payload.get("content") or []
+    text = ""
+    if content_items and isinstance(content_items, list):
+        text = str(content_items[0].get("text") or "")
+    return str(text).strip()[:4000] or None
 
 
 def debordee_with_anthropic(user_prompt: str, primary: str, partner: str, child: str) -> dict[str, Any] | None:

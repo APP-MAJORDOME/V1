@@ -9,6 +9,97 @@ export type AgentInterpretResponse = {
 
 export type AgentExecutionResult = { done: boolean; message?: string };
 
+export type AlfredWebSource = { title: string; snippet?: string; url: string };
+
+/** Document du coffre cité par Alfred (consultation foyer). */
+export type AlfredVaultDocument = {
+  id: number;
+  name: string;
+  category?: string;
+  has_file?: boolean;
+};
+
+export type AlfredMessageAttachment = {
+  name: string;
+  mime: string;
+  previewUrl?: string;
+};
+
+/** Types acceptés par Alfred (alignés sur l’API). */
+export const ALFRED_FILE_ACCEPT =
+  '.pdf,.doc,.docx,.txt,image/jpeg,image/png,image/webp,image/gif,application/pdf';
+
+export const ALFRED_FILE_MAX_MB = 12;
+
+/** IDs de documents du coffre cités par Alfred (consultation foyer). */
+export function extractVaultDocumentIds(proposal?: Record<string, unknown>): number[] {
+  return extractVaultDocuments(proposal).map((d) => d.id);
+}
+
+export function extractVaultDocuments(proposal?: Record<string, unknown>): AlfredVaultDocument[] {
+  const vault = proposal?.vault_documents;
+  if (Array.isArray(vault)) {
+    const out: AlfredVaultDocument[] = [];
+    for (const item of vault) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>;
+      const id =
+        typeof row.id === 'number'
+          ? row.id
+          : parseInt(String(row.id ?? row.document_id ?? ''), 10);
+      const name = typeof row.name === 'string' ? row.name.trim() : '';
+      if (!Number.isFinite(id) || id <= 0 || !name) continue;
+      out.push({
+        id,
+        name,
+        category: typeof row.category === 'string' ? row.category : undefined,
+        has_file: typeof row.has_file === 'boolean' ? row.has_file : undefined,
+      });
+    }
+    if (out.length > 0) return out.slice(0, 6);
+  }
+  const raw = proposal?.sources;
+  if (!Array.isArray(raw)) return [];
+  const fromSources: AlfredVaultDocument[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const id =
+      typeof row.document_id === 'number'
+        ? row.document_id
+        : parseInt(String(row.document_id ?? ''), 10);
+    const name = typeof row.name === 'string' ? row.name.trim() : '';
+    if (!Number.isFinite(id) || id <= 0 || !name) continue;
+    fromSources.push({
+      id,
+      name,
+      category: typeof row.category === 'string' ? row.category : undefined,
+      has_file: typeof row.has_file === 'boolean' ? row.has_file : undefined,
+    });
+  }
+  return fromSources.slice(0, 6);
+}
+
+export function isAlfredConsultationIntent(intent: string): boolean {
+  return intent === 'household_answer' || intent === 'web_search' || intent === 'document_analyze';
+}
+
+export function extractWebSources(proposal?: Record<string, unknown>): AlfredWebSource[] {
+  const raw = proposal?.sources;
+  if (!Array.isArray(raw)) return [];
+  const out: AlfredWebSource[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const url = typeof row.url === 'string' ? row.url.trim() : '';
+    const title = typeof row.title === 'string' ? row.title.trim() : '';
+    if (!url || !title) continue;
+    const snippet = typeof row.snippet === 'string' ? row.snippet.trim() : undefined;
+    out.push({ title, url, snippet: snippet || undefined });
+  }
+  return out.slice(0, 6);
+}
+
 export type AlfredTask = { id: number; title: string };
 export type AlfredMember = { id: number; display_name: string };
 export type AlfredAccount = { provider: string; status: string };
@@ -230,6 +321,14 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
     commandNormalized.includes('emploi du temps') ||
     commandNormalized.includes('rendez-vous') ||
     commandNormalized.includes('agenda');
+  if (
+    interpreted.intent === 'web_search' ||
+    interpreted.intent === 'document_analyze' ||
+    interpreted.intent === 'household_answer'
+  ) {
+    return { done: false };
+  }
+
   if (shouldCreateEvent) {
     const now = new Date();
     const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);

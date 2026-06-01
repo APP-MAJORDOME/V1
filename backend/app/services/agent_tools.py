@@ -87,12 +87,48 @@ ALFRED_REALTIME_TOOLS: list[dict[str, Any]] = [
             "required": ["note"],
         },
     },
+    {
+        "type": "function",
+        "name": "search_web",
+        "description": (
+            "Recherche une information à jour sur Internet (actualités, météo, définitions, "
+            "horaires, prix, adresses). Utilise quand la réponse n’est pas dans l’app ni la mémoire du foyer."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Question ou mots-clés à chercher"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "consult_household",
+        "description": (
+            "Consulte les données MajorDome du foyer : coffre (documents, factures), budget, "
+            "tâches, agenda, courses, frigo. Utilise pour lire une facture, résumer un document, "
+            "donner un avis d’achat selon le budget, ou répondre à une question sur l’organisation du foyer."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Question ou demande de l’utilisateur, formulée clairement",
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 INTENT_SYSTEM_SUFFIX = (
     "intent must be one of: "
     "task_create, task_complete, task_assign, event_create, grocery_add, "
-    "email_draft, call_prepare, opportunity_search, planning, memory_store. "
+    "email_draft, call_prepare, opportunity_search, planning, memory_store, web_search. "
+    "Use web_search when the user asks for live/web info (news, weather, prices, definitions, "
+    "hours, addresses, 'search online', 'on the internet'). proposal must include query (string). "
     "For task_create proposal needs title. "
     "For event_create proposal needs title and optionally starts_at, ends_at (ISO 8601). "
     "For task_assign proposal needs task_title and assignee. "
@@ -160,6 +196,24 @@ def realtime_tool_to_intent(name: str, args: dict[str, Any]) -> dict[str, Any] |
                 "intent": "memory_store",
                 "mode": "auto",
                 "proposal": {"note": note},
+                "explanation": "",
+            }
+    if name == "search_web":
+        query = str(args.get("query") or "").strip()
+        if query:
+            return {
+                "intent": "web_search",
+                "mode": "auto",
+                "proposal": {"query": query},
+                "explanation": "",
+            }
+    if name == "consult_household":
+        query = str(args.get("query") or "").strip()
+        if query:
+            return {
+                "intent": "household_answer",
+                "mode": "auto",
+                "proposal": {"query": query},
                 "explanation": "",
             }
     return None

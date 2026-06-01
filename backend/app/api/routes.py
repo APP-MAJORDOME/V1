@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 import redis
 from sqlalchemy.orm import Session
@@ -60,6 +60,7 @@ from app.models.models import (
     HouseholdBudgetEnvelope,
     HouseholdMealPlan,
     HouseholdMoiWellness,
+    JournalEntry,
 )
 from app.schemas.schemas import (
     HouseholdCreate,
@@ -107,6 +108,9 @@ from app.schemas.schemas import (
     MealPlanUpsert,
     MoiWellnessRead,
     MoiWellnessPut,
+    JournalEntryRead,
+    JournalEntryCreate,
+    JournalEntryUpdate,
     RoutineRead,
     OpportunityRead,
     AccountSyncResponse,
@@ -137,6 +141,8 @@ from app.schemas.schemas import (
 )
 from app.services.briefing import build_today_briefing
 from app.services.agent import analyze_debordee, interpret_command
+from app.services.alfred_household import build_household_answer, command_wants_household_answer
+from app.services.alfred_attachments import ALFRED_ATTACHMENT_MIME, analyze_alfred_attachment, resolve_attachment_mime
 from app.services.realtime_voice import RealtimeVoiceError, build_alfred_realtime_instructions, exchange_realtime_webrtc_sdp
 from app.services.conflicts import detect_conflicts
 from app.services import document_attachments as doc_attach
@@ -1861,6 +1867,145 @@ def put_moi_wellness(
     return _moi_wellness_to_read(row)
 
 
+_DAY_KEY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_day_key(day: str) -> str:
+    key = (day or "").strip()
+    if not _DAY_KEY_RE.match(key):
+        raise api_error("invalid_day_key", "Date invalide (format AAAA-MM-JJ).", 400)
+    return key
+
+
+def _maybe_import_legacy_journal(
+    db: Session,
+    auth: AuthContext,
+    entries: list[JournalEntry],
+) -> list[JournalEntry]:
+    if entries:
+        return entries
+    wellness = (
+        db.query(HouseholdMoiWellness)
+        .filter(HouseholdMoiWellness.household_id == auth.household_id)
+        .first()
+    )
+    legacy = (wellness.journal_text or "").strip() if wellness else ""
+    if len(legacy) < 2:
+        return entries
+    today = datetime.now().strftime("%Y-%m-%d")
+    row = JournalEntry(
+        household_id=auth.household_id,
+        user_id=auth.user_id,
+        entry_date=today,
+        content=legacy[:12000],
+    )
+    db.add(row)
+    if wellness:
+        wellness.journal_text = ""
+    db.commit()
+    db.refresh(row)
+    return [row]
+
+
+@router.get("/journal/entries", response_model=list[JournalEntryRead])
+def list_journal_entries(
+    from_day: str | None = Query(default=None, alias="from"),
+    to_day: str | None = Query(default=None, alias="to"),
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    q = db.query(JournalEntry).filter(
+        JournalEntry.user_id == auth.user_id,
+        JournalEntry.household_id == auth.household_id,
+    )
+    if from_day:
+        q = q.filter(JournalEntry.entry_date >= _validate_day_key(from_day))
+    if to_day:
+        q = q.filter(JournalEntry.entry_date <= _validate_day_key(to_day))
+    rows = q.order_by(JournalEntry.entry_date.desc(), JournalEntry.id.desc()).limit(400).all()
+    rows = _maybe_import_legacy_journal(db, auth, rows)
+    return [
+        JournalEntryRead(
+            id=r.id,
+            entry_date=r.entry_date,
+            content=r.content or "",
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        )
+        for r in rows
+    ]
+
+
+@router.post("/journal/entries", response_model=JournalEntryRead, status_code=201)
+def create_journal_entry(
+    payload: JournalEntryCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    day = _validate_day_key(payload.entry_date)
+    content = payload.content.strip()
+    if not content:
+        raise api_error("journal_empty", "Écris au moins une phrase.", 400)
+    row = JournalEntry(
+        household_id=auth.household_id,
+        user_id=auth.user_id,
+        entry_date=day,
+        content=content[:12000],
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return JournalEntryRead(
+        id=row.id,
+        entry_date=row.entry_date,
+        content=row.content,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.patch("/journal/entries/{entry_id}", response_model=JournalEntryRead)
+def update_journal_entry(
+    entry_id: int,
+    payload: JournalEntryUpdate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(JournalEntry, entry_id)
+    if not row or row.user_id != auth.user_id or row.household_id != auth.household_id:
+        raise api_error("journal_not_found", "Entrée introuvable.", 404)
+    if payload.entry_date is not None:
+        row.entry_date = _validate_day_key(payload.entry_date)
+    if payload.content is not None:
+        text = payload.content.strip()
+        if not text:
+            raise api_error("journal_empty", "Écris au moins une phrase.", 400)
+        row.content = text[:12000]
+    db.commit()
+    db.refresh(row)
+    return JournalEntryRead(
+        id=row.id,
+        entry_date=row.entry_date,
+        content=row.content,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.delete("/journal/entries/{entry_id}", status_code=204)
+def delete_journal_entry(
+    entry_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = db.get(JournalEntry, entry_id)
+    if not row or row.user_id != auth.user_id or row.household_id != auth.household_id:
+        raise api_error("journal_not_found", "Entrée introuvable.", 404)
+    db.delete(row)
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.get("/documents", response_model=list[HouseholdDocumentRead])
 def list_documents(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
     return (
@@ -2106,7 +2251,41 @@ def agent_interpret(
     db: Session = Depends(get_db),
 ):
     mem = household_memory_lines(db, auth.household_id)
+    if command_wants_household_answer(payload.command):
+        return build_household_answer(
+            payload.command,
+            db,
+            auth.household_id,
+            auth.user_id,
+            memory_lines=mem,
+        )
     return interpret_command(payload.command, memory_lines=mem)
+
+
+@router.post("/agent/analyze-file", response_model=AgentInterpretResponse)
+async def agent_analyze_file(
+    file: UploadFile = File(...),
+    command: str = Form(default=""),
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Analyse une photo ou un document (PDF, Word, texte) pour Alfred."""
+    max_bytes = max(1, settings.attachment_max_mb) * 1024 * 1024
+    body = await file.read()
+    if len(body) > max_bytes:
+        raise api_error("attachment_too_large", "Fichier trop volumineux.", 413)
+    if len(body) < 8:
+        raise api_error("attachment_empty", "Fichier vide.", 400)
+    orig = Path(file.filename or "piece-jointe").name.replace("\x00", "")[:255] or "piece-jointe"
+    mime = resolve_attachment_mime(orig, file.content_type)
+    if mime not in ALFRED_ATTACHMENT_MIME:
+        raise api_error(
+            "attachment_type_not_allowed",
+            "Type non autorisé (JPEG, PNG, WebP, GIF, PDF, Word DOCX ou texte).",
+            415,
+        )
+    mem = household_memory_lines(db, auth.household_id)
+    return analyze_alfred_attachment(body, mime, orig, command[:4000], mem)
 
 
 @router.post("/agent/debordee", response_model=DebordeeResponse)

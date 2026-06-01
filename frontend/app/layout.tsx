@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'fr_FR',
     siteName: 'MajorDome',
-    images: [{ url: '/majordome-mark.png', width: 512, height: 512, alt: 'MajorDome' }],
+    images: [{ url: '/majordome-logo-horizontal.png', width: 1400, height: 347, alt: 'MajorDome' }],
   },
   alternates: {
     canonical: 'https://majordom.eu/',
@@ -35,8 +35,8 @@ export const metadata: Metadata = {
   },
   robots: { index: false, follow: false },
   icons: {
-    icon: '/majordome-mark.png',
-    apple: '/majordome-mark.png',
+    icon: '/majordome-app-icon.png',
+    apple: '/majordome-app-icon.png',
   },
 };
 

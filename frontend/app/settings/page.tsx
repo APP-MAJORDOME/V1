@@ -413,7 +413,7 @@ export default function SettingsPage() {
                   </p>
                 </Card>
 
-                <Card title="Alfred — LLM OpenAI (serveur)">
+                <Card title="Alfred — assistant (serveur)">
                   <p style={{ fontSize: 11, color: C.text2, margin: '0 0 8px' }}>
                     Statut : <strong style={{ color: C.text }}>{llmIntegration?.status ?? 'inconnu'}</strong>
                     {' — '}
@@ -531,13 +531,13 @@ export default function SettingsPage() {
                 </ul>
                 </Card>
 
-                <Card title="Base de connaissances Alfred (RAG)">
+                <Card title="Base de connaissances Alfred">
                   <p style={{ fontSize: 11, color: C.text2, margin: '0 0 8px', lineHeight: 1.5 }}>
                     Importer des PDF ou notes (calendriers scolaires, manuels d&apos;appareils…) pour que les réponses d&apos;Alfred s&apos;appuient sur <strong>vos</strong> documents :{' '}
                     <strong>À venir</strong>. Les fichiers resteront dans votre foyer, avec quotas et suppression possible à tout moment.
                   </p>
                   <p style={{ fontSize: 11, color: C.text3, margin: 0, lineHeight: 1.45 }}>
-                    Prochaine étape technique : indexation côté serveur + recherche sémantique limitée au coffre autorisé (pas d&apos;entraînement tiers).
+                    Alfred pourra s&apos;appuyer uniquement sur les documents de ton coffre, sans les partager à l&apos;extérieur.
                   </p>
                 </Card>
               </>

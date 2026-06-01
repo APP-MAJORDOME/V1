@@ -1,6 +1,8 @@
 'use client';
 
+import { AgendaJournalSection } from './IntimateJournalPanel';
 import { IconAlertOutline, IconCheckSmall, IconMeal } from './md-icons';
+import type { JournalEntry } from '../lib/journalEntries';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton, type TaskUiItem, type TaskUiMember } from './taskUi';
 import type { MealPlan } from '../lib/meals';
 import { useIsClient } from '../hooks/useIsClient';
@@ -87,6 +89,9 @@ export function AgendaTabPanel({
   onDeleteEvent,
   onSaveEditEvent,
   onCancelEditEvent,
+  journalEntries,
+  journalLoading,
+  onOpenMoiJournal,
 }: {
   C: Record<string, string>;
   token: string;
@@ -141,6 +146,9 @@ export function AgendaTabPanel({
   onDeleteEvent: (eventId: number) => void;
   onSaveEditEvent: () => void | Promise<void>;
   onCancelEditEvent: () => void;
+  journalEntries: JournalEntry[];
+  journalLoading: boolean;
+  onOpenMoiJournal: () => void;
 }) {
   const client = useIsClient();
   const googleConnected = accounts.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
@@ -160,6 +168,13 @@ export function AgendaTabPanel({
       }}
     >
       <h2 style={{ margin: '0 0 10px', color: C.text }}>Agenda familial</h2>
+      <AgendaJournalSection
+        C={C}
+        selectedDay={selectedMealDay}
+        entries={journalEntries}
+        loading={journalLoading}
+        onOpenMoi={onOpenMoiJournal}
+      />
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Ajouter depuis l application</div>
         <div style={{ display: 'grid', gap: 6 }}>
@@ -251,7 +266,7 @@ export function AgendaTabPanel({
           type="date"
           value={selectedMealDay}
           onChange={(e) => onSelectedMealDayChange(e.target.value)}
-          aria-label="Jour du plan repas"
+          aria-label="Jour affiché (repas et journal)"
           style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
         />
         <input

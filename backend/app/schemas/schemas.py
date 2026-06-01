@@ -477,6 +477,26 @@ class MoiWellnessPut(BaseModel):
     home_mood: int | None = Field(default=None, ge=0, le=4)
 
 
+class JournalEntryRead(BaseModel):
+    id: int
+    entry_date: str
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class JournalEntryCreate(BaseModel):
+    entry_date: str = Field(min_length=10, max_length=10)
+    content: str = Field(min_length=1, max_length=12000)
+
+
+class JournalEntryUpdate(BaseModel):
+    entry_date: str | None = Field(default=None, min_length=10, max_length=10)
+    content: str | None = Field(default=None, min_length=1, max_length=12000)
+
+
 class RoutineCreate(BaseModel):
     household_id: int | None = None
     name: str

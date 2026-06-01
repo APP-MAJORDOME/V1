@@ -81,7 +81,7 @@ import { RoutinesPanel } from '../components/RoutinesPanel';
 import { CoursesPanel } from '../components/CoursesPanel';
 import { AlfredChatPanel } from '../components/AlfredChatPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
-import { BrandLoadingPicto, MajordomeMark, MajordomeWordmark } from '../components/BrandLogo';
+import { BrandLoadingLogo, MajordomeWordmark } from '../components/BrandLogo';
 import { LoginAuthScreen } from '../components/LoginAuthScreen';
 import { MoiTabPanel } from '../components/MoiTabPanel';
 import { AgendaTabPanel } from '../components/AgendaTabPanel';
@@ -139,6 +139,12 @@ import {
   upsertMealPlan,
   type MealPlan,
 } from '../lib/meals';
+import {
+  createJournalEntry,
+  fetchJournalEntries,
+  journalRangeLastDays,
+  type JournalEntry,
+} from '../lib/journalEntries';
 import {
   DEFAULT_SELF_MOMENTS,
   fetchMoiWellness,
@@ -270,10 +276,6 @@ function GlassCard({ children, style = {}, onClick }: { children: React.ReactNod
 
 function Pill({ children, bg, color }: { children: React.ReactNode; bg: string; color: string }) {
   return <span style={{ fontSize: 10, fontWeight: 700, color, background: bg, borderRadius: 20, padding: '3px 8px' }}>{children}</span>;
-}
-
-function AppBrandMark({ height = 24 }: { height?: number }) {
-  return <MajordomeMark size={Math.round(height * 2.2)} />;
 }
 
 function StatusBar({
@@ -415,7 +417,9 @@ export default function HomePage() {
   const [clientHour, setClientHour] = useState<number | null>(null);
   const [mealPlans, setMealPlans] = useState<Record<string, MealPlan>>({});
   const [selfMoments, setSelfMoments] = useState<SelfMoment[]>(DEFAULT_SELF_MOMENTS);
-  const [journal, setJournal] = useState('');
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const loadDataGenRef = useRef(0);
   const [cycleDay, setCycleDay] = useState(18);
   const [fridge, setFridge] = useState<FridgeItem[]>([]);
   const [walletCards, setWalletCards] = useState<WalletCard[]>([]);
@@ -439,7 +443,6 @@ export default function HomePage() {
   const [clientReady, setClientReady] = useState(false);
   /** Toujours false au 1er rendu pour matcher le SSR ; useEffect applique localStorage. */
   const [onboardingDone, setOnboardingDone] = useState(false);
-  const [loginSplashDone, setLoginSplashDone] = useState(false);
   const [alfredMemory, setAlfredMemory] = useState<string[]>([]);
   const [modalDebordee, setModalDebordee] = useState<'closed' | 'confirm' | 'loading' | 'result'>('closed');
   const [debordeeResult, setDebordeeResult] = useState<DebordeeApiResponse | null>(null);
@@ -480,7 +483,6 @@ export default function HomePage() {
   const moiHydratedRef = useRef(false);
   /** true si l'utilisateur a modifié Moi — évite que loadData() écrase le journal en cours. */
   const moiDirtyRef = useRef(false);
-  const [journalSaveStatus, setJournalSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   function seedDocsForFamily(f: FamilyProfile): DocVaultItem[] {
     const J = f.prenom || 'Joanne';
@@ -947,10 +949,6 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (token) setLoginSplashDone(true);
-  }, [token]);
-
-  useEffect(() => {
     if (!clientReady || !token || !postLoginSetupDone || typeof window === 'undefined') return;
     const tab = new URLSearchParams(window.location.search).get('tab');
     if (tab === 'alfred') {
@@ -1005,21 +1003,48 @@ export default function HomePage() {
 
   useEffect(() => {
     moiHydratedRef.current = false;
-    moiDirtyRef.current = false;
-    setJournalSaveStatus('idle');
+    if (!token) {
+      moiDirtyRef.current = false;
+      setJournalEntries([]);
+    }
   }, [token]);
+
+  const refreshJournalEntries = useCallback(
+    async (accessToken?: string) => {
+      const authToken = accessToken ?? token;
+      if (!authToken) return;
+      setJournalLoading(true);
+      try {
+        const range = journalRangeLastDays(120);
+        let rows = await fetchJournalEntries(authToken, range);
+        if (typeof window !== 'undefined') {
+          const legacy = localStorage.getItem('majordome_journal')?.trim();
+          if (legacy && rows.length === 0) {
+            const day =
+              selectedMealDay ||
+              `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+            await createJournalEntry(authToken, { entry_date: day, content: legacy });
+            localStorage.removeItem('majordome_journal');
+            rows = await fetchJournalEntries(authToken, range);
+          }
+        }
+        setJournalEntries(rows);
+      } catch {
+        /* conserve la liste affichée */
+      } finally {
+        setJournalLoading(false);
+      }
+    },
+    [token, selectedMealDay],
+  );
 
   const persistMoiWellness = useCallback(
     async (showToast = false) => {
-      if (!token) {
-        if (showToast) pushToast('error', 'Connecte-toi pour enregistrer ton journal.');
-        return;
-      }
-      setJournalSaveStatus('saving');
+      if (!token) return;
       try {
         const res = await putMoiWellness(
           {
-            journal,
+            journal: '',
             cycle_day: cycleDay,
             moments: selfMoments,
             sleep_hours: sleep,
@@ -1029,54 +1054,26 @@ export default function HomePage() {
           token,
         );
         moiDirtyRef.current = false;
-        setJournal(res.journal);
         setCycleDay(res.cycle_day);
         setSleep(res.sleep_hours);
         setMoiMood(res.moi_mood);
         setHomeMood(res.home_mood);
         if (res.moments.length > 0) setSelfMoments(res.moments);
-        try {
-          localStorage.setItem('majordome_journal', res.journal);
-        } catch {
-          /* ignore */
-        }
-        setJournalSaveStatus('saved');
-        if (showToast) pushToast('success', 'Journal enregistré');
-        window.setTimeout(() => {
-          setJournalSaveStatus((s) => (s === 'saved' ? 'idle' : s));
-        }, 2500);
+        if (showToast) pushToast('success', 'Enregistré');
       } catch {
-        try {
-          localStorage.setItem('majordome_journal', journal);
-        } catch {
-          /* ignore */
-        }
-        setJournalSaveStatus('error');
-        if (showToast) {
-          pushToast('error', "Impossible d'enregistrer sur le serveur — copie locale conservée sur cet appareil.");
-        }
+        if (showToast) pushToast('error', 'Impossible d’enregistrer.');
       }
     },
-    [journal, cycleDay, selfMoments, sleep, moiMood, homeMood, token],
+    [cycleDay, selfMoments, sleep, moiMood, homeMood, token, pushToast],
   );
 
   useEffect(() => {
     if (!token || !moiHydratedRef.current || !moiDirtyRef.current) return;
     const t = window.setTimeout(() => {
       void persistMoiWellness(false);
-    }, 600);
+    }, 900);
     return () => window.clearTimeout(t);
-  }, [journal, cycleDay, selfMoments, sleep, moiMood, homeMood, token, persistMoiWellness]);
-
-  const onJournalChange = useCallback((text: string) => {
-    moiDirtyRef.current = true;
-    setJournal(text);
-    try {
-      localStorage.setItem('majordome_journal', text);
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  }, [cycleDay, selfMoments, sleep, moiMood, homeMood, token, persistMoiWellness]);
 
   const onCycleDayChange = useCallback((day: number) => {
     moiDirtyRef.current = true;
@@ -1118,6 +1115,7 @@ export default function HomePage() {
   }, [token, onboardingDone, postLoginSetupDone, toggleGlobalSearch]);
 
   async function loadData(accessToken: string) {
+    const loadGen = ++loadDataGenRef.current;
     setLoading(true);
     setError('');
     try {
@@ -1534,10 +1532,9 @@ export default function HomePage() {
 
       let wellness = await fetchMoiWellness(accessToken).catch(() => null);
       if (typeof window !== 'undefined') {
-        const legacyJournal = localStorage.getItem('majordome_journal');
         const legacyCycle = localStorage.getItem('majordome_cycle_day');
         const legacyMoments = localStorage.getItem('majordome_self_moments');
-        if (legacyJournal || legacyCycle || legacyMoments) {
+        if (legacyCycle || legacyMoments) {
           let moments = wellness?.moments ?? DEFAULT_SELF_MOMENTS;
           if (legacyMoments) {
             try {
@@ -1570,7 +1567,7 @@ export default function HomePage() {
           try {
             wellness = await putMoiWellness(
               {
-                journal: legacyJournal ?? wellness?.journal ?? '',
+                journal: '',
                 cycle_day: legacyCycle
                   ? Math.min(28, Math.max(1, Number(legacyCycle) || 18))
                   : wellness?.cycle_day ?? 18,
@@ -1581,7 +1578,6 @@ export default function HomePage() {
               },
               accessToken,
             );
-            if (legacyJournal) localStorage.removeItem('majordome_journal');
             if (legacyCycle) localStorage.removeItem('majordome_cycle_day');
             if (legacyMoments) localStorage.removeItem('majordome_self_moments');
             pushToast('success', 'Espace Moi synchronisé avec le foyer');
@@ -1590,27 +1586,18 @@ export default function HomePage() {
           }
         }
       }
-      if (!moiDirtyRef.current) {
-        const localJournal =
-          typeof window !== 'undefined' ? localStorage.getItem('majordome_journal') : null;
-        const serverJournal = wellness?.journal?.trim() ?? '';
-        const mergedJournal = serverJournal || localJournal || '';
-        if (wellness) {
-          setJournal(mergedJournal);
-          setCycleDay(wellness.cycle_day);
-          setSelfMoments(wellness.moments.length > 0 ? wellness.moments : DEFAULT_SELF_MOMENTS);
-          setSleep(wellness.sleep_hours ?? 7);
-          setMoiMood(wellness.moi_mood ?? 3);
-          setHomeMood(wellness.home_mood ?? null);
-          if (mergedJournal && !serverJournal) {
-            moiDirtyRef.current = true;
-          }
-        } else if (mergedJournal) {
-          setJournal(mergedJournal);
-          moiDirtyRef.current = true;
-        }
+      if (loadGen !== loadDataGenRef.current) {
+        return;
+      }
+      if (!moiDirtyRef.current && wellness) {
+        setCycleDay(wellness.cycle_day);
+        setSelfMoments(wellness.moments.length > 0 ? wellness.moments : DEFAULT_SELF_MOMENTS);
+        setSleep(wellness.sleep_hours ?? 7);
+        setMoiMood(wellness.moi_mood ?? 3);
+        setHomeMood(wellness.home_mood ?? null);
       }
       moiHydratedRef.current = true;
+      await refreshJournalEntries(accessToken);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de chargement';
       setError(msg);
@@ -2538,6 +2525,9 @@ export default function HomePage() {
           onDeleteEvent={deleteEventFromApp}
           onSaveEditEvent={saveEditEvent}
           onCancelEditEvent={() => setEditingEventId(null)}
+          journalEntries={journalEntries}
+          journalLoading={journalLoading}
+          onOpenMoiJournal={() => goMainTab('moi')}
         />
       );
     }
@@ -2619,6 +2609,7 @@ export default function HomePage() {
       return (
         <MoiTabPanel
           C={C}
+          token={token}
           aiName={aiName}
           openTaskCount={openTasks.length}
           moiMood={moiMood}
@@ -2627,11 +2618,12 @@ export default function HomePage() {
           onSleepChange={onSleepChange}
           cycleDay={cycleDay}
           onCycleDayChange={onCycleDayChange}
-          journal={journal}
-          onJournalChange={onJournalChange}
-          journalSaveStatus={journalSaveStatus}
-          onJournalBlur={() => void persistMoiWellness(false)}
-          onJournalSave={() => void persistMoiWellness(true)}
+          journalEntries={journalEntries}
+          journalLoading={journalLoading}
+          journalSelectedDay={selectedMealDay}
+          onJournalSelectedDayChange={setSelectedMealDay}
+          onJournalRefresh={() => refreshJournalEntries()}
+          onGoAgenda={() => goMainTab('agenda')}
           selfMoments={selfMoments}
           onToggleSelfMoment={(id) => {
             moiDirtyRef.current = true;
@@ -2816,10 +2808,18 @@ export default function HomePage() {
           setAutoSpeak={alfred.setAutoSpeak}
           onClearMemory={() => void alfred.clearAlfredMemoryAll()}
           onSend={() => void alfred.sendAssistant()}
+          onUploadFile={(file) => void alfred.sendAlfredFile(file)}
+          fileUploadBusy={alfred.fileUploadBusy}
           onToggleVoice={alfred.toggleVoiceListening}
           onToggleRealtime={() => void alfred.toggleOpenAiRealtimeVoice()}
           onSuggestion={(text) => void alfred.sendAssistant(text)}
           onConfirmPending={(cmd, intent, proposal) => void alfred.confirmAlfredAction(cmd, intent, proposal)}
+          onOpenVault={() => setModalCoffre(true)}
+          onOpenDocument={(docId) => {
+            setModalCoffre(true);
+            const doc = docVault.find((d) => d.id === docId);
+            if (doc) openDocEdit(doc);
+          }}
           onAction={(actionId) => {
             if (actionId === 'courses') {
               setCoursesTab('liste');
@@ -2882,7 +2882,7 @@ export default function HomePage() {
 
           {!clientReady ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <BrandLoadingPicto />
+              <BrandLoadingLogo />
             </div>
           ) : !token ? (
             <LoginAuthScreen
@@ -2899,12 +2899,10 @@ export default function HomePage() {
               setInfo={setInfo}
               loading={loading}
               onSubmit={submitAuth}
-              loginSplashDone={loginSplashDone}
-              onSplashDone={() => setLoginSplashDone(true)}
             />
           ) : !postLoginSetupResolved ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
-              <BrandLoadingPicto />
+              <BrandLoadingLogo />
             </div>
           ) : !postLoginSetupDone ? (
             <WelcomeSetupWizard

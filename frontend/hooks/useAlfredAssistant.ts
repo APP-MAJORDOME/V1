@@ -6,11 +6,15 @@ import {
   agentNeedsConfirm,
   clearAlfredMemoryServer,
   confirmLabelForIntent,
+  extractVaultDocuments,
+  extractWebSources,
+  isAlfredConsultationIntent,
   tryExtractAlfredMemory,
   type AgentExecutionResult,
   type AgentInterpretResponse,
 } from '../lib/alfredAgent';
-import { postJson, getJson } from '../lib/api';
+import { postJson, getJson, postFormData } from '../lib/api';
+import { ALFRED_FILE_MAX_MB } from '../lib/alfredAgent';
 import { inferAlfredActions } from '../lib/alfredSuggestions';
 import { realtimeToolToInterpret } from '../lib/alfredRealtimeTools';
 import { normalizeWebRtcSdp, waitForIceGatheringComplete } from '../lib/realtimeSdp';
@@ -25,6 +29,20 @@ import {
 import { createFrenchSpeechRecognition, type SpeechRecognitionLike } from '../lib/speechRecognition';
 
 const ASSISTANT_HISTORY_KEY = 'majordome_assistant_history';
+
+function alfredReplyMeta(
+  res: AgentInterpretResponse,
+): Pick<AlfredMessage, 'webSources' | 'openVault' | 'vaultDocuments'> {
+  const webSources = extractWebSources(res.proposal);
+  const vaultDocuments = extractVaultDocuments(res.proposal);
+  const openVault =
+    res.intent === 'household_answer' && vaultDocuments.length === 0 ? true : undefined;
+  return {
+    webSources: webSources.length > 0 ? webSources : undefined,
+    openVault,
+    vaultDocuments: vaultDocuments.length > 0 ? vaultDocuments : undefined,
+  };
+}
 
 export type AlfredToastType = 'success' | 'error' | 'info';
 
@@ -53,6 +71,7 @@ export function useAlfredAssistant({
 }: UseAlfredAssistantOptions) {
   const [assistantInput, setAssistantInput] = useState('');
   const [assistantTyping, setAssistantTyping] = useState(false);
+  const [fileUploadBusy, setFileUploadBusy] = useState(false);
   const [assistantHistory, setAssistantHistory] = useState<AlfredMessage[]>([
     { who: 'ai', text: `Coucou, je suis ${aiName}. Dis-moi ce que je dois gérer pour toi.` },
   ]);
@@ -207,33 +226,75 @@ export function useAlfredAssistant({
       } catch {
         args = {};
       }
-      const interpreted = realtimeToolToInterpret(name, args);
       let output: { ok: boolean; message: string } = { ok: false, message: 'Action non reconnue.' };
-      if (interpreted) {
-        const raw =
-          typeof args.title === 'string'
-            ? args.title
-            : typeof args.label === 'string'
-              ? args.label
-              : typeof args.task_title === 'string'
-                ? args.task_title
-                : typeof args.note === 'string'
-                  ? args.note
-                  : name;
-        try {
-          const execution = await onExecuteIntent(String(raw), interpreted);
-          if (execution.done && execution.message) {
-            output = { ok: true, message: execution.message };
-            onToast('success', execution.message);
+      if (name === 'search_web') {
+        const query = typeof args.query === 'string' ? args.query.trim() : '';
+        if (query) {
+          try {
+            const res = await postJson<AgentInterpretResponse>(
+              '/api/v1/agent/interpret',
+              { command: `recherche web: ${query}` },
+              token,
+            );
+            const msg = res.explanation?.trim() || 'Recherche terminée.';
+            output = { ok: true, message: msg };
+            onToast('success', 'Réponse web');
             realtimeToolHandledRef.current = true;
             window.setTimeout(() => {
               realtimeToolHandledRef.current = false;
             }, 2500);
-          } else {
-            output = { ok: false, message: "Je n'ai pas pu terminer cette action." };
+          } catch {
+            output = { ok: false, message: 'Recherche web indisponible pour le moment.' };
           }
-        } catch {
-          output = { ok: false, message: 'Erreur lors de l’exécution.' };
+        }
+      } else if (name === 'consult_household') {
+        const query = typeof args.query === 'string' ? args.query.trim() : '';
+        if (query) {
+          try {
+            const res = await postJson<AgentInterpretResponse>(
+              '/api/v1/agent/interpret',
+              { command: query },
+              token,
+            );
+            const msg = res.explanation?.trim() || 'Consultation terminée.';
+            output = { ok: true, message: msg };
+            onToast('success', 'Réponse foyer');
+            realtimeToolHandledRef.current = true;
+            window.setTimeout(() => {
+              realtimeToolHandledRef.current = false;
+            }, 2500);
+          } catch {
+            output = { ok: false, message: 'Consultation du foyer indisponible pour le moment.' };
+          }
+        }
+      } else {
+        const interpreted = realtimeToolToInterpret(name, args);
+        if (interpreted) {
+          const raw =
+            typeof args.title === 'string'
+              ? args.title
+              : typeof args.label === 'string'
+                ? args.label
+                : typeof args.task_title === 'string'
+                  ? args.task_title
+                  : typeof args.note === 'string'
+                    ? args.note
+                    : name;
+          try {
+            const execution = await onExecuteIntent(String(raw), interpreted);
+            if (execution.done && execution.message) {
+              output = { ok: true, message: execution.message };
+              onToast('success', execution.message);
+              realtimeToolHandledRef.current = true;
+              window.setTimeout(() => {
+                realtimeToolHandledRef.current = false;
+              }, 2500);
+            } else {
+              output = { ok: false, message: "Je n'ai pas pu terminer cette action." };
+            }
+          } catch {
+            output = { ok: false, message: 'Erreur lors de l’exécution.' };
+          }
         }
       }
       try {
@@ -269,6 +330,7 @@ export function useAlfredAssistant({
                 who: 'ai',
                 text: aiText,
                 id: `ai-${Date.now()}`,
+                ...alfredReplyMeta(res),
                 pendingConfirm: {
                   command: text,
                   intent: res.intent,
@@ -286,13 +348,20 @@ export function useAlfredAssistant({
         if (execution.done && execution.message) {
           aiText = execution.message;
         } else if (!aiText.trim()) {
-          aiText = `${res.intent} (${res.mode})`;
+          aiText = isAlfredConsultationIntent(res.intent)
+            ? 'Je n’ai pas pu formuler de réponse.'
+            : `${res.intent} (${res.mode})`;
         }
         startTransition(() => {
           setAssistantHistory((h) => [
             ...h,
             { who: 'user', text, id: `u-${Date.now()}` },
-            { who: 'ai', text: aiText, id: `ai-${Date.now()}` },
+            {
+              who: 'ai',
+              text: aiText,
+              id: `ai-${Date.now()}`,
+              ...alfredReplyMeta(res),
+            },
           ]);
         });
         if (execution.done && execution.message) onToast('success', execution.message);
@@ -319,6 +388,82 @@ export function useAlfredAssistant({
     [processVoiceCommand],
   );
 
+  const sendAlfredFile = useCallback(
+    async (file: File) => {
+      if (!token || fileUploadBusy) return;
+      const maxBytes = ALFRED_FILE_MAX_MB * 1024 * 1024;
+      if (file.size > maxBytes) {
+        onToast('error', `Fichier trop volumineux (max ${ALFRED_FILE_MAX_MB} Mo).`);
+        return;
+      }
+      const command = assistantInput.trim();
+      const isImage = file.type.startsWith('image/');
+      const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
+      const userLabel = command || `📎 ${file.name}`;
+      alfredNearBottomRef.current = true;
+      setAssistantHistory((m) => [
+        ...m,
+        {
+          who: 'user',
+          text: userLabel,
+          id: `u-${Date.now()}`,
+          attachment: { name: file.name, mime: file.type || 'application/octet-stream', previewUrl },
+        },
+      ]);
+      setAssistantInput('');
+      setAssistantTyping(true);
+      setFileUploadBusy(true);
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        if (command) fd.append('command', command);
+        const res = await postFormData<AgentInterpretResponse>(
+          '/api/v1/agent/analyze-file',
+          fd,
+          token,
+        );
+        let aiText = res.explanation?.trim() || 'Analyse terminée.';
+        setAssistantHistory((m) => [
+          ...m,
+          {
+            who: 'ai',
+            text: aiText,
+            id: `ai-${Date.now()}`,
+            ...alfredReplyMeta(res),
+          },
+        ]);
+        if (
+          autoSpeak &&
+          !openAiRealtimeOn &&
+          typeof window !== 'undefined' &&
+          'speechSynthesis' in window
+        ) {
+          const utterance = new SpeechSynthesisUtterance(aiText);
+          utterance.lang = 'fr-FR';
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utterance);
+        }
+      } catch (e) {
+        setAssistantHistory((m) => [
+          ...m,
+          {
+            who: 'ai',
+            text:
+              e instanceof Error
+                ? e.message
+                : "Impossible d'analyser ce fichier. Réessaie avec un PDF, une photo ou un DOCX.",
+            id: `ai-${Date.now()}`,
+          },
+        ]);
+        onToast('error', e instanceof Error ? e.message : 'Analyse du fichier impossible');
+      } finally {
+        setAssistantTyping(false);
+        setFileUploadBusy(false);
+      }
+    },
+    [token, assistantInput, fileUploadBusy, autoSpeak, openAiRealtimeOn, onToast],
+  );
+
   const sendAssistant = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? assistantInput).trim();
@@ -335,7 +480,12 @@ export function useAlfredAssistant({
           token,
         );
         let aiText = res.explanation || '';
-        if (res.proposal && typeof res.proposal === 'object' && 'title' in res.proposal) {
+        if (
+          res.proposal &&
+          typeof res.proposal === 'object' &&
+          'title' in res.proposal &&
+          !isAlfredConsultationIntent(res.intent)
+        ) {
           const t = (res.proposal as { title?: string }).title;
           if (t && !agentNeedsConfirm(res)) aiText = `${aiText}\n\nTâche proposée : ${t}`.trim();
         }
@@ -347,6 +497,7 @@ export function useAlfredAssistant({
               who: 'ai',
               text: aiText,
               id: `ai-${Date.now()}`,
+              ...alfredReplyMeta(res),
               pendingConfirm: {
                 command: text,
                 intent: res.intent,
@@ -368,7 +519,11 @@ export function useAlfredAssistant({
         if (execution.done && execution.message) {
           aiText = `${aiText}\n\n${execution.message}`.trim();
         }
-        if (!aiText.trim()) aiText = `${res.intent} (${res.mode})`;
+        if (!aiText.trim()) {
+          aiText = isAlfredConsultationIntent(res.intent)
+            ? 'Je n’ai pas pu formuler de réponse.'
+            : `${res.intent} (${res.mode})`;
+        }
         const actions = inferAlfredActions(aiText, execution.done);
         setAssistantHistory((m) => [
           ...m,
@@ -376,6 +531,7 @@ export function useAlfredAssistant({
             who: 'ai',
             text: aiText,
             actions: actions.length > 0 ? actions : undefined,
+            ...alfredReplyMeta(res),
             id: `ai-${Date.now()}`,
           },
         ]);
@@ -472,11 +628,11 @@ export function useAlfredAssistant({
 
   const toggleOpenAiRealtimeVoice = useCallback(async () => {
     if (!token) {
-      onToast('error', 'Connecte-toi pour utiliser la voix OpenAI.');
+      onToast('error', 'Connecte-toi pour utiliser la voix avec Alfred.');
       return;
     }
     if (typeof window === 'undefined' || typeof RTCPeerConnection === 'undefined') {
-      onToast('error', 'WebRTC indisponible sur ce navigateur.');
+      onToast('error', 'La conversation vocale n’est pas disponible sur ce navigateur.');
       return;
     }
     if (openAiRealtimeOn || realtimePcRef.current) {
@@ -567,10 +723,10 @@ export function useAlfredAssistant({
         sdp: normalizeWebRtcSdp(answer.sdp),
       });
       setOpenAiRealtimeOn(true);
-      onToast('success', 'Voix Alfred connectée (GPT Realtime)');
+      onToast('success', 'Conversation vocale avec Alfred activée');
     } catch (e) {
       disconnectRealtime();
-      onToast('error', e instanceof Error ? e.message : 'Erreur voix OpenAI');
+      onToast('error', e instanceof Error ? e.message : 'Impossible de démarrer la conversation vocale');
     } finally {
       setOpenAiRealtimeBusy(false);
     }
@@ -632,6 +788,8 @@ export function useAlfredAssistant({
     chatScrollRef,
     realtimeAudioElRef,
     sendAssistant,
+    sendAlfredFile,
+    fileUploadBusy,
     confirmAlfredAction,
     clearAlfredMemoryAll,
     toggleVoiceListening,

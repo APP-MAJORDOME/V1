@@ -1,9 +1,11 @@
-const CACHE = 'majordome-shell-v2';
-const PRECACHE = ['/', '/majordome-mark.png', '/majordome-wordmark.png', '/manifest.webmanifest'];
+const CACHE = 'majordome-shell-v6';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting()),
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(['/', '/majordome-logo-horizontal.png', '/manifest.webmanifest']))
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -21,11 +23,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api')) return;
+  /* Ne jamais mettre en cache les assets Next (_next) — évite logos cassés après déploiement. */
+  if (url.pathname.startsWith('/_next/')) return;
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request).then((res) => {
-        if (res.ok && (url.pathname === '/' || PRECACHE.includes(url.pathname))) {
+        if (res.ok && (url.pathname === '/' || url.pathname === '/majordome-logo-horizontal.png')) {
           const clone = res.clone();
           caches.open(CACHE).then((cache) => cache.put(event.request, clone));
         }

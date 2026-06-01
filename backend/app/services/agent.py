@@ -1,10 +1,12 @@
 from typing import Any
+
 from app.services.llm import (
     debordee_with_anthropic,
     debordee_with_openai,
     interpret_with_anthropic,
     interpret_with_openai,
 )
+from app.services.web_search import build_web_lookup_response, command_wants_web_search
 
 
 def _normalize_debordee(raw: dict[str, Any], partner_name: str) -> dict[str, Any]:
@@ -71,10 +73,16 @@ def analyze_debordee(
 
 
 def interpret_command(command: str, memory_lines: list[str] | None = None) -> dict[str, Any]:
+    if command_wants_web_search(command):
+        return build_web_lookup_response(command, memory_lines)
+
     llm_result = interpret_with_openai(command, memory_facts=memory_lines)
     if not llm_result:
         llm_result = interpret_with_anthropic(command, memory_facts=memory_lines)
     if llm_result:
+        if llm_result.get("intent") == "web_search":
+            query = str((llm_result.get("proposal") or {}).get("query") or command).strip()
+            return build_web_lookup_response(query or command, memory_lines)
         return llm_result
 
     lowered = command.lower()

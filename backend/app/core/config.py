@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     attachment_max_mb: int = 12
     attachment_quota_mb_per_household: int = 500
 
+    # Recherche web Alfred (DuckDuckGo, sans clé API)
+    web_search_enabled: bool = True
+    web_search_max_results: int = 5
+
     # Base URL publique de l’API (liens SMS / accusé de réception). Ex. https://api.majordom.eu
     public_api_base_url: str = "http://localhost:8000"
     delegation_reminder_hours: int = 24

@@ -1,63 +1,62 @@
 'use client';
 
-/** Pictogramme nœud papillon (asset officiel). */
-export function MajordomeMark({
-  size = 72,
-  className,
-  animated = false,
-}: {
-  size?: number;
-  className?: string;
-  animated?: boolean;
-}) {
-  return (
-    <img
-      src="/majordome-mark.png"
-      alt=""
-      aria-hidden
-      className={animated ? `majordome-loader-mark ${className ?? ''}`.trim() : className}
-      style={{
-        width: size,
-        height: size,
-        objectFit: 'contain',
-        display: 'block',
-      }}
-    />
-  );
-}
+/** Logo officiel — fichier dans /public (URL stable, pas de hash webpack). */
+export const HORIZONTAL_LOGO_SRC = '/majordome-logo-horizontal.png';
+/** Ratio largeur / hauteur (1400×347). */
+export const HORIZONTAL_LOGO_ASPECT = 1400 / 347;
 
-/** Wordmark horizontal MAJORDOME (asset officiel). */
-export function MajordomeWordmark({
-  maxHeight = 28,
-  className,
-}: {
+type LogoProps = {
   maxHeight?: number;
   className?: string;
-}) {
+};
+
+function HorizontalLogoImg({ maxHeight = 40, className }: LogoProps) {
+  const width = Math.round(maxHeight * HORIZONTAL_LOGO_ASPECT);
   return (
     <img
-      src="/majordome-wordmark.png"
+      src={HORIZONTAL_LOGO_SRC}
       alt="MAJORDOME"
+      width={width}
+      height={maxHeight}
       className={className}
+      decoding="async"
       style={{
         height: maxHeight,
         width: 'auto',
-        maxWidth: 'min(300px, 85vw)',
+        minWidth: Math.min(width, 160),
+        maxWidth: '100%',
         objectFit: 'contain',
+        objectPosition: 'left center',
         display: 'block',
+        background: 'transparent',
       }}
     />
   );
 }
 
-/** Pictogramme animé pendant un chargement (sans texte). */
-export function BrandLoadingPicto({
-  size = 72,
+/** Logo horizontal — accueil, connexion, onboarding, chargement. */
+export function MajordomeHomeLogo({ maxHeight = 40 }: LogoProps) {
+  return (
+    <div className="home-brand-mark-wrap">
+      <HorizontalLogoImg maxHeight={maxHeight} className="home-brand-mark" />
+    </div>
+  );
+}
+
+/** Alias (même fichier). */
+export function MajordomeWordmark(props: LogoProps & { animated?: boolean }) {
+  return <HorizontalLogoImg maxHeight={props.maxHeight ?? 40} className={props.className} />;
+}
+
+/** Chargement (refresh, session). */
+export function BrandLoadingLogo({
+  maxHeight = 44,
   compact = false,
 }: {
-  size?: number;
+  maxHeight?: number;
   compact?: boolean;
 }) {
+  const h = compact ? Math.min(maxHeight, 38) : maxHeight;
   return (
     <div
       role="status"
@@ -71,12 +70,12 @@ export function BrandLoadingPicto({
         padding: compact ? 12 : 24,
       }}
     >
-      <MajordomeMark size={compact ? 48 : size} animated />
+      <MajordomeHomeLogo maxHeight={h} />
     </div>
   );
 }
 
-/** Loader plein écran ou inline. */
+/** Loader plein écran. */
 export function AppLoader({
   label = 'Chargement…',
   compact = false,
@@ -100,7 +99,7 @@ export function AppLoader({
         minHeight: compact ? undefined : 200,
       }}
     >
-      <MajordomeMark size={compact ? 48 : 72} animated />
+      <BrandLoadingLogo maxHeight={compact ? 40 : 48} compact={compact} />
       {label ? (
         <p
           style={{

@@ -8,9 +8,17 @@ export function ServiceWorkerRegister() {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
     if (process.env.NODE_ENV !== 'production') return;
 
-    void navigator.serviceWorker.register('/sw.js').catch(() => {
-      /* ignore — PWA optionnelle */
-    });
+    void navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        void reg.update();
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      })
+      .catch(() => {
+        /* ignore — PWA optionnelle */
+      });
   }, []);
 
   return null;

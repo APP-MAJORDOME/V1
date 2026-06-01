@@ -249,6 +249,19 @@ class HouseholdDocument(Base, TimestampMixin):
     attachment_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class JournalEntry(Base, TimestampMixin):
+    """Entrées du journal intime (privées par utilisateur, consultables par date)."""
+
+    __tablename__ = "journal_entries"
+    __table_args__ = (Index("ix_journal_entries_user_date", "user_id", "entry_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    entry_date: Mapped[str] = mapped_column(String(10), index=True)
+    content: Mapped[str] = mapped_column(Text, default="")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id: Mapped[int] = mapped_column(primary_key=True)
