@@ -92,6 +92,8 @@ import { AppModuleOverlays, isModuleOverlayLayer } from '../components/AppModule
 import { AlfredAppLayer } from '../components/AlfredAppLayer';
 import { useAgendaMealEditor } from '../hooks/useAgendaMealEditor';
 import { AppShellModals } from '../components/AppShellModals';
+import { TaskDetailModal } from '../components/TaskDetailModal';
+import { TasksListModal } from '../components/TasksListModal';
 import { type DebordeeResult } from '../components/DebordeeModal';
 import { formatDocStorageShort, docCategoryForApi } from '../lib/documentsUi';
 import { filterOutTestTasks, isTestTaskTitle } from '../lib/taskHygiene';
@@ -452,6 +454,8 @@ export default function HomePage() {
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [alfredMemory, setAlfredMemory] = useState<string[]>([]);
   const [modalDebordee, setModalDebordee] = useState<'closed' | 'confirm' | 'loading' | 'result'>('closed');
+  const [taskDetailId, setTaskDetailId] = useState<number | null>(null);
+  const [tasksListOpen, setTasksListOpen] = useState(false);
   const [debordeeResult, setDebordeeResult] = useState<DebordeeApiResponse | null>(null);
   const [modalAlex, setModalAlex] = useState(false);
   const [alexDoneIds, setAlexDoneIds] = useState<number[]>([]);
@@ -663,6 +667,7 @@ export default function HomePage() {
       setTasks((prev) => prev.map((x) => (x.id === taskId ? { ...x, ...updated } : x)));
       void refreshTaskSummary();
       pushToast('success', 'Tâche marquée comme faite');
+      setTaskDetailId((cur) => (cur === taskId ? null : cur));
     } catch (e) {
       pushToast('error', e instanceof Error ? e.message : 'Impossible de terminer la tâche');
     } finally {
@@ -2080,6 +2085,27 @@ export default function HomePage() {
     () => partitionCoupons(coupons),
     [coupons],
   );
+  const openTaskDetail = useCallback(
+    (taskId: number) => {
+      setTasksListOpen(false);
+      setTaskDetailId(taskId);
+      setOverlay(null);
+      setMainTab('home');
+    },
+    [setOverlay, setMainTab],
+  );
+
+  const openTasksList = useCallback(() => {
+    setTasksListOpen(true);
+    setOverlay(null);
+    setMainTab('home');
+  }, [setOverlay, setMainTab]);
+
+  const taskDetailTask = useMemo(
+    () => (taskDetailId == null ? null : openTasks.find((t) => t.id === taskDetailId) ?? null),
+    [taskDetailId, openTasks],
+  );
+
   const mentalWeather = useMemo(
     () =>
       computeMentalWeather({
@@ -2128,14 +2154,11 @@ export default function HomePage() {
         label: t.title,
         actionLabel: 'Voir',
         tone: 'warning',
-        onAction: () => {
-          setMainTab('home');
-          setOverlay(null);
-        },
+        onAction: () => openTaskDetail(t.id),
       });
     });
     return items.slice(0, 3);
-  }, [fridge, conflicts, openTasks]);
+  }, [fridge, conflicts, openTasks, openTaskDetail]);
   const hubModuleBadges = useMemo((): Partial<Record<HubKey, string>> => {
     const badges: Partial<Record<HubKey, string>> = {};
     if (fridgeExpiredCount > 0) badges.courses = `${fridgeExpiredCount} DLC`;
@@ -2204,10 +2227,7 @@ export default function HomePage() {
         kind: 'task',
         title: t.title,
         subtitle: t.due_at ? `Échéance ${formatDateFr(t.due_at, clientReady)}` : 'Tâche ouverte',
-        onSelect: () => {
-          setMainTab('home');
-          setOverlay(null);
-        },
+        onSelect: () => openTaskDetail(t.id),
       });
     }
     for (const t of sortedDoneTasks.slice(0, 25)) {
@@ -2216,10 +2236,7 @@ export default function HomePage() {
         kind: 'task',
         title: t.title,
         subtitle: 'Tâche terminée',
-        onSelect: () => {
-          setMainTab('home');
-          setOverlay(null);
-        },
+        onSelect: () => openTaskDetail(t.id),
       });
     }
     for (const ev of events.slice(0, 40)) {
@@ -2246,7 +2263,7 @@ export default function HomePage() {
       });
     }
     return out;
-  }, [openTasks, sortedDoneTasks, events, docVault, clientReady]);
+  }, [openTasks, sortedDoneTasks, events, docVault, clientReady, openTaskDetail]);
 
   const alexTasksList = useMemo(() => {
     const glyphs = ['g:bin', 'g:shop', 'g:bag', 'g:wrench', 'g:meal'];
@@ -2378,10 +2395,7 @@ export default function HomePage() {
           householdMembers,
           onOpenHub: openHubModule,
           onOpenAgenda: () => goMainTab('agenda'),
-          onOpenTasksHome: () => {
-            setOverlay(null);
-            setMainTab('home');
-          },
+          onOpenTasksHome: openTasksList,
           onOpenAlfred: () => goMainTab('alfred'),
           onPersonalizeLayout: () => setHomeLayoutEditorOpen(true),
           onDebordee: () => {
@@ -2858,6 +2872,33 @@ export default function HomePage() {
         onClose={() => setGlobalSearchOpen(false)}
         entries={globalSearchEntries}
         C={C}
+      />
+      <TasksListModal
+        open={tasksListOpen}
+        tasks={openTasks}
+        C={C}
+        onClose={() => setTasksListOpen(false)}
+        onSelectTask={openTaskDetail}
+      />
+      <TaskDetailModal
+        open={taskDetailId != null && taskDetailTask != null}
+        task={taskDetailTask}
+        C={C}
+        token={token}
+        family={familyProfile}
+        householdMembers={householdMembers}
+        primaryMemberId={primaryMemberId}
+        partnerMemberId={partnerMemberId}
+        childMemberId={childMemberId}
+        taskAssignBusyId={taskAssignBusyId}
+        taskCompleteBusyId={taskCompleteBusyId}
+        onClose={() => setTaskDetailId(null)}
+        onAssign={assignTaskMember}
+        onComplete={completeTaskById}
+        onOpenAgenda={() => {
+          setTaskDetailId(null);
+          goMainTab('agenda');
+        }}
       />
       <HomeLayoutEditor
         open={homeLayoutEditorOpen}

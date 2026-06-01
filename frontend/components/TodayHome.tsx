@@ -264,9 +264,21 @@ export function TodayHome({
                   border: `1.5px solid ${u.tone === 'danger' ? C.red + '55' : C.sun + '55'}`,
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <button
+                  type="button"
+                  onClick={u.onAction}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{u.label}</div>
-                </div>
+                </button>
                 <button
                   type="button"
                   onClick={u.onAction}
