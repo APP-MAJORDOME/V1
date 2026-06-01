@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useModalA11y } from '../lib/useModalA11y';
 import type { HubKey } from './PlusHub';
 import { ALL_HUB_KEYS, PLUS_HUB_ITEMS } from './PlusHub';
 import {
@@ -25,8 +26,11 @@ export function HomeLayoutEditor({
 }) {
   const [hubShortcuts, setHubShortcuts] = useState<HubKey[]>(initial.hubShortcuts);
   const [sections, setSections] = useState<Record<HomeSectionId, boolean>>(initial.sections);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const hubMeta = useMemo(() => new Map(PLUS_HUB_ITEMS.map((i) => [i.id, i])), []);
+
+  useModalA11y(open, onClose, panelRef);
 
   useEffect(() => {
     if (!open) return;
@@ -65,9 +69,11 @@ export function HomeLayoutEditor({
         style={{ position: 'absolute', inset: 0, background: 'rgba(28,22,18,0.5)', border: 'none', cursor: 'pointer' }}
       />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Personnaliser l accueil"
+        aria-labelledby="home-layout-editor-title"
+        tabIndex={-1}
         style={{
           position: 'relative',
           width: 'min(420px, 100vw)',
@@ -81,9 +87,32 @@ export function HomeLayoutEditor({
           overflow: 'hidden',
         }}
       >
-        <div style={{ padding: '14px 18px 10px', borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ padding: '14px 18px 10px', borderBottom: `1px solid ${C.border}`, position: 'relative' }}>
           <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: '0 auto 10px' }} />
-          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: C.text }}>Personnaliser l&apos;accueil</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer la personnalisation"
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 12,
+              width: 36,
+              height: 36,
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              background: C.white,
+              color: C.text2,
+              fontSize: 20,
+              lineHeight: 1,
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
+          <h2 id="home-layout-editor-title" style={{ margin: 0, fontSize: 17, fontWeight: 800, color: C.text, paddingRight: 44 }}>
+            Personnaliser l&apos;accueil
+          </h2>
           <p style={{ margin: '6px 0 0', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
             Choisis les modules <strong>Univers</strong> en raccourci et affiche ou masque les blocs de ton écran d&apos;accueil. Réglages enregistrés sur cet appareil pour ton compte.
           </p>

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { DONE_HISTORY_FETCH_LIMIT, INITIAL_DONE_TASKS_LIMIT } from '../lib/constants';
 import { IconCheckSmall } from './md-icons';
 
 export type TaskUiMember = { id: number; display_name: string };
@@ -166,19 +165,9 @@ export function RecentDoneTasksCard({
           ? 'Rouvre une tâche si la coche était trop rapide.'
           : 'Les dernières coches — tu peux rouvrir une tâche si c’était une erreur.'}
       </p>
-      {onRefreshDoneFromServer ? (
-        <p style={{ fontSize: 10, color: C.text3, margin: '-2px 0 8px', lineHeight: 1.4 }}>
-          {compact
-            ? `Astuce : « Page suivante » puis fusion rapide — deux boutons ci-dessous.`
-            : `Au lancement : jusqu’à ${INITIAL_DONE_TASKS_LIMIT} terminées récentes. « Page suivante » enchaîne par paquets ; « Fusion rapide » recharge les ${DONE_HISTORY_FETCH_LIMIT} premières depuis le début.`}
-        </p>
-      ) : null}
-      {typeof serverDoneTotal === 'number' ? (
-        <div style={{ fontSize: 10, color: C.text2, margin: '-4px 0 10px', lineHeight: 1.45 }}>
-          <strong>Foyer</strong> : {serverDoneTotal} terminée(s) au total · {sortedDone.length} chargée(s) dans l’app
-          {serverDoneTotal > sortedDone.length
-            ? ' — poursuis avec « Page suivante » ou « Fusion rapide ».'
-            : ' — tout est chargé côté terminées.'}
+      {typeof serverDoneTotal === 'number' && serverDoneTotal > sortedDone.length ? (
+        <div style={{ fontSize: 10, color: C.text2, margin: '-2px 0 10px', lineHeight: 1.45 }}>
+          {serverDoneTotal} terminée(s) au foyer · {sortedDone.length} affichée(s) ici
         </div>
       ) : null}
       {sortedDone.length === 0 ? (
@@ -251,7 +240,7 @@ export function RecentDoneTasksCard({
             width: '100%',
           }}
         >
-          {loadMoreDoneBusy ? 'Chargement…' : `Page suivante (+${INITIAL_DONE_TASKS_LIMIT} terminées)`}
+          {loadMoreDoneBusy ? 'Chargement…' : 'Voir plus de terminées'}
         </button>
       ) : null}
       {token && onRefreshDoneFromServer ? (
@@ -272,7 +261,7 @@ export function RecentDoneTasksCard({
             width: '100%',
           }}
         >
-          {refreshDoneBusy ? 'Synchronisation…' : `Fusion rapide : ${DONE_HISTORY_FETCH_LIMIT} terminées depuis le début`}
+          {refreshDoneBusy ? 'Synchronisation…' : 'Tout recharger depuis le serveur'}
         </button>
       ) : null}
     </GlassCard>

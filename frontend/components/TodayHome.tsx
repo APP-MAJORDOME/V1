@@ -226,18 +226,18 @@ export function TodayHome({
       {/* Urgences (max 3) */}
       {urgencies.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
-          <div
+          <h2
             style={{
               fontSize: 11,
               fontWeight: 800,
               color: C.text2,
               letterSpacing: 1.2,
               textTransform: 'uppercase',
-              marginBottom: 10,
+              margin: '0 0 10px',
             }}
           >
             Maintenant
-          </div>
+          </h2>
           <div style={{ display: 'grid', gap: 8 }}>
             {urgencies.map((u) => (
               <div

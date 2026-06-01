@@ -259,83 +259,93 @@ export function AlfredChatPanel({
       </div>
 
       <div style={{ padding: '10px 12px max(12px, env(safe-area-inset-bottom))', background: C.white, borderTop: `1px solid ${C.border}` }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            ref={mergedInputRef}
-            value={assistantInput}
-            onChange={(e) => setAssistantInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onSend();
-            }}
-            placeholder={`Demande à ${aiName}…`}
-            aria-label={`Message pour ${aiName}`}
-            style={{
-              flex: 1,
-              borderRadius: 12,
-              border: `1px solid ${C.border}`,
-              padding: '12px 14px',
-              fontSize: 16,
-            }}
-          />
-          <button
-            type="button"
-            onClick={onToggleVoice}
-            disabled={!voiceSupported || openAiRealtimeOn}
-            aria-label="Micro navigateur"
-            title="Dictée navigateur"
-            style={{
-              width: 44,
-              height: 44,
-              border: 'none',
-              borderRadius: 12,
-              background: isListening ? C.redL : C.terraXL,
-              opacity: !voiceSupported || openAiRealtimeOn ? 0.45 : 1,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <IconMic size={20} color={isListening ? C.red : C.terra} />
-          </button>
-          <button
-            type="button"
-            onClick={onToggleRealtime}
-            disabled={openAiRealtimeBusy || realtimeVoiceOk === false}
-            title="Voix Alfred (GPT Realtime)"
-            aria-label="Voix Alfred GPT Realtime"
-            className={openAiRealtimeOn ? 'majordome-realtime-live' : undefined}
-            style={{
-              width: 44,
-              height: 44,
-              border: 'none',
-              borderRadius: 12,
-              background: openAiRealtimeOn ? C.redL : C.surface2,
-              opacity: realtimeVoiceOk === false ? 0.45 : 1,
-              cursor: realtimeVoiceOk === false ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <IconSpeaker size={20} color={openAiRealtimeOn ? C.red : C.text2} />
-          </button>
-          <button
-            type="button"
-            onClick={onSend}
-            style={{
-              border: 'none',
-              borderRadius: 12,
-              background: C.terra,
-              color: '#fff',
-              padding: '0 16px',
-              height: 44,
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Envoyer
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+            <input
+              ref={mergedInputRef}
+              value={assistantInput}
+              onChange={(e) => setAssistantInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSend();
+              }}
+              placeholder={`Demande à ${aiName}…`}
+              aria-label={`Message pour ${aiName}`}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                borderRadius: 12,
+                border: `1px solid ${C.border}`,
+                padding: '12px 14px',
+                fontSize: 16,
+              }}
+            />
+            <button
+              type="button"
+              onClick={onSend}
+              aria-label="Envoyer le message"
+              style={{
+                flexShrink: 0,
+                border: 'none',
+                borderRadius: 12,
+                background: C.terra,
+                color: '#fff',
+                padding: '0 14px',
+                height: 44,
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Envoyer
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={onToggleVoice}
+              disabled={!voiceSupported || openAiRealtimeOn}
+              aria-label="Micro navigateur"
+              title="Dictée navigateur"
+              style={{
+                width: 44,
+                height: 44,
+                flexShrink: 0,
+                border: 'none',
+                borderRadius: 12,
+                background: isListening ? C.redL : C.terraXL,
+                opacity: !voiceSupported || openAiRealtimeOn ? 0.45 : 1,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconMic size={20} color={isListening ? C.red : C.terra} />
+            </button>
+            <button
+              type="button"
+              onClick={onToggleRealtime}
+              disabled={openAiRealtimeBusy || realtimeVoiceOk === false}
+              title="Conversation vocale avec Alfred"
+              aria-label="Conversation vocale avec Alfred"
+              className={openAiRealtimeOn ? 'majordome-realtime-live' : undefined}
+              style={{
+                width: 44,
+                height: 44,
+                flexShrink: 0,
+                border: 'none',
+                borderRadius: 12,
+                background: openAiRealtimeOn ? C.redL : C.surface2,
+                opacity: realtimeVoiceOk === false ? 0.45 : 1,
+                cursor: realtimeVoiceOk === false ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconSpeaker size={20} color={openAiRealtimeOn ? C.red : C.text2} />
+            </button>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 10, color: C.text3, flexWrap: 'wrap' }}>
           {!openAiRealtimeOn ? (

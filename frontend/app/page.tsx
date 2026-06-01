@@ -1975,7 +1975,7 @@ export default function HomePage() {
     if (!token) return;
     try {
       await postJson('/api/v1/tasks', { title: `Moi - ${label}`, task_type: 'manual_task' }, token);
-      setInfo('Moment ajoute a tes taches.');
+      setInfo('Moment ajouté à tes tâches.');
       pushToast('success', 'Moment ajouté en tâche');
       await loadData(token);
     } catch (e) {
@@ -2880,7 +2880,7 @@ export default function HomePage() {
             />
           ) : (
             <main id="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
-              <div
+              <header
                 style={{
                   flexShrink: 0,
                   padding: '10px 12px',
@@ -2892,7 +2892,7 @@ export default function HomePage() {
                 }}
               >
                 <MajordomeWordmark maxHeight={26} />
-              </div>
+              </header>
               <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
                 {renderAppLayer()}
               </div>

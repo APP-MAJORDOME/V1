@@ -182,6 +182,13 @@ export function MoiTabPanel({
         />
       </GlassCard>
       <CollapsibleSection title="Mon cycle" C={C}>
+        <p style={{ fontSize: 10, color: C.text2, margin: '0 0 8px', lineHeight: 1.45 }}>
+          Donnée de santé : tu peux ajuster ou laisser vide. Stockée pour ton foyer ; tu peux demander la suppression dans{' '}
+          <a href="/settings#confidentialite" style={{ color: C.terra, fontWeight: 700 }}>
+            Confidentialité
+          </a>
+          .
+        </p>
         <div style={{ fontSize: 11, color: C.text2, marginBottom: 6 }}>Jour J{cycleDay} de ton cycle</div>
         <input
           type="range"

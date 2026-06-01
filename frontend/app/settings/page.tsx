@@ -366,7 +366,7 @@ export default function SettingsPage() {
                 <Card title="Apple Calendar">
                   {appleIntegration && !appleIntegration.configured ? (
                     <p style={{ fontSize: 11, color: C.red, margin: '0 0 8px', lineHeight: 1.45, fontWeight: 800 }}>
-                      Synchro Apple indisponible : le serveur n’est pas encore configuré pour CalDAV.
+                      Synchronisation Apple indisponible pour l’instant sur ton compte.
                     </p>
                   ) : (
                     <p style={{ fontSize: 10, color: C.text3, margin: '0 0 8px', lineHeight: 1.45 }}>
@@ -408,7 +408,7 @@ export default function SettingsPage() {
                     <span style={{ fontSize: 11, color: homeAccount ? C.green : C.text3, alignSelf: 'center' }}>{homeAccount ? 'Connecte' : 'Non connecte'}</span>
                   </div>
                   <p style={{ fontSize: 10, color: C.text3, margin: '10px 0 0' }}>
-                    Alexa : pas d&apos;API native ici — relie Alexa à Home Assistant (skill ou routine HTTP / webhook vers ton serveur HA), puis MajorDome pilote HA comme ci-dessus.
+                    Pour Alexa : relie-la à Home Assistant, puis MajorDome pourra piloter tes scènes maison via cette connexion.
                   </p>
                 </Card>
 
@@ -417,8 +417,8 @@ export default function SettingsPage() {
                     Statut : <strong style={{ color: C.text }}>{llmIntegration?.status ?? 'inconnu'}</strong>
                     {' — '}
                     {llmIntegration?.connected
-                      ? 'Provider et clé API configurés côté backend (pas dans le navigateur).'
-                      : 'À configurer sur le serveur : MAJORDOME_LLM_PROVIDER=openai et MAJORDOME_LLM_API_KEY (ou mock pour les tests).'}
+                      ? 'Alfred est relié au serveur (ta clé n’est pas stockée dans le navigateur).'
+                      : 'Alfred vocal avancé : à activer par l’administrateur de ton espace MajorDome.'}
                   </p>
                 </Card>
               </>
@@ -504,12 +504,47 @@ export default function SettingsPage() {
             ) : null}
 
             {activeTab === 'securite' ? (
-              <Card title="Sécurité session">
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Btn light onClick={refreshSessionNow} disabled={refreshingSession}>{refreshingSession ? '...' : 'Renouveler'}</Btn>
-                  <Btn light onClick={logoutEverywhere} disabled={loggingOut}>{loggingOut ? '...' : 'Déconnexion'}</Btn>
-                </div>
-              </Card>
+              <>
+                <Card title="Sécurité session">
+                  <p style={{ fontSize: 11, color: C.text2, margin: '0 0 10px', lineHeight: 1.5 }}>
+                    Les jetons de connexion sont encore enregistrés dans le navigateur sur cette version — une évolution
+                    vers des cookies sécurisés est prévue. Déconnecte-toi sur un appareil partagé.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Btn light onClick={refreshSessionNow} disabled={refreshingSession}>
+                      {refreshingSession ? '...' : 'Renouveler'}
+                    </Btn>
+                    <Btn light onClick={logoutEverywhere} disabled={loggingOut}>
+                      {loggingOut ? '...' : 'Déconnexion'}
+                    </Btn>
+                  </div>
+                </Card>
+                <section id="confidentialite" style={{ scrollMarginTop: 80 }}>
+                  <Card title="Confidentialité & données">
+                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text2, lineHeight: 1.55 }}>
+                      <li>
+                        <strong>Hébergement</strong> : données de ton foyer sur le serveur MajorDome que tu utilises
+                        (Union européenne lorsque le déploiement le prévoit).
+                      </li>
+                      <li>
+                        <strong>Coffre & santé</strong> : passeports, mutuelle, cycle — données sensibles ; accès limité
+                        aux membres du foyer connectés.
+                      </li>
+                      <li>
+                        <strong>Appareil</strong> : listes, humeur et mémoire Alfred peuvent rester en cache local ;
+                        vider le cache peut les effacer avant synchronisation complète.
+                      </li>
+                      <li>
+                        <strong>Tes droits</strong> : export, rectification et suppression — contacte l’administrateur de
+                        ton espace ou utilise la déconnexion puis suppression de compte (à venir en self-service).
+                      </li>
+                    </ul>
+                    <p style={{ fontSize: 11, color: C.text3, margin: '12px 0 0', lineHeight: 1.45 }}>
+                      Version prototype : politique complète et DPO à publier avant mise en production grand public.
+                    </p>
+                  </Card>
+                </section>
+              </>
             ) : null}
 
             {loading ? <p style={{ color: C.text2, fontSize: 11 }}>Chargement...</p> : null}

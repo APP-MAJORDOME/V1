@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { LocalDataNotice } from './PrivacyLinks';
 import type { ComponentType } from 'react';
 import {
   IconCart,
@@ -48,7 +49,7 @@ export const PLUS_HUB_ITEMS: {
   { id: 'recettes', label: 'Recettes', hint: 'Boîte famille · liste', Icon: IconKitchen },
   { id: 'routines', label: 'Routines', hint: 'Quotidien · semaine', Icon: IconBoltSoft },
   { id: 'famille', label: 'Famille & équité', hint: 'Foyer · partenaire', Icon: IconPeopleOutline },
-  { id: 'messages', label: 'Famille temps réel', hint: 'Messagerie · lieux (À venir)', Icon: IconMessageBubble },
+  { id: 'messages', label: 'Famille temps réel', hint: 'Messagerie · lieux partagés', Icon: IconMessageBubble },
   { id: 'wallet', label: 'Wallet', hint: 'Fidélité · coupons', Icon: IconWallet },
   { id: 'documents', label: 'Coffre', hint: 'Documents foyer', Icon: IconFolderVault },
   { id: 'courrier', label: 'Courrier IA', hint: 'École · santé · admin', Icon: IconMail },
@@ -59,6 +60,9 @@ export const PLUS_HUB_ITEMS: {
   { id: 'integrations', label: 'Intégrations', hint: 'Doctolib, ENT, connexions', Icon: IconLink },
 ];
 
+/** Modules affichés dans la section « Bientôt disponible » (non interactifs). */
+export const COMING_SOON_HUB_IDS: HubKey[] = ['messages', 'integrations'];
+
 const HUB_CATEGORIES: { title: string; ids: HubKey[] }[] = [
   {
     title: 'Quotidien',
@@ -66,11 +70,11 @@ const HUB_CATEGORIES: { title: string; ids: HubKey[] }[] = [
   },
   {
     title: 'Foyer',
-    ids: ['famille', 'messages', 'documents', 'courrier', 'albums', 'anniversaires'],
+    ids: ['famille', 'documents', 'courrier', 'albums', 'anniversaires'],
   },
   {
     title: 'Outils',
-    ids: ['wallet', 'notifs', 'integrations'],
+    ids: ['wallet', 'notifs'],
   },
 ];
 
@@ -151,6 +155,52 @@ export function PlusHub({
           </div>
         </section>
       ))}
+      <section style={{ marginBottom: 18 }} aria-labelledby="plus-hub-coming-soon">
+        <h2
+          id="plus-hub-coming-soon"
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: C.text2,
+            letterSpacing: 0.8,
+            textTransform: 'uppercase',
+            margin: '0 0 8px',
+          }}
+        >
+          Bientôt disponible
+        </h2>
+        <p style={{ fontSize: 10, color: C.text3, margin: '0 0 10px', lineHeight: 1.45 }}>
+          Ces modules arrivent prochainement — pas encore utilisables.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {COMING_SOON_HUB_IDS.map((id) => {
+            const i = byId[id];
+            if (!i) return null;
+            return (
+              <div
+                key={i.id}
+                style={{
+                  textAlign: 'left',
+                  padding: 14,
+                  borderRadius: 18,
+                  border: `1.5px dashed ${C.border}`,
+                  background: C.surface2,
+                  minHeight: 100,
+                  opacity: 0.85,
+                }}
+                aria-disabled="true"
+              >
+                <div style={{ marginBottom: 8 }}>
+                  <i.Icon size={22} color={C.text3} strokeWidth={1.65} />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.text2 }}>{i.label}</div>
+                <div style={{ fontSize: 10, color: C.text3, marginTop: 4, lineHeight: 1.35 }}>{i.hint}</div>
+                <div style={{ fontSize: 9, fontWeight: 800, color: C.terra, marginTop: 8, letterSpacing: 0.3 }}>À VENIR</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
       <section style={{ marginBottom: 12 }}>
         <div
           style={{
@@ -200,6 +250,7 @@ export function PlusHub({
                 ? '1 note mémorisée par Alfred sur cet appareil.'
                 : `${alfredNoteCount} notes mémorisées par Alfred sur cet appareil.`}
           </div>
+          <LocalDataNotice C={C} compact />
         </div>
       ) : null}
     </div>

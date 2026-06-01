@@ -212,7 +212,7 @@ export function HomeTabPanel({
       <IconCalendar size={20} color={C.terra} strokeWidth={1.65} />
     </div>
     <div style={{ fontSize: 24, fontWeight: 800, color: C.terra }}>{nextEventsCount}</div>
-    <div style={{ fontSize: 11 }}>Evenements aujourd hui</div>
+    <div style={{ fontSize: 11 }}>Événements aujourd&apos;hui</div>
   </GlassCard>
   <GlassCard C={C} style={{ padding: 12 }}>
     <div style={{ width: 36, height: 36, borderRadius: 12, background: C.greenL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
@@ -238,7 +238,7 @@ export function HomeTabPanel({
 ) : null}
 {isSectionVisible('hub_shortcuts_row') && hubShortcuts.length > 0 ? (
   <div style={{ marginBottom: 14 }}>
-    <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.3, marginBottom: 8 }}>MES MODULES</div>
+    <h2 style={{ fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.3, margin: '0 0 8px' }}>TES MODULES</h2>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       {hubShortcuts.map((hid) => {
         const meta = PLUS_HUB_ITEMS.find((x) => x.id === hid);
@@ -394,7 +394,7 @@ export function HomeTabPanel({
       }}
     />
     <div style={{ fontSize: 10, color: C.text3, lineHeight: 1.35 }}>
-      Sans contact : la liste part au journal serveur (logs). Avec Twilio / SMTP configurés côté API : SMS ou e-mail réel + relances automatiques.
+      Sans contact : la liste est enregistrée dans ton journal. Avec un numéro ou un e-mail renseigné : rappels par SMS ou message quand le service est activé sur ton compte.
     </div>
   </div>
   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -553,7 +553,7 @@ export function HomeTabPanel({
 {isSectionVisible('tasks_feed') ? (
 <GlassCard C={C} style={{ padding: 14, marginBottom: 18 }}>
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-    <strong style={{ fontSize: 14 }}>Tes taches</strong>
+    <h2 style={{ fontSize: 14, margin: 0 }}>Tes tâches</h2>
     {taskSummary != null ? (
       <span style={{ fontSize: 10, color: C.text3 }}>
         Ouvertes foyer : {taskSummary.open_count}
@@ -608,7 +608,7 @@ export function HomeTabPanel({
     Et toi, dans tout ça ?
   </div>
   <p style={{ fontSize: 12, color: C.text2, margin: '0 0 10px', lineHeight: 1.5 }}>
-    Tu n as rien planifie pour toi cette semaine. Tu merites aussi une pause - je peux t aider a trouver un creneau.
+    Tu n&apos;as rien planifié pour toi cette semaine. Tu mérites aussi une pause — je peux t&apos;aider à trouver un créneau.
   </p>
   <button
     onClick={() => {
@@ -631,10 +631,10 @@ export function HomeTabPanel({
 ) : null}
 {isSectionVisible('priorities') ? (
 <GlassCard C={C} style={{ padding: 14, marginBottom: 18 }}>
-  <strong style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+  <h2 style={{ fontSize: 14, margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
     <IconTarget size={17} color={C.text} strokeWidth={1.65} />
-    Priorites du jour
-  </strong>
+    Priorités du jour
+  </h2>
   <div style={{ marginTop: 8 }}>
     {openTasks.slice(0, 4).map((t) => (
       <div key={t.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}`, fontSize: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -667,7 +667,7 @@ export function HomeTabPanel({
         <TaskDoneButton C={C} taskId={t.id} token={token} busyDone={taskCompleteBusyId === t.id} onDone={onCompleteTask} />
       </div>
     ))}
-    {openTasks.length === 0 ? <div style={{ fontSize: 12, color: C.text2 }}>Aucune priorite en attente.</div> : null}
+    {openTasks.length === 0 ? <div style={{ fontSize: 12, color: C.text2 }}>Aucune priorité en attente.</div> : null}
   </div>
 </GlassCard>
 ) : null}
@@ -688,10 +688,10 @@ export function HomeTabPanel({
 ) : null}
 {isSectionVisible('opportunities') ? (
 <GlassCard C={C} style={{ padding: 14, marginBottom: 18 }}>
-  <strong style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+  <h2 style={{ fontSize: 14, margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
     <IconGift size={17} color={C.text} strokeWidth={1.65} />
-    Opportunites utiles
-  </strong>
+    Opportunités utiles
+  </h2>
   <div style={{ marginTop: 8 }}>
     {opps.slice(0, 3).map((o) => (
       <div key={o.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
@@ -725,16 +725,19 @@ export function HomeTabPanel({
 </GlassCard>
 ) : null}
 {isSectionVisible('relief_checklist') ? (
-<GlassCard C={C} style={{ padding: 14, marginBottom: 18 }}>
-  <strong style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+<GlassCard C={C} style={{ padding: 14, marginBottom: 18, background: C.surface2 }}>
+  <h2 style={{ fontSize: 14, margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
     <IconBrainOutline size={17} color={C.text} strokeWidth={1.65} />
-    Ce qui manque pour soulager 100%
-  </strong>
-  <ul style={{ margin: '8px 0 0', paddingLeft: 16, fontSize: 12, color: C.text2 }}>
-    <li>Connecter Pronote/Skolengo (À venir)</li>
-    <li>Activer Doctolib prise de RDV 1 tap (À venir)</li>
-    <li>Automatiser notifications partenaire WhatsApp natif (À venir)</li>
-    <li>Bridge vocal Alexa / Google Home / Siri (À venir)</li>
+    Bientôt disponible
+  </h2>
+  <p style={{ fontSize: 11, color: C.text2, margin: '8px 0 10px', lineHeight: 1.45 }}>
+    Ces connexions arrivent prochainement — elles ne sont pas encore actives dans l&apos;app.
+  </p>
+  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text2, lineHeight: 1.5 }}>
+    <li>École : Pronote / Skolengo</li>
+    <li>Santé : prise de rendez-vous Doctolib en un tap</li>
+    <li>Partenaire : rappels type WhatsApp</li>
+    <li>Maison : commandes vocales Alexa, Google Home, Siri</li>
   </ul>
 </GlassCard>
 ) : null}

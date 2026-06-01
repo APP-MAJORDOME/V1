@@ -13,6 +13,7 @@ import {
   InlineDocGlyph,
 } from './md-icons';
 import { DOC_COFFRE_CATEGORIES, formatDocStorageShort } from '../lib/documentsUi';
+import { LocalDataNotice, PrivacyPolicyLink } from './PrivacyLinks';
 
 export type DocVaultItem = {
   id: number;
@@ -118,6 +119,11 @@ export function CoffreModal({
             </p>
           ) : null}
           {!token ? <p style={{ fontSize: 10, color: C.terra, margin: '6px 0 0' }}>Connecte-toi pour synchroniser le coffre sur le serveur.</p> : null}
+          <p style={{ fontSize: 10, color: C.text2, margin: '8px 0 0', lineHeight: 1.45 }}>
+            Passeports, mutuelle et pièces sensibles : stockage serveur isolé par foyer, chiffrement en transit (HTTPS).
+            Chiffrement au repos renforcé — déploiement progressif. <PrivacyPolicyLink C={C} style={{ fontSize: 10 }} />
+          </p>
+          <LocalDataNotice C={C} compact />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch', flexShrink: 0 }}>
           <button
@@ -563,7 +569,7 @@ export function CoffreModal({
           </button>
         </div>
         <p style={{ fontSize: 9, color: C.text3, margin: '8px 0 0', lineHeight: 1.35 }}>
-          Image ou PDF : la fiche est créée puis le fichier est enregistré sur le serveur (stockage isolé par foyer, volume Docker majordome_uploads). La taille max est définie côté API (MAJORDOME_ATTACHMENT_MAX_MB).
+          Image ou PDF : la fiche est créée puis le fichier est enregistré sur le serveur, dans un espace isolé pour ton foyer. La taille maximale dépend des réglages de ton espace.
         </p>
       </div>
     </div>

@@ -77,7 +77,7 @@ export function DocumentsTabPanel({
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 12, color: C.text2, lineHeight: 1.5 }}>
             Stockage des références foyer (contrats, santé, identité). Ce n&apos;est pas Google Drive : tout reste dans
-            MajorDome ; connexion CalDAV / Drive pourrait être ajoutée côté API plus tard.
+            MajorDome ; synchronisation cloud (Drive, iCloud) pourra être proposée plus tard.
           </p>
         </div>
       </div>
