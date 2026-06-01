@@ -78,6 +78,56 @@ export function computeDemoEquityShares(
   ];
 }
 
+export type TaskForEquity = { status?: string; assigned_member_id?: number | null };
+
+/** Répartition basée sur les tâches assignées (ouvertes ×2, terminées ×1). */
+export function computeHouseholdEquityShares(
+  tasks: TaskForEquity[],
+  memberIds: { primary: number | null; partner: number | null; child: number | null },
+  names: { prenom: string; partenaire: string; enfant: string },
+  colors: { terra: string; alex: string; mint: string },
+): EquityShare[] {
+  const slots = [
+    { id: memberIds.primary, name: names.prenom, color: colors.terra },
+    { id: memberIds.partner, name: names.partenaire, color: colors.alex },
+    { id: memberIds.child, name: names.enfant, color: colors.mint },
+  ].filter((s): s is { id: number; name: string; color: string } => s.id != null);
+
+  if (slots.length === 0) {
+    return computeDemoEquityShares(0, 0, names, colors);
+  }
+
+  const weights = new Map<number, number>();
+  for (const t of tasks) {
+    const w = t.status === 'done' ? 1 : 2;
+    const mid = t.assigned_member_id ?? memberIds.primary;
+    if (mid == null) continue;
+    weights.set(mid, (weights.get(mid) ?? 0) + w);
+  }
+
+  const total = [...weights.values()].reduce((a, b) => a + b, 0);
+  if (total === 0) {
+    const even = Math.floor(100 / slots.length);
+    const shares = slots.map((s, i) => ({
+      name: s.name,
+      pct: i === slots.length - 1 ? 100 - even * (slots.length - 1) : even,
+      color: s.color,
+    }));
+    return shares;
+  }
+
+  const raw = slots.map((s) => ({
+    name: s.name,
+    pct: Math.round(((weights.get(s.id) ?? 0) / total) * 100),
+    color: s.color,
+  }));
+  const sum = raw.reduce((a, s) => a + s.pct, 0);
+  if (sum !== 100 && raw[0]) {
+    raw[0] = { ...raw[0], pct: raw[0].pct + (100 - sum) };
+  }
+  return raw;
+}
+
 export type FridgeRow = { expires_at: string };
 
 /** Aliments périmés ou dont la DLC tombe dans les `hoursAhead` prochaines heures. */

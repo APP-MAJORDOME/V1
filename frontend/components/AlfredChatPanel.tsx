@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { IconMic, IconSpeaker } from './md-icons';
-import { getAlfredSuggestions, type AlfredAction } from '../lib/alfredSuggestions';
+import { getAlfredSuggestions, type AlfredAction, type AlfredSuggestionContext } from '../lib/alfredSuggestions';
 
 export type AlfredPendingConfirm = {
   command: string;
@@ -47,11 +47,13 @@ export function AlfredChatPanel({
   onSuggestion,
   onAction,
   onConfirmPending,
+  suggestionContext,
 }: {
   C: Record<string, string>;
   aiName: string;
   firstName: string;
   partenaire: string;
+  suggestionContext?: AlfredSuggestionContext;
   assistantHistory: AlfredMessage[];
   assistantTyping: boolean;
   assistantInput: string;
@@ -76,7 +78,10 @@ export function AlfredChatPanel({
   onAction: (actionId: string) => void;
   onConfirmPending: (command: string, intent: string, proposal?: Record<string, unknown>) => void;
 }) {
-  const suggestions = useMemo(() => getAlfredSuggestions(firstName, partenaire), [firstName, partenaire]);
+  const suggestions = useMemo(
+    () => getAlfredSuggestions(firstName, partenaire, suggestionContext),
+    [firstName, partenaire, suggestionContext],
+  );
   const localInputRef = useRef<HTMLInputElement | null>(null);
   const mergedInputRef = inputRef ?? localInputRef;
 

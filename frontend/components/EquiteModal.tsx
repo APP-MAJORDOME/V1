@@ -117,8 +117,10 @@ export function EquiteModal({
       >
         <div style={{ padding: '16px 18px 12px', borderBottom: `1px solid ${C.border}` }}>
           <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: '0 auto 10px' }} />
-          <h3 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 4px' }}>Score équité</h3>
-          <p style={{ fontSize: 11, color: C.text2, margin: '0 0 10px' }}>Rapport hebdomadaire (aperçu)</p>
+          <h2 style={{ fontSize: 17, fontWeight: 800, margin: '0 0 4px' }}>Score équité</h2>
+          <p style={{ fontSize: 11, color: C.text2, margin: '0 0 6px', lineHeight: 1.45 }}>
+            Aperçu : historique démo + tâches assignées dans l&apos;app. La charge invisible (courses de tête, admin non saisi) n&apos;est pas mesurée.
+          </p>
           <div style={{ display: 'flex', gap: 6 }}>
             {(
               [

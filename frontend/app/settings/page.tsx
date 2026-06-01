@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { deleteJson, getJson, postJson } from '../../lib/api';
+import { deleteJson, getJson, postJson, tryRefreshAccessToken } from '../../lib/api';
+import { clearStoredAuthTokens, getStoredAccessToken, persistAccessToken } from '../../lib/authTokens';
 import { newToastId } from '../../lib/clientId';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LAYOUT_USER_EMAIL_KEY } from '../../lib/homeLayout';
@@ -109,14 +110,16 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    const stored = localStorage.getItem('majordome_access_token');
-    const storedRefresh = localStorage.getItem('majordome_refresh_token');
-    if (!stored) return;
-    setToken(stored);
-    if (storedRefresh) setRefreshToken(storedRefresh);
-    const em = localStorage.getItem(LAYOUT_USER_EMAIL_KEY);
-    if (em) setAccountEmail(em);
-    loadData(stored);
+    void (async () => {
+      let access = getStoredAccessToken();
+      if (!access) access = await tryRefreshAccessToken();
+      if (!access) return;
+      setToken(access);
+      setRefreshToken('cookie');
+      const em = localStorage.getItem(LAYOUT_USER_EMAIL_KEY);
+      if (em) setAccountEmail(em);
+      loadData(access);
+    })();
     const storedAiName = localStorage.getItem('majordome_ai_name');
     if (!storedAiName) {
       localStorage.setItem('majordome_ai_name', 'Alfred');
@@ -218,12 +221,13 @@ export default function SettingsPage() {
   }
 
   async function refreshSessionNow() {
-    if (!refreshToken) return setError('Aucun refresh token local.');
     setRefreshingSession(true);
     try {
-      const res = await postJson<RefreshTokenResponse>('/api/v1/auth/refresh', { refresh_token: refreshToken });
-      localStorage.setItem('majordome_access_token', res.access_token);
-      setToken(res.access_token);
+      const access = await tryRefreshAccessToken();
+      if (!access) return setError('Impossible de renouveler la session.');
+      setToken(access);
+      setRefreshToken('cookie');
+      const res = { access_token: access };
       setInfo('Session renouvelee.');
       pushToast('success', 'Session renouvelée');
       await loadData(res.access_token);
@@ -240,14 +244,11 @@ export default function SettingsPage() {
     if (!token) return;
     setLoggingOut(true);
     try {
-      await postJson('/api/v1/auth/logout', {
-        refresh_token: localStorage.getItem('majordome_refresh_token') ?? undefined,
-      }, token);
+      await postJson('/api/v1/auth/logout', {}, token);
     } catch {
       // ignore
     } finally {
-      localStorage.removeItem('majordome_access_token');
-      localStorage.removeItem('majordome_refresh_token');
+      clearStoredAuthTokens();
       setToken('');
       setRefreshToken('');
       setAccounts([]);
@@ -433,7 +434,7 @@ export default function SettingsPage() {
                       E-mail de connexion:{' '}
                       <strong style={{ color: C.text }}>{accountEmail ? maskEmail(accountEmail) : '—'}</strong>
                     </li>
-                    <li>Refresh token: {refreshToken ? 'present' : 'absent'}</li>
+                    <li>Renouvellement session : {refreshToken ? 'cookie sécurisé' : 'non connecté'}</li>
                     <li>Google: {googleAccount ? 'connecte' : 'non connecte'}</li>
                     <li>Apple: {appleAccount ? 'connecte' : 'non connecte'}</li>
                   </ul>
@@ -507,8 +508,8 @@ export default function SettingsPage() {
               <>
                 <Card title="Sécurité session">
                   <p style={{ fontSize: 11, color: C.text2, margin: '0 0 10px', lineHeight: 1.5 }}>
-                    Les jetons de connexion sont encore enregistrés dans le navigateur sur cette version — une évolution
-                    vers des cookies sécurisés est prévue. Déconnecte-toi sur un appareil partagé.
+                    Le renouvellement de session passe par un cookie HttpOnly ; l&apos;accès actif reste en mémoire
+                    d&apos;onglet (sessionStorage). Déconnecte-toi sur un appareil partagé.
                   </p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Btn light onClick={refreshSessionNow} disabled={refreshingSession}>

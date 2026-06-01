@@ -326,7 +326,7 @@ export function HomeTabPanel({
             {taskSummary.open_count} ouv. · {taskSummary.done_count} fait · {tasksCount} chargée(s)
           </>
         ) : (
-          <>{tasksCount} taches</>
+          <>{tasksCount} tâches</>
         )}
       </span>
       <button
@@ -371,10 +371,13 @@ export function HomeTabPanel({
       </Pill>
     ))}
   </div>
-  <div style={{ fontSize: 11, color: C.text2, marginBottom: 8 }}>
+  <div style={{ fontSize: 11, color: C.text2, marginBottom: 8, lineHeight: 1.45 }}>
     {equity[0].pct > 50
       ? `Alerte déséquilibre : ${family.prenom} porte encore trop la charge.`
       : 'Répartition en progression.'}
+    <span style={{ display: 'block', fontSize: 10, color: C.text3, marginTop: 4 }}>
+      Calcul : tâches assignées dans l&apos;app (ouvertes comptent double). Ne inclut pas la charge invisible (pense-bête, charge mentale).
+    </span>
   </div>
   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
     <input

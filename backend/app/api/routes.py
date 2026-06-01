@@ -6,10 +6,11 @@ from urllib.parse import urlencode
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 import redis
 from sqlalchemy.orm import Session
+from app.core.auth_cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dt import utc_now_naive
@@ -459,7 +460,12 @@ def _issue_login_tokens(db: Session, *, user: User, household_id: int | None = N
 
 
 @router.post("/auth/register", response_model=LoginResponse)
-def register(request: Request, payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    request: Request,
+    payload: RegisterRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     rid = getattr(request.state, "request_id", None)
     email = _normalize_auth_email(payload.email)
     fp = email_fingerprint(email)
@@ -470,20 +476,26 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
     db.add(user)
     db.commit()
     db.refresh(user)
-    response = _issue_login_tokens(db, user=user)
+    login_response = _issue_login_tokens(db, user=user)
+    set_auth_cookies(response, access_token=login_response.access_token, refresh_token=login_response.refresh_token)
     log_event(
         "auth_register",
         request_id=rid,
         outcome="success",
         email_fp=fp,
         user_id=user.id,
-        household_id=response.household_id,
+        household_id=login_response.household_id,
     )
-    return response
+    return login_response
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    payload: LoginRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     rid = getattr(request.state, "request_id", None)
     email = _normalize_auth_email(payload.email)
     fp = email_fingerprint(email)
@@ -506,7 +518,7 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
         raise api_error("invalid_credentials", "Invalid email or password.", 401)
 
     try:
-        response = _issue_login_tokens(db, user=user, household_id=payload.household_id)
+        login_response = _issue_login_tokens(db, user=user, household_id=payload.household_id)
     except HTTPException as exc:
         if exc.detail and isinstance(exc.detail, dict) and exc.detail.get("code") == "household_forbidden":
             log_event(
@@ -526,17 +538,22 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
         outcome="success",
         email_fp=fp,
         user_id=user.id,
-        household_id=response.household_id,
+        household_id=login_response.household_id,
         is_new_user=False,
     )
-    return response
+    set_auth_cookies(response, access_token=login_response.access_token, refresh_token=login_response.refresh_token)
+    return login_response
 
 
 @router.post("/auth/refresh", response_model=RefreshTokenResponse)
-def auth_refresh(request: Request, payload: RefreshTokenRequest):
+def auth_refresh(request: Request, response: Response, payload: RefreshTokenRequest | None = None):
     rid = getattr(request.state, "request_id", None)
+    refresh_raw = (payload.refresh_token if payload else None) or request.cookies.get(REFRESH_COOKIE)
+    if not refresh_raw:
+        log_event("auth_refresh", request_id=rid, outcome="failure", reason="missing_refresh_token")
+        raise api_error("invalid_refresh_token", "Refresh token is invalid.", 401)
     try:
-        token_payload = decode_token(payload.refresh_token)
+        token_payload = decode_token(refresh_raw)
         token_type = str(token_payload.get("type"))
         if token_type != "refresh":
             raise ValueError("invalid_token_type")
@@ -548,9 +565,10 @@ def auth_refresh(request: Request, payload: RefreshTokenRequest):
     except Exception:
         log_event("auth_refresh", request_id=rid, outcome="failure", reason="invalid_refresh_token")
         raise api_error("invalid_refresh_token", "Refresh token is invalid.", 401)
-    revoke_token(payload.refresh_token)
+    revoke_token(refresh_raw)
     new_access_token = create_access_token(user_id=user_id, household_id=household_id)
     new_refresh_token = create_refresh_token(user_id=user_id, household_id=household_id)
+    set_auth_cookies(response, access_token=new_access_token, refresh_token=new_refresh_token)
     log_event(
         "auth_refresh",
         request_id=rid,
@@ -564,13 +582,16 @@ def auth_refresh(request: Request, payload: RefreshTokenRequest):
 @router.post("/auth/logout", response_model=LogoutResponse)
 def logout(
     request: Request,
+    response: Response,
     payload: LogoutRequest | None = None,
     auth: AuthContext = Depends(get_current_auth_context),
 ):
     rid = getattr(request.state, "request_id", None)
     revoke_token(auth.token)
-    if payload and payload.refresh_token:
-        revoke_token(payload.refresh_token)
+    refresh_raw = (payload.refresh_token if payload else None) or request.cookies.get(REFRESH_COOKIE)
+    if refresh_raw:
+        revoke_token(refresh_raw)
+    clear_auth_cookies(response)
     log_event(
         "auth_logout",
         request_id=rid,

@@ -1,3 +1,5 @@
+import { clearStoredAuthTokens, consumeLegacyRefreshToken, persistAccessToken } from './authTokens';
+
 const browserDefaultBase =
   typeof window !== 'undefined'
     ? window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -30,10 +32,7 @@ function notifyAuthLogout() {
 
 function logoutIfUnauthorized(code: string | undefined) {
   if (code === 'invalid_bearer_token' || code === 'missing_bearer_token') {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('majordome_access_token');
-      localStorage.removeItem('majordome_refresh_token');
-    }
+    clearStoredAuthTokens();
     notifyAuthLogout();
   }
 }
@@ -50,22 +49,21 @@ function detailFromResponseBody(text: string): { code?: string; message: string 
   }
 }
 
-async function tryRefreshAccessToken(): Promise<string | null> {
+export async function tryRefreshAccessToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
-  const refresh = localStorage.getItem('majordome_refresh_token');
-  if (!refresh?.trim()) return null;
+  const legacyRefresh = consumeLegacyRefreshToken();
   try {
     const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refresh }),
+      credentials: 'include',
+      body: JSON.stringify(legacyRefresh ? { refresh_token: legacyRefresh } : {}),
       cache: 'no-store',
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { access_token?: string; refresh_token?: string };
+    const data = (await res.json()) as { access_token?: string };
     if (!data.access_token) return null;
-    localStorage.setItem('majordome_access_token', data.access_token);
-    if (data.refresh_token) localStorage.setItem('majordome_refresh_token', data.refresh_token);
+    persistAccessToken(data.access_token);
     notifyAuthToken(data.access_token);
     return data.access_token;
   } catch {
@@ -82,6 +80,7 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     cache: 'no-store',
+    credentials: 'include',
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -137,6 +136,7 @@ async function authedFetch(path: string, init: RequestInit, token: string, retri
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     cache: 'no-store',
+    credentials: 'include',
     headers: { ...init.headers, Authorization: `Bearer ${token}` },
   });
   if (!res.ok && !retried) {

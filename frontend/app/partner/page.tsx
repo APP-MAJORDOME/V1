@@ -126,7 +126,7 @@ export default function PartnerPage() {
   }, []);
 
   useEffect(() => {
-    const t = localStorage.getItem('majordome_access_token') || '';
+    const t = (typeof window !== 'undefined' ? sessionStorage.getItem('majordome_access_token') : null) || '';
     setToken(t);
     let name = 'Partenaire';
     try {

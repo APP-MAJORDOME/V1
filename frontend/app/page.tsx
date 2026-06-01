@@ -13,7 +13,9 @@ import {
   postJson,
   putJson,
   saveBlobAsFile,
+  tryRefreshAccessToken,
 } from '../lib/api';
+import { clearStoredAuthTokens, getStoredAccessToken, persistAccessToken } from '../lib/authTokens';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
 import {
   TOAST_DURATION_MS,
@@ -32,7 +34,7 @@ import {
 import { computeMentalWeather } from '../lib/mentalLoad';
 import {
   computeBudgetUsedPct,
-  computeDemoEquityShares,
+  computeHouseholdEquityShares,
   computeTaskCompletionPct,
   resolveHouseholdMemberId,
   selectDoneTasks,
@@ -900,11 +902,16 @@ export default function HomePage() {
     setClientTodayLabel(d.toLocaleDateString('fr-FR'));
     setClientHour(d.getHours());
 
-    const stored = localStorage.getItem('majordome_access_token');
-    if (stored) setToken(stored);
+    void (async () => {
+      let access = getStoredAccessToken();
+      if (!access) {
+        access = await tryRefreshAccessToken();
+      }
+      if (access) setToken(access);
+    })();
     const layoutEmail = localStorage.getItem(LAYOUT_USER_EMAIL_KEY);
     if (layoutEmail) setLayoutUserEmail(layoutEmail);
-    if (stored && layoutEmail) setHomeLayout(loadHomeLayoutForUser(layoutEmail));
+    if (layoutEmail) setHomeLayout(loadHomeLayoutForUser(layoutEmail));
     const storedAiName = localStorage.getItem('majordome_ai_name');
     const cleanName = storedAiName?.trim() || 'Alfred';
     if (!storedAiName) localStorage.setItem('majordome_ai_name', cleanName);
@@ -1656,8 +1663,7 @@ export default function HomePage() {
   }
 
   function applyAuthSession(res: LoginResponse) {
-    localStorage.setItem('majordome_access_token', res.access_token);
-    localStorage.setItem('majordome_refresh_token', res.refresh_token);
+    persistAccessToken(res.access_token);
     const emLogin = email.trim().toLowerCase();
     if (emLogin) {
       localStorage.setItem(LAYOUT_USER_EMAIL_KEY, emLogin);
@@ -1689,8 +1695,7 @@ export default function HomePage() {
 
   const clearSession = useCallback(() => {
     alfred.disconnectRealtime();
-    localStorage.removeItem('majordome_access_token');
-    localStorage.removeItem('majordome_refresh_token');
+    clearStoredAuthTokens();
     localStorage.removeItem(LAYOUT_USER_EMAIL_KEY);
     setLayoutUserEmail('');
     setPostLoginSetupResolved(false);
@@ -1733,9 +1738,8 @@ export default function HomePage() {
   }, [clearSession]);
 
   function logout() {
-    const refresh = localStorage.getItem('majordome_refresh_token');
     if (token) {
-      void postJson('/api/v1/auth/logout', { refresh_token: refresh ?? undefined }, token).catch(() => undefined);
+      void postJson('/api/v1/auth/logout', {}, token).catch(() => undefined);
     }
     clearSession();
     pushToast('info', 'Déconnexion effectuée');
@@ -1844,7 +1848,7 @@ export default function HomePage() {
     setOnboardingDone(true);
     setPostLoginSetupDone(true);
     pushToast('success', 'Parcours terminé — bienvenue dans MajorDome');
-    const t = localStorage.getItem('majordome_access_token');
+    const t = getStoredAccessToken();
     if (t) void loadData(t);
   }
 
@@ -1868,7 +1872,7 @@ export default function HomePage() {
     setOnboardingDone(true);
     setPostLoginSetupDone(true);
     pushToast('info', 'Tu pourras tout retrouver dans l’app et dans « Personnaliser l’accueil ».');
-    const t = localStorage.getItem('majordome_access_token');
+    const t = getStoredAccessToken();
     if (t) void loadData(t);
   }
 
@@ -2118,12 +2122,17 @@ export default function HomePage() {
   }, [homeMood, clientHour]);
   const equity = useMemo(
     () =>
-      computeDemoEquityShares(openTasks.length, doneTasks.length, familyProfile, {
-        terra: C.terra,
-        alex: C.alex,
-        mint: C.mint,
-      }),
-    [openTasks.length, doneTasks.length, familyProfile]
+      computeHouseholdEquityShares(
+        [...openTasks, ...doneTasks],
+        {
+          primary: primaryMemberId,
+          partner: partnerMemberId,
+          child: childMemberId,
+        },
+        familyProfile,
+        { terra: C.terra, alex: C.alex, mint: C.mint },
+      ),
+    [openTasks, doneTasks, primaryMemberId, partnerMemberId, childMemberId, familyProfile],
   );
 
   const equityWeeks = useMemo(
@@ -2760,6 +2769,12 @@ export default function HomePage() {
           aiName={aiName}
           firstName={familyProfile.prenom}
           partenaire={familyProfile.partenaire}
+          suggestionContext={{
+            openTasksCount: openTasks.length,
+            eventsTodayCount: nextEvents.length,
+            fridgeAlertsCount: fridgeAlerts.length,
+            mentalHeavy: mentalWeather.level === 'heavy',
+          }}
           assistantHistory={alfred.assistantHistory}
           assistantTyping={alfred.assistantTyping}
           assistantInput={alfred.assistantInput}

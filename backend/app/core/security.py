@@ -2,8 +2,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.core.auth_cookies import ACCESS_COOKIE
 import bcrypt
 import jwt
 from jwt.exceptions import PyJWTError
@@ -110,15 +112,21 @@ def decode_token(token: str) -> dict[str, Any]:
 
 
 def get_current_auth_context(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> AuthContext:
-    if credentials is None:
+    raw_token: str | None = None
+    if credentials is not None:
+        raw_token = credentials.credentials
+    elif request.cookies.get(ACCESS_COOKIE):
+        raw_token = request.cookies.get(ACCESS_COOKIE)
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "missing_bearer_token", "message": "Bearer token is required."},
         )
     try:
-        payload = decode_token(credentials.credentials)
+        payload = decode_token(raw_token)
         user_id = int(payload.get("sub"))
         household_id = int(payload.get("household_id"))
         jti = str(payload.get("jti"))
@@ -135,7 +143,7 @@ def get_current_auth_context(
     return AuthContext(
         user_id=user_id,
         household_id=household_id,
-        token=credentials.credentials,
+        token=raw_token,
         jti=jti,
         token_type=token_type,
     )
