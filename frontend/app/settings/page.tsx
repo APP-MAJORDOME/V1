@@ -16,6 +16,7 @@ import {
   type OAuthStartResponse,
   readOAuthCallbackNotice,
   stripUrlSearchKeys,
+  integrationErrorMessage,
 } from '../../lib/calendarIntegrations';
 
 type ConnectedAccount = { id: number; provider: string; status: string; last_sync_at?: string | null };
@@ -165,7 +166,7 @@ export default function SettingsPage() {
       const res = await postJson<OAuthStartResponse>('/api/v1/integrations/google/oauth/start', {}, token);
       window.location.href = res.authorization_url;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Connexion Google impossible';
+      const msg = integrationErrorMessage(e, 'Connexion Google impossible');
       setError(msg);
       pushToast('error', msg);
     }
@@ -177,7 +178,7 @@ export default function SettingsPage() {
       const res = await postJson<OAuthStartResponse>('/api/v1/integrations/microsoft/oauth/start', {}, token);
       window.location.href = res.authorization_url;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Connexion Microsoft impossible';
+      const msg = integrationErrorMessage(e, 'Connexion Microsoft impossible');
       setError(msg);
       pushToast('error', msg);
     }

@@ -105,3 +105,20 @@ export function stripUrlSearchKeys(keys: string[]): void {
   const qs = params.toString();
   window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
 }
+
+const INTEGRATION_ERROR_MESSAGES: Record<string, string> = {
+  google_oauth_not_configured:
+    'Google Calendar n’est pas encore activé sur le serveur (clés OAuth manquantes).',
+  microsoft_oauth_not_configured:
+    'Outlook n’est pas encore activé sur le serveur. Ajoute les clés Azure dans config/.env.ec2 (voir docs/MICROSOFT_OAUTH_SETUP.md).',
+};
+
+/** Message utilisateur à partir d’une erreur API (code FastAPI). */
+export function integrationErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = String((error as { code?: string }).code || '');
+    if (code && INTEGRATION_ERROR_MESSAGES[code]) return INTEGRATION_ERROR_MESSAGES[code];
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}

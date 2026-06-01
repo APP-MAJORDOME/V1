@@ -23,16 +23,12 @@ import {
 } from '../lib/authTokens';
 import {
   type CalendarProvider,
-  type OAuthStartResponse,
   isCalendarConnected,
   type IntegrationStatus,
   preferredEventProvider,
-  integrationConfigured,
-  readOAuthCallbackNotice,
-  stripUrlSearchKeys,
-  syncCalendarAccount,
-  syncAllConnectedCalendars,
 } from '../lib/calendarIntegrations';
+import { useCalendarConnections } from '../hooks/useCalendarConnections';
+import { IntegrationsOverlayPanel } from '../components/IntegrationsOverlayPanel';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
 import {
   TOAST_DURATION_MS,
@@ -418,7 +414,6 @@ export default function HomePage() {
   const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([]);
-  const [calendarSyncBusy, setCalendarSyncBusy] = useState<string | null>(null);
   /** null = pas encore chargé depuis /integrations/capabilities */
   const [appleCaldavAvailable, setAppleCaldavAvailable] = useState<boolean | null>(null);
   const [creatingEvent, setCreatingEvent] = useState(false);
@@ -451,6 +446,7 @@ export default function HomePage() {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [journalLoading, setJournalLoading] = useState(false);
   const loadDataGenRef = useRef(0);
+  const loadDataRef = useRef<(accessToken: string) => Promise<void>>(async () => {});
   const [cycleDay, setCycleDay] = useState(18);
   const [fridge, setFridge] = useState<FridgeItem[]>([]);
   const [walletCards, setWalletCards] = useState<WalletCard[]>([]);
@@ -557,6 +553,14 @@ export default function HomePage() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, TOAST_DURATION_MS);
   }
+
+  const calendarConnections = useCalendarConnections({
+    token,
+    accounts,
+    onReload: (accessToken) => loadDataRef.current(accessToken),
+    onToast: pushToast,
+    onOAuthSuccess: () => setOverlay('integrations'),
+  });
 
   async function reloadCoursesFromServer(accessToken: string) {
     const rows = await fetchGroceryItems(accessToken);
@@ -1645,6 +1649,7 @@ export default function HomePage() {
       setLoading(false);
     }
   }
+  loadDataRef.current = loadData;
 
   useEffect(() => {
     if (token) loadData(token);
@@ -1685,90 +1690,10 @@ export default function HomePage() {
     if (!modalCoffre) setDocEdit(null);
   }, [modalCoffre]);
 
-  async function connectGoogleCalendar() {
-    if (!token) {
-      pushToast('info', 'Connecte-toi d’abord pour lier Google Calendar.');
-      return;
-    }
-    try {
-      const res = await postJson<OAuthStartResponse>('/api/v1/integrations/google/oauth/start', {}, token);
-      window.location.href = res.authorization_url;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Connexion Google impossible';
-      pushToast('error', msg);
-    }
-  }
-
   async function syncAllAgendaCalendars() {
-    if (!token) return;
-    const connected = accounts.filter(
-      (a) =>
-        a.status === 'connected' &&
-        (a.provider === 'google_calendar' ||
-          a.provider === 'microsoft_calendar' ||
-          a.provider === 'apple_calendar'),
-    );
-    if (connected.length === 0) {
-      pushToast('info', 'Connecte un calendrier dans Intégrations.');
-      setOverlay('integrations');
-      return;
-    }
-    setCalendarSyncBusy('all');
-    try {
-      const statuses = await syncAllConnectedCalendars(token, accounts);
-      pushToast('success', `Agenda mis à jour (${statuses.join(', ')})`);
-      await loadData(token);
-    } catch (e) {
-      pushToast('error', e instanceof Error ? e.message : 'Synchronisation impossible');
-    } finally {
-      setCalendarSyncBusy(null);
-    }
+    const ok = await calendarConnections.syncAll();
+    if (!ok && token) setOverlay('integrations');
   }
-
-  async function syncCalendarProvider(provider: 'google_calendar' | 'microsoft_calendar') {
-    if (!token) return;
-    const account = accounts.find((a) => a.provider === provider && a.status === 'connected');
-    if (!account) {
-      pushToast('info', 'Connecte d’abord ce calendrier.');
-      return;
-    }
-    setCalendarSyncBusy(provider);
-    try {
-      const status = await syncCalendarAccount(token, account.id);
-      pushToast('success', `Synchronisation : ${status}`);
-      await loadData(token);
-    } catch (e) {
-      pushToast('error', e instanceof Error ? e.message : 'Synchronisation impossible');
-    } finally {
-      setCalendarSyncBusy(null);
-    }
-  }
-
-  async function connectMicrosoftCalendar() {
-    if (!token) {
-      pushToast('info', 'Connecte-toi d’abord pour lier Outlook.');
-      return;
-    }
-    try {
-      const res = await postJson<OAuthStartResponse>('/api/v1/integrations/microsoft/oauth/start', {}, token);
-      window.location.href = res.authorization_url;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Connexion Microsoft impossible';
-      pushToast('error', msg);
-    }
-  }
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const { notice, keysToStrip } = readOAuthCallbackNotice(window.location.search);
-    if (!notice) return;
-    pushToast(notice.kind, notice.message);
-    stripUrlSearchKeys(keysToStrip);
-    if (notice.kind === 'success') {
-      setOverlay('integrations');
-      if (token) void loadData(token);
-    }
-  }, [token]);
 
   function applyAuthSession(res: LoginResponse) {
     persistAccessToken(res.access_token);
@@ -2593,7 +2518,7 @@ export default function HomePage() {
           journalEntries={journalEntries}
           journalLoading={journalLoading}
           onOpenMoiJournal={() => goMainTab('moi')}
-          calendarSyncBusy={calendarSyncBusy === 'all'}
+          calendarSyncBusy={calendarConnections.isSyncingAll}
           onSyncAllCalendars={() => void syncAllAgendaCalendars()}
           onOpenIntegrations={() => setOverlay('integrations')}
         />
@@ -2785,126 +2710,23 @@ export default function HomePage() {
     }
 
     if (layer === 'integrations') {
-      const googleConnected = isCalendarConnected(accounts, 'google_calendar');
-      const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
-      const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
-      const googleConfigured = integrationConfigured(integrationStatuses, 'google_calendar');
-      const btnRow = { display: 'flex' as const, flexWrap: 'wrap' as const, gap: 8 };
       return wrapOv(
         'Intégrations tierces',
-        <div>
-          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.lilacL }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Outlook / Microsoft 365</div>
-            <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
-              {microsoftConnected
-                ? 'Connecté — agenda pro synchronisé avec MajorDome.'
-                : msConfigured
-                  ? 'Connecte ton calendrier Outlook ou Microsoft 365.'
-                  : 'Connexion Outlook : à activer sur le serveur (clés Azure).'}
-            </p>
-            <div style={btnRow}>
-              <button
-                type="button"
-                disabled={!msConfigured}
-                onClick={() => void connectMicrosoftCalendar()}
-                style={{
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '8px 12px',
-                  background: C.lilac,
-                  color: '#fff',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  opacity: msConfigured ? 1 : 0.5,
-                }}
-              >
-                {microsoftConnected ? 'Reconnecter Outlook' : 'Connecter Outlook'}
-              </button>
-              {microsoftConnected ? (
-                <button
-                  type="button"
-                  onClick={() => void syncCalendarProvider('microsoft_calendar')}
-                  disabled={calendarSyncBusy === 'microsoft_calendar'}
-                  style={{
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 10,
-                    padding: '8px 12px',
-                    background: C.white,
-                    color: C.text,
-                    fontWeight: 700,
-                    fontSize: 12,
-                  }}
-                >
-                  {calendarSyncBusy === 'microsoft_calendar' ? 'Sync…' : 'Synchroniser'}
-                </button>
-              ) : null}
-            </div>
-          </GlassCard>
-          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Google Calendar</div>
-            <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
-              {googleConnected
-                ? 'Connecté — tes événements se synchronisent.'
-                : googleConfigured
-                  ? 'Connecte ton agenda pour remplir automatiquement ton planning.'
-                  : 'Connexion Google : à configurer sur le serveur.'}
-            </p>
-            <div style={btnRow}>
-              <button
-                type="button"
-                disabled={!googleConfigured}
-                onClick={() => void connectGoogleCalendar()}
-                style={{
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '8px 12px',
-                  background: C.terra,
-                  color: '#fff',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  opacity: googleConfigured ? 1 : 0.5,
-                }}
-              >
-                {googleConnected ? 'Reconnecter Google' : 'Connecter Google Calendar'}
-              </button>
-              {googleConnected ? (
-                <button
-                  type="button"
-                  onClick={() => void syncCalendarProvider('google_calendar')}
-                  disabled={calendarSyncBusy === 'google_calendar'}
-                  style={{
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 10,
-                    padding: '8px 12px',
-                    background: C.white,
-                    color: C.text,
-                    fontWeight: 700,
-                    fontSize: 12,
-                  }}
-                >
-                  {calendarSyncBusy === 'google_calendar' ? 'Sync…' : 'Synchroniser'}
-                </button>
-              ) : null}
-            </div>
-          </GlassCard>
-          <p style={{ margin: '0 0 10px', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
-            Raccourcis web et messages Alfred pour les autres services.
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <button type="button" onClick={() => window.open('https://www.doctolib.fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Doctolib (web)</button>
-            <button type="button" onClick={() => window.open('https://www.pronote.com/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Pronote / ENT (web)</button>
-            <button type="button" onClick={() => window.open('https://www.picnic.app/fr/', '_blank')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Picnic / Instacart</button>
-            <button
-              type="button"
-              onClick={() => alfred.setAssistantInput(`Prépare un message WhatsApp pour ${familyProfile.partenaire} pour répartir les tâches de ce soir`)}
-              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}
-            >
-              Msg WhatsApp (Alfred)
-            </button>
-            <button type="button" onClick={() => alfred.setAssistantInput('Crée une routine vocale Alexa et Google Home pour rappel tâches')} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.white, fontSize: 11 }}>Alexa/Home/Siri</button>
-            <button type="button" onClick={() => { window.location.href = '/settings'; }} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: C.terraXL, color: C.terra, fontSize: 11, fontWeight: 700 }}>Configurer connexions</button>
-          </div>
-        </div>,
+        <IntegrationsOverlayPanel
+          C={C}
+          accounts={accounts}
+          integrationStatuses={integrationStatuses}
+          calendarSyncBusy={calendarConnections.syncBusy}
+          onConnectGoogle={() => void calendarConnections.connectGoogle()}
+          onConnectMicrosoft={() => void calendarConnections.connectMicrosoft()}
+          onSyncGoogle={() => void calendarConnections.syncProvider('google_calendar')}
+          onSyncMicrosoft={() => void calendarConnections.syncProvider('microsoft_calendar')}
+          onOpenSettings={() => {
+            window.location.href = '/settings';
+          }}
+          onAlfredPrompt={(text) => alfred.setAssistantInput(text)}
+          partenaireName={familyProfile.partenaire}
+        />,
       );
     }
 
@@ -2914,18 +2736,7 @@ export default function HomePage() {
           C={C}
           userFirstName={familyProfile.prenom || undefined}
           alfredNoteCount={alfredMemory.length}
-          onOpen={(id) => {
-            if (id === 'wallet') {
-              setCoursesTab('wallet');
-              setOverlay('courses');
-              return;
-            }
-            if (id === 'integrations') {
-              setOverlay('integrations');
-              return;
-            }
-            setOverlay(id as OverlayId);
-          }}
+          onOpen={openHubModule}
         />
       );
     }
