@@ -1,0 +1,167 @@
+'use client';
+
+import type { ReactNode } from 'react';
+import type { AppLayerId } from '../lib/appNavigation';
+import { OverlayChrome } from './OverlayChrome';
+import { CoursesPanel, type CourseItem } from './CoursesPanel';
+import { MaisonTabPanel } from './MaisonTabPanel';
+import { DocumentsTabPanel } from './DocumentsTabPanel';
+import { FamilleTabPanel } from './FamilleTabPanel';
+import type { DocStorageSummary } from '../lib/documentsUi';
+import type { EquityShare } from '../lib/selectors';
+import type { Coupon, WalletCard } from '../lib/wallet';
+
+const MODULE_OVERLAY_LAYERS = ['courses', 'maison', 'documents', 'famille'] as const;
+
+export type AppModuleOverlayLayer = (typeof MODULE_OVERLAY_LAYERS)[number];
+
+export function isModuleOverlayLayer(layer: AppLayerId): layer is AppModuleOverlayLayer {
+  return (MODULE_OVERLAY_LAYERS as readonly string[]).includes(layer);
+}
+
+type FridgeUiItem = { id: number; label: string; expires_at: string; qty: number };
+
+type DocVaultPreview = {
+  id: number;
+  icon: string;
+  name: string;
+  cat: string;
+  attachmentSizeBytes?: number | null;
+};
+
+export type AppModuleOverlaysProps = {
+  layer: AppLayerId;
+  C: Record<string, string>;
+  onBack: () => void;
+  token: string | null;
+  aiName: string;
+  userFirstName: string;
+  partenaireName: string;
+  enfantName: string;
+  coursesTab: 'liste' | 'frigo' | 'wallet';
+  onCoursesTabChange: (tab: 'liste' | 'frigo' | 'wallet') => void;
+  courses: CourseItem[];
+  newCourse: string;
+  onNewCourseChange: (value: string) => void;
+  doneCourses: number;
+  fridgeSorted: FridgeUiItem[];
+  fridgeAlertsCount: number;
+  fridgeExpiredCount: number;
+  activeCoupons: Coupon[];
+  expiredCoupons: Coupon[];
+  walletCards: WalletCard[];
+  onAddCourse: () => void;
+  onToggleCourse: (id: number, nextDone: boolean) => void;
+  onRemoveCourse: (id: number) => void;
+  onDelegateCourse: (id: number) => void;
+  onClearDoneCourses: () => void;
+  onRemoveFridgeItem: (id: number) => void;
+  pushToast: (kind: 'success' | 'error' | 'info', message: string) => void;
+  morningDone: boolean[];
+  onToggleMorning: (index: number) => void;
+  eveningDone: boolean[];
+  onToggleEvening: (index: number) => void;
+  onOpenDomotiqueAssistant: () => void;
+  docVault: DocVaultPreview[];
+  docStorageSummary: DocStorageSummary | null;
+  onOpenVaultModal: () => void;
+  onOpenDoc: (docId: number) => void;
+  onDownloadAttachment: (docId: number) => void | Promise<void>;
+  equity: EquityShare[];
+  partnerContactDraft: string;
+  onPartnerContactChange: (value: string) => void;
+  partnerNotifyLoading: boolean;
+  onOpenEquiteModal: () => void;
+  onNotifyPartner: () => void;
+  onGoMoi: () => void;
+};
+
+export function AppModuleOverlays(props: AppModuleOverlaysProps): ReactNode {
+  if (!isModuleOverlayLayer(props.layer)) return null;
+
+  const wrapOv = (title: string, body: ReactNode) => (
+    <OverlayChrome
+      title={title}
+      onBack={props.onBack}
+      white={props.C.white}
+      border={props.C.border}
+      text={props.C.text}
+    >
+      {body}
+    </OverlayChrome>
+  );
+
+  switch (props.layer) {
+    case 'courses':
+      return wrapOv(
+        'Courses & Frigo',
+        <CoursesPanel
+          C={props.C}
+          coursesTab={props.coursesTab}
+          setCoursesTab={props.onCoursesTabChange}
+          courses={props.courses}
+          newCourse={props.newCourse}
+          setNewCourse={props.onNewCourseChange}
+          doneCourses={props.doneCourses}
+          fridgeSorted={props.fridgeSorted}
+          fridgeAlertsCount={props.fridgeAlertsCount}
+          fridgeExpiredCount={props.fridgeExpiredCount}
+          activeCoupons={props.activeCoupons}
+          expiredCoupons={props.expiredCoupons}
+          walletCards={props.walletCards}
+          partnerName={props.partenaireName}
+          onAddCourse={props.onAddCourse}
+          onToggleCourse={props.onToggleCourse}
+          onRemoveCourse={props.onRemoveCourse}
+          onDelegateCourse={props.onDelegateCourse}
+          onClearDoneCourses={props.onClearDoneCourses}
+          onRemoveFridgeItem={props.onRemoveFridgeItem}
+          pushToast={props.pushToast}
+        />,
+      );
+    case 'maison':
+      return wrapOv(
+        'Maison',
+        <MaisonTabPanel
+          C={props.C}
+          aiName={props.aiName}
+          enfantName={props.enfantName}
+          morningDone={props.morningDone}
+          onToggleMorning={props.onToggleMorning}
+          eveningDone={props.eveningDone}
+          onToggleEvening={props.onToggleEvening}
+          onOpenAssistant={props.onOpenDomotiqueAssistant}
+        />,
+      );
+    case 'documents':
+      return wrapOv(
+        'Coffre famille',
+        <DocumentsTabPanel
+          C={props.C}
+          token={props.token}
+          docVault={props.docVault}
+          docStorageSummary={props.docStorageSummary}
+          onOpenVault={props.onOpenVaultModal}
+          onOpenDoc={props.onOpenDoc}
+          onDownloadAttachment={props.onDownloadAttachment}
+        />,
+      );
+    case 'famille':
+      return wrapOv(
+        'Famille & équité',
+        <FamilleTabPanel
+          C={props.C}
+          equity={props.equity}
+          partenaireName={props.partenaireName}
+          partnerContactDraft={props.partnerContactDraft}
+          onPartnerContactChange={props.onPartnerContactChange}
+          partnerNotifyLoading={props.partnerNotifyLoading}
+          onOpenEquiteModal={props.onOpenEquiteModal}
+          onNotifyPartner={props.onNotifyPartner}
+          onGoMoi={props.onGoMoi}
+        />,
+      );
+    default:
+      return null;
+  }
+}

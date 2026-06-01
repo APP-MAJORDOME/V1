@@ -84,17 +84,14 @@ import {
 } from '../components/md-icons';
 import { PlusHub } from '../components/PlusHub';
 import { OverlayChrome } from '../components/OverlayChrome';
-import { CoursesPanel } from '../components/CoursesPanel';
-import { AlfredChatPanel } from '../components/AlfredChatPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 import { BrandLoadingLogo, MajordomeWordmark } from '../components/BrandLogo';
 import { LoginAuthScreen } from '../components/LoginAuthScreen';
 import { MoiTabPanel } from '../components/MoiTabPanel';
+import { AppModuleOverlays, isModuleOverlayLayer } from '../components/AppModuleOverlays';
+import { AlfredAppLayer } from '../components/AlfredAppLayer';
 import { AgendaTabPanel } from '../components/AgendaTabPanel';
 import { HomeTabPanel } from '../components/HomeTabPanel';
-import { MaisonTabPanel } from '../components/MaisonTabPanel';
-import { DocumentsTabPanel } from '../components/DocumentsTabPanel';
-import { FamilleTabPanel } from '../components/FamilleTabPanel';
 import { AppShellModals } from '../components/AppShellModals';
 import { type DebordeeResult } from '../components/DebordeeModal';
 import { formatDocStorageShort, docCategoryForApi } from '../lib/documentsUi';
@@ -2509,16 +2506,22 @@ export default function HomePage() {
       );
     }
 
-    if (layer === 'courses') {
-      return wrapOv(
-        'Courses & Frigo',
-        <CoursesPanel
+    if (isModuleOverlayLayer(layer)) {
+      return (
+        <AppModuleOverlays
+          layer={layer}
           C={C}
+          onBack={closeOverlay}
+          token={token}
+          aiName={aiName}
+          userFirstName={familyProfile.prenom}
+          partenaireName={familyProfile.partenaire}
+          enfantName={familyProfile.enfant}
           coursesTab={coursesTab}
-          setCoursesTab={setCoursesTab}
+          onCoursesTabChange={setCoursesTab}
           courses={courses}
           newCourse={newCourse}
-          setNewCourse={setNewCourse}
+          onNewCourseChange={setNewCourse}
           doneCourses={doneCourses}
           fridgeSorted={fridgeSorted}
           fridgeAlertsCount={fridgeAlerts.length}
@@ -2526,7 +2529,6 @@ export default function HomePage() {
           activeCoupons={activeCoupons}
           expiredCoupons={expiredCoupons}
           walletCards={walletCards}
-          partnerName={familyProfile.partenaire}
           onAddCourse={() => {
             if (!newCourse.trim()) return;
             void addCourseItem(newCourse.trim());
@@ -2539,46 +2541,36 @@ export default function HomePage() {
           onClearDoneCourses={() => void clearDoneCourseItems()}
           onRemoveFridgeItem={(id) => void removeFridgeItem(id)}
           pushToast={pushToast}
-        />,
-      );
-    }
-
-    if (layer === 'maison') {
-      return wrapOv(
-        'Maison',
-        <MaisonTabPanel
-          C={C}
-          aiName={aiName}
-          enfantName={familyProfile.enfant}
           morningDone={morningDone}
           onToggleMorning={(idx) => setMorningDone((v) => v.map((x, i) => (i === idx ? !x : x)))}
           eveningDone={eveningDone}
           onToggleEvening={(idx) => setEveningDone((v) => v.map((x, i) => (i === idx ? !x : x)))}
-          onOpenAssistant={() => {
+          onOpenDomotiqueAssistant={() => {
             alfred.setAssistantInput(
               `Pour la domotique du foyer : propose un plan simple (priorités + sécurité) pour ${familyProfile.prenom}, sans installer de matériel.`,
             );
             setOverlay('assistant');
           }}
-        />,
-      );
-    }
-
-    if (layer === 'documents') {
-      return wrapOv(
-        'Coffre famille',
-        <DocumentsTabPanel
-          C={C}
-          token={token}
           docVault={docVault}
           docStorageSummary={docStorageSummary}
-          onOpenVault={() => setModalCoffre(true)}
+          onOpenVaultModal={() => setModalCoffre(true)}
           onOpenDoc={(docId) => {
             const doc = docVault.find((d) => d.id === docId);
             if (doc) openDocEdit(doc);
           }}
           onDownloadAttachment={downloadDocAttachment}
-        />,
+          equity={equity}
+          partnerContactDraft={partnerContactDraft}
+          onPartnerContactChange={setPartnerContactDraft}
+          partnerNotifyLoading={partnerNotifyLoading}
+          onOpenEquiteModal={() => {
+            setEquitePlanText('');
+            setEquiteTab('semaine');
+            setModalEquite(true);
+          }}
+          onNotifyPartner={() => void notifyPartnerReal()}
+          onGoMoi={() => goMainTab('moi')}
+        />
       );
     }
 
@@ -2616,27 +2608,6 @@ export default function HomePage() {
           onLogout={logout}
           onToast={pushToast}
         />
-      );
-    }
-
-    if (layer === 'famille') {
-      return wrapOv(
-        'Famille & équité',
-        <FamilleTabPanel
-          C={C}
-          equity={equity}
-          partenaireName={familyProfile.partenaire}
-          partnerContactDraft={partnerContactDraft}
-          onPartnerContactChange={setPartnerContactDraft}
-          partnerNotifyLoading={partnerNotifyLoading}
-          onOpenEquiteModal={() => {
-            setEquitePlanText('');
-            setEquiteTab('semaine');
-            setModalEquite(true);
-          }}
-          onNotifyPartner={() => void notifyPartnerReal()}
-          onGoMoi={() => goMainTab('moi')}
-        />,
       );
     }
 
@@ -2687,66 +2658,27 @@ export default function HomePage() {
 
     if (layer === 'assistant') {
       return (
-        <AlfredChatPanel
+        <AlfredAppLayer
           C={C}
           aiName={aiName}
           firstName={familyProfile.prenom}
           partenaire={familyProfile.partenaire}
-          suggestionContext={{
-            openTasksCount: openTasks.length,
-            eventsTodayCount: nextEvents.length,
-            fridgeAlertsCount: fridgeAlerts.length,
-            mentalHeavy: mentalWeather.level === 'heavy',
-          }}
-          assistantHistory={alfred.assistantHistory}
-          assistantTyping={alfred.assistantTyping}
-          assistantInput={alfred.assistantInput}
-          setAssistantInput={alfred.setAssistantInput}
-          inputRef={alfred.alfredInputRef}
-          chatScrollRef={alfred.chatScrollRef}
-          endRef={alfred.endRef}
-          realtimeAudioElRef={alfred.realtimeAudioElRef}
-          openAiRealtimeOn={alfred.openAiRealtimeOn}
-          realtimeVoiceOk={alfred.realtimeVoiceOk}
-          openAiRealtimeBusy={alfred.openAiRealtimeBusy}
+          openTasksCount={openTasks.length}
+          eventsTodayCount={nextEvents.length}
+          fridgeAlertsCount={fridgeAlerts.length}
+          mentalHeavy={mentalWeather.level === 'heavy'}
+          alfred={alfred}
           alfredMemoryCount={alfredMemory.length}
-          voiceSupported={alfred.voiceSupported}
-          isListening={alfred.isListening}
-          autoSpeak={alfred.autoSpeak}
-          setAutoSpeak={alfred.setAutoSpeak}
-          onClearMemory={() => void alfred.clearAlfredMemoryAll()}
-          onSend={() => void alfred.sendAssistant()}
-          onUploadFile={(file) => void alfred.sendAlfredFile(file)}
-          fileUploadBusy={alfred.fileUploadBusy}
-          onToggleVoice={alfred.toggleVoiceListening}
-          onToggleRealtime={() => void alfred.toggleOpenAiRealtimeVoice()}
-          onSuggestion={(text) => void alfred.sendAssistant(text)}
-          onConfirmPending={(cmd, intent, proposal) => void alfred.confirmAlfredAction(cmd, intent, proposal)}
           onOpenVault={() => setModalCoffre(true)}
           onOpenDocument={(docId) => {
             setModalCoffre(true);
             const doc = docVault.find((d) => d.id === docId);
             if (doc) openDocEdit(doc);
           }}
-          onAction={(actionId) => {
-            if (actionId === 'courses') {
-              setCoursesTab('liste');
-              setOverlay('courses');
-              return;
-            }
-            if (actionId === 'tasks') {
-              setOverlay(null);
-              setMainTab('home');
-              return;
-            }
-            if (actionId === 'agenda') {
-              setOverlay(null);
-              setMainTab('agenda');
-              return;
-            }
-            if (actionId === 'famille') {
-              setOverlay('famille');
-            }
+          onNavigate={({ overlay: nextOverlay, mainTab: nextTab, coursesTab: nextCoursesTab }) => {
+            if (nextCoursesTab) setCoursesTab(nextCoursesTab);
+            if (nextTab) setMainTab(nextTab);
+            setOverlay(nextOverlay);
           }}
         />
       );

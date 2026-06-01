@@ -797,7 +797,7 @@ export function useAlfredAssistant({
     ]);
   }, []);
 
-  return {
+  const api = {
     assistantInput,
     setAssistantInput,
     assistantTyping,
@@ -824,4 +824,7 @@ export function useAlfredAssistant({
     disconnectRealtime,
     hydrateHistoryFromStorage,
   };
+  return api;
 }
+
+export type AlfredAssistantController = ReturnType<typeof useAlfredAssistant>;
