@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { ALFRED_FILE_ACCEPT } from '../lib/alfredAgent';
+import { ALFRED_FILE_ACCEPT, type AlfredShoppingPlan } from '../lib/alfredAgent';
 import { IconMic, IconPaperclip, IconSpeaker } from './md-icons';
 import { getAlfredSuggestions, type AlfredAction, type AlfredSuggestionContext } from '../lib/alfredSuggestions';
 
@@ -42,6 +42,8 @@ export type AlfredMessage = {
   openVault?: boolean;
   /** Documents du coffre à ouvrir directement depuis le chat. */
   vaultDocuments?: AlfredVaultDocument[];
+  /** Plan courses / recette avec promos estimées. */
+  shoppingPlan?: AlfredShoppingPlan;
   attachment?: AlfredMessageAttachment;
 };
 
@@ -307,6 +309,72 @@ export function AlfredChatPanel({
                   >
                     Ouvrir le coffre documents →
                   </button>
+                </div>
+              ) : null}
+              {m.who === 'ai' && m.shoppingPlan ? (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: 10,
+                    borderRadius: 12,
+                    background: C.terraXL,
+                    border: `1px solid ${C.border}`,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 4 }}>
+                    {m.shoppingPlan.recipe_title}
+                    {m.shoppingPlan.servings ? ` · ${m.shoppingPlan.servings} pers.` : ''}
+                  </div>
+                  {m.shoppingPlan.mood_note ? (
+                    <div style={{ fontSize: 12, color: C.text2, marginBottom: 8 }}>{m.shoppingPlan.mood_note}</div>
+                  ) : null}
+                  {m.shoppingPlan.stores && m.shoppingPlan.stores.length > 0 ? (
+                    <div style={{ fontSize: 11, color: C.text2, marginBottom: 6 }}>
+                      Enseignes : {m.shoppingPlan.stores.join(', ')}
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                    {m.shoppingPlan.ingredients.map((ing) => (
+                      <div
+                        key={`${ing.label}-${ing.qty ?? ''}`}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          fontSize: 12,
+                          color: C.text,
+                        }}
+                      >
+                        <span>
+                          {ing.label}
+                          {ing.qty ? ` (${ing.qty})` : ''}
+                          {ing.on_promo ? ' · promo' : ''}
+                        </span>
+                        {typeof ing.price_eur === 'number' ? (
+                          <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {ing.price_eur.toFixed(2).replace('.', ',')} €
+                          </span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  {typeof m.shoppingPlan.total_eur === 'number' ? (
+                    <div style={{ fontSize: 13, fontWeight: 800, color: C.terra, marginBottom: 6 }}>
+                      Total estimé : {m.shoppingPlan.total_eur.toFixed(2).replace('.', ',')} €
+                    </div>
+                  ) : null}
+                  {m.shoppingPlan.promo_tips && m.shoppingPlan.promo_tips.length > 0 ? (
+                    <div style={{ fontSize: 11, color: C.text2, lineHeight: 1.4 }}>
+                      {m.shoppingPlan.promo_tips.slice(0, 3).map((tip) => (
+                        <div key={tip}>• {tip}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {m.shoppingPlan.disclaimer ? (
+                    <div style={{ fontSize: 10, color: C.text2, marginTop: 6, opacity: 0.85 }}>
+                      {m.shoppingPlan.disclaimer}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {m.who === 'ai' && m.webSources && m.webSources.length > 0 ? (

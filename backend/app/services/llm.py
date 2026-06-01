@@ -398,3 +398,104 @@ def debordee_with_anthropic(user_prompt: str, primary: str, partner: str, child:
     if content_items and isinstance(content_items, list):
         text = str(content_items[0].get("text") or "")
     return _extract_json_payload(text)
+
+
+def compose_shopping_plan(
+    command: str,
+    household_context: str,
+    stores: list[str],
+    web_sources: list[dict[str, str]],
+    memory_facts: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Compose une recette + liste de courses avec estimations de prix (JSON)."""
+    if settings.llm_provider.lower() not in {"openai", "chatgpt", "anthropic", "claude"}:
+        return None
+    if not settings.llm_api_key:
+        return None
+
+    store_block = ", ".join(stores) if stores else "Carrefour ou Marché U (au choix)"
+    source_lines: list[str] = []
+    for i, src in enumerate(web_sources[:6], start=1):
+        title = str(src.get("title") or "Sans titre").strip()
+        snippet = str(src.get("snippet") or "").strip()
+        source_lines.append(f"[{i}] {title}\n{snippet[:350]}")
+    web_block = "\n\n".join(source_lines) if source_lines else "(aucun extrait web fiable)"
+
+    system_prompt = (
+        "Tu es Alfred, majordome familial de MajorDome. L’utilisateur demande une recette, "
+        "un plan de courses ou des idées selon les promos des enseignes (Carrefour, Marché U, etc.). "
+        "Réponds UNIQUEMENT avec un objet JSON (sans markdown) avec les clés : "
+        '"recipe_title" (string), "servings" (int), "mood_note" (string courte — lien humeur/envie), '
+        '"ingredients" (array de {label, qty, price_eur number, on_promo bool, store_hint}), '
+        '"total_eur" (number, somme indicative), "promo_tips" (array de strings), '
+        '"message" (string, 4-10 phrases en français résumant la proposition). '
+        "Adapte au contexte foyer (budget, liste courses, frigo, humeur). "
+        "Prix en euros France métropolitaine, estimations réalistes 2025-2026. "
+        "Si les promos web sont incertaines, indique-le dans promo_tips et reste prudent. "
+        "Pas de mention de technologies internes."
+    )
+    if memory_facts:
+        cleaned = [str(m).strip() for m in memory_facts if str(m).strip()][:10]
+        if cleaned:
+            system_prompt += "\n\nMémoire foyer :\n" + "\n".join(f"- {c[:180]}" for c in cleaned)
+
+    user_prompt = (
+        f"Demande : {command.strip()}\n"
+        f"Enseignes ciblées : {store_block}\n\n"
+        f"Contexte MajorDome :\n{household_context[:10000]}\n\n"
+        f"Extraits web promos / recettes :\n{web_block}"
+    )
+
+    if settings.llm_provider.lower() in {"openai", "chatgpt"}:
+        body = {
+            "model": settings.llm_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.45,
+            "max_tokens": 1400,
+        }
+        headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+        try:
+            with httpx.Client(timeout=50) as client:
+                response = client.post(
+                    f"{settings.llm_base_url}/chat/completions", json=body, headers=headers
+                )
+                response.raise_for_status()
+                payload = response.json()
+        except Exception as exc:
+            logger.warning("Shopping plan OpenAI failed: %s", exc)
+            return None
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        content = (choices[0].get("message") or {}).get("content") or ""
+        return _extract_json_payload(str(content))
+
+    body = {
+        "model": settings.llm_model,
+        "max_tokens": 1400,
+        "temperature": 0.45,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_prompt}],
+    }
+    headers = {
+        "x-api-key": settings.llm_api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=50) as client:
+            response = client.post(f"{settings.llm_base_url}/messages", json=body, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        logger.warning("Shopping plan Anthropic failed: %s", exc)
+        return None
+    content_items = payload.get("content") or []
+    text = ""
+    if content_items and isinstance(content_items, list):
+        text = str(content_items[0].get("text") or "")
+    return _extract_json_payload(text)
+

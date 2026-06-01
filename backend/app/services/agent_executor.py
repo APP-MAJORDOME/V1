@@ -19,6 +19,7 @@ from app.models.models import (
 )
 from app.services.agent import interpret_command
 from app.services.alfred_household import build_household_answer, command_wants_household_answer
+from app.services.shopping_advisor import build_shopping_plan_response, command_wants_shopping_plan
 
 _CONSULTATION_INTENTS = frozenset({"household_answer", "web_search", "document_analyze"})
 _CONFIRM_INTENTS = frozenset({"email_draft", "call_prepare", "event_create"})
@@ -31,6 +32,13 @@ def interpret_for_act(
     user_id: int,
     memory_lines: list[str] | None,
 ) -> dict[str, Any]:
+    if command_wants_shopping_plan(command):
+        return build_shopping_plan_response(
+            command,
+            db,
+            household_id,
+            memory_lines=memory_lines,
+        )
     if command_wants_household_answer(command):
         return build_household_answer(command, db, household_id, user_id, memory_lines=memory_lines)
     return interpret_command(command, memory_lines=memory_lines)
@@ -63,6 +71,43 @@ def _execute_intent(
         db.commit()
         db.refresh(row)
         return {"executed": True, "message": "C’est noté, je m’en souviendrai.", "payload": {"fact_id": row.id}}
+
+    if intent == "shopping_plan":
+        plan = proposal.get("shopping_plan") if isinstance(proposal.get("shopping_plan"), dict) else {}
+        ingredients = plan.get("ingredients") if isinstance(plan.get("ingredients"), list) else []
+        if not ingredients:
+            return {"executed": False, "message": "Aucun ingrédient à ajouter."}
+        existing = (
+            db.query(GroceryItem)
+            .filter(GroceryItem.household_id == auth.household_id, GroceryItem.done.is_(False))
+            .all()
+        )
+        existing_labels = {g.label.strip().lower() for g in existing}
+        added: list[str] = []
+        for raw in ingredients:
+            if not isinstance(raw, dict):
+                continue
+            label = str(raw.get("label") or "").strip()
+            qty = str(raw.get("qty") or "").strip()
+            if not label:
+                continue
+            full = f"{label} ({qty})" if qty else label
+            if full.lower() in existing_labels:
+                continue
+            item = GroceryItem(household_id=auth.household_id, label=full[:120], done=False)
+            db.add(item)
+            added.append(full)
+            existing_labels.add(full.lower())
+        if not added:
+            return {"executed": True, "message": "Les ingrédients sont déjà sur ta liste de courses.", "payload": {}}
+        db.commit()
+        preview = ", ".join(added[:4])
+        suffix = f" (+{len(added) - 4})" if len(added) > 4 else ""
+        return {
+            "executed": True,
+            "message": f"{len(added)} ingrédient(s) ajouté(s) : {preview}{suffix}.",
+            "payload": {"added_count": len(added), "labels": added},
+        }
 
     is_grocery = intent == "grocery_add" or (
         "courses" in lowered and any(k in lowered for k in ("ajoute", "rajoute", "liste"))

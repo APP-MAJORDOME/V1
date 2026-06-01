@@ -8,6 +8,7 @@ import {
   confirmLabelForIntent,
   extractVaultDocuments,
   extractWebSources,
+  extractShoppingPlan,
   isAlfredConsultationIntent,
   runServerAgentAct,
   tryExtractAlfredMemory,
@@ -33,15 +34,17 @@ const ASSISTANT_HISTORY_KEY = 'majordome_assistant_history';
 
 function alfredReplyMeta(
   res: AgentInterpretResponse,
-): Pick<AlfredMessage, 'webSources' | 'openVault' | 'vaultDocuments'> {
+): Pick<AlfredMessage, 'webSources' | 'openVault' | 'vaultDocuments' | 'shoppingPlan'> {
   const webSources = extractWebSources(res.proposal);
   const vaultDocuments = extractVaultDocuments(res.proposal);
+  const shoppingPlan = extractShoppingPlan(res.proposal) ?? undefined;
   const openVault =
     res.intent === 'household_answer' && vaultDocuments.length === 0 ? true : undefined;
   return {
     webSources: webSources.length > 0 ? webSources : undefined,
     openVault,
     vaultDocuments: vaultDocuments.length > 0 ? vaultDocuments : undefined,
+    shoppingPlan,
   };
 }
 

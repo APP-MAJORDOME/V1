@@ -30,6 +30,25 @@ export async function runServerAgentAct(
 
 export type AlfredWebSource = { title: string; snippet?: string; url: string };
 
+export type AlfredShoppingIngredient = {
+  label: string;
+  qty?: string;
+  price_eur?: number;
+  on_promo?: boolean;
+  store_hint?: string;
+};
+
+export type AlfredShoppingPlan = {
+  recipe_title: string;
+  servings?: number;
+  stores?: string[];
+  mood_note?: string;
+  ingredients: AlfredShoppingIngredient[];
+  total_eur?: number;
+  promo_tips?: string[];
+  disclaimer?: string;
+};
+
 /** Document du coffre cité par Alfred (consultation foyer). */
 export type AlfredVaultDocument = {
   id: number;
@@ -119,6 +138,48 @@ export function extractWebSources(proposal?: Record<string, unknown>): AlfredWeb
   return out.slice(0, 6);
 }
 
+export function extractShoppingPlan(proposal?: Record<string, unknown>): AlfredShoppingPlan | null {
+  const raw = proposal?.shopping_plan;
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  const title = typeof row.recipe_title === 'string' ? row.recipe_title.trim() : '';
+  const ingredientsRaw = row.ingredients;
+  if (!title || !Array.isArray(ingredientsRaw)) return null;
+  const ingredients: AlfredShoppingIngredient[] = [];
+  for (const item of ingredientsRaw) {
+    if (!item || typeof item !== 'object') continue;
+    const ing = item as Record<string, unknown>;
+    const label = typeof ing.label === 'string' ? ing.label.trim() : '';
+    if (!label) continue;
+    ingredients.push({
+      label,
+      qty: typeof ing.qty === 'string' ? ing.qty.trim() : undefined,
+      price_eur: typeof ing.price_eur === 'number' ? ing.price_eur : undefined,
+      on_promo: ing.on_promo === true,
+      store_hint: typeof ing.store_hint === 'string' ? ing.store_hint.trim() : undefined,
+    });
+  }
+  if (ingredients.length === 0) return null;
+  const tipsRaw = row.promo_tips;
+  const promo_tips = Array.isArray(tipsRaw)
+    ? tipsRaw.map((t) => String(t).trim()).filter(Boolean).slice(0, 6)
+    : undefined;
+  const storesRaw = row.stores;
+  const stores = Array.isArray(storesRaw)
+    ? storesRaw.map((s) => String(s).trim()).filter(Boolean).slice(0, 4)
+    : undefined;
+  return {
+    recipe_title: title,
+    servings: typeof row.servings === 'number' ? row.servings : undefined,
+    stores,
+    mood_note: typeof row.mood_note === 'string' ? row.mood_note.trim() : undefined,
+    ingredients,
+    total_eur: typeof row.total_eur === 'number' ? row.total_eur : undefined,
+    promo_tips,
+    disclaimer: typeof row.disclaimer === 'string' ? row.disclaimer.trim() : undefined,
+  };
+}
+
 export type AlfredTask = { id: number; title: string };
 export type AlfredMember = { id: number; display_name: string };
 export type AlfredAccount = { provider: string; status: string };
@@ -158,6 +219,7 @@ export function confirmLabelForIntent(intent: string): string {
   if (intent === 'event_create') return "Ajouter à l'agenda";
   if (intent === 'email_draft') return 'Ouvrir le brouillon';
   if (intent === 'call_prepare') return 'Copier le script';
+  if (intent === 'shopping_plan') return 'Ajouter à la liste courses';
   return 'Confirmer';
 }
 
@@ -315,6 +377,29 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
       callbacks.onTaskUpdated(updated);
       callbacks.refreshTaskSummary();
       return { done: true, message: `Terminé. « ${task.title} » est marquée faite.` };
+    }
+  }
+
+  if (interpreted.intent === 'shopping_plan') {
+    const plan = extractShoppingPlan(proposal);
+    if (plan?.ingredients.length) {
+      let count = 0;
+      for (const ing of plan.ingredients) {
+        const label = ing.qty ? `${ing.label} (${ing.qty})` : ing.label;
+        try {
+          await postJson('/api/v1/grocery/items', { label }, token);
+          callbacks.onAddCourse(label);
+          count += 1;
+        } catch {
+          /* ignore duplicate / network */
+        }
+      }
+      if (count > 0) {
+        return {
+          done: true,
+          message: `${count} ingrédient(s) ajouté(s) à ta liste de courses pour « ${plan.recipe_title} ».`,
+        };
+      }
     }
   }
 

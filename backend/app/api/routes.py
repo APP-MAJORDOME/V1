@@ -149,6 +149,7 @@ from app.services.briefing import build_today_briefing
 from app.services.agent import analyze_debordee, interpret_command
 from app.services.agent_executor import execute_agent_act
 from app.services.alfred_household import build_household_answer, command_wants_household_answer
+from app.services.shopping_advisor import build_shopping_plan_response, command_wants_shopping_plan
 from app.services.alfred_attachments import ALFRED_ATTACHMENT_MIME, analyze_alfred_attachment, resolve_attachment_mime
 from app.services.realtime_voice import RealtimeVoiceError, build_alfred_realtime_instructions, exchange_realtime_webrtc_sdp
 from app.services.conflicts import detect_conflicts
@@ -2374,6 +2375,13 @@ def agent_interpret(
     db: Session = Depends(get_db),
 ):
     mem = household_memory_lines(db, auth.household_id)
+    if command_wants_shopping_plan(payload.command):
+        return build_shopping_plan_response(
+            payload.command,
+            db,
+            auth.household_id,
+            memory_lines=mem,
+        )
     if command_wants_household_answer(payload.command):
         return build_household_answer(
             payload.command,
