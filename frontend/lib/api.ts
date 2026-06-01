@@ -1,4 +1,10 @@
-import { clearStoredAuthTokens, consumeLegacyRefreshToken, persistAccessToken } from './authTokens';
+import {
+  COOKIE_AUTH_SESSION,
+  clearStoredAuthTokens,
+  consumeLegacyRefreshToken,
+  isCookieAuthSession,
+  persistAccessToken,
+} from './authTokens';
 
 const browserDefaultBase =
   typeof window !== 'undefined'
@@ -64,8 +70,8 @@ export async function tryRefreshAccessToken(): Promise<string | null> {
     const data = (await res.json()) as { access_token?: string };
     if (!data.access_token) return null;
     persistAccessToken(data.access_token);
-    notifyAuthToken(data.access_token);
-    return data.access_token;
+    notifyAuthToken(COOKIE_AUTH_SESSION);
+    return COOKIE_AUTH_SESSION;
   } catch {
     return null;
   }
@@ -74,7 +80,7 @@ export async function tryRefreshAccessToken(): Promise<string | null> {
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { token, method = 'GET', body, _retried = false } = options;
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  if (token) {
+  if (token && !isCookieAuthSession(token)) {
     headers.Authorization = `Bearer ${token}`;
   }
   const res = await fetch(`${API_BASE}${path}`, {
@@ -89,7 +95,6 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     const { code, message } = detailFromResponseBody(text);
     if (
       !_retried &&
-      token &&
       (code === 'invalid_bearer_token' || code === 'missing_bearer_token')
     ) {
       const newToken = await tryRefreshAccessToken();
@@ -140,11 +145,15 @@ export async function deleteJson<T>(path: string, token?: string): Promise<T> {
 }
 
 async function authedFetch(path: string, init: RequestInit, token: string, retried = false): Promise<Response> {
+  const hdrs: HeadersInit = { ...init.headers };
+  if (!isCookieAuthSession(token)) {
+    (hdrs as Record<string, string>).Authorization = `Bearer ${token}`;
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     cache: 'no-store',
     credentials: 'include',
-    headers: { ...init.headers, Authorization: `Bearer ${token}` },
+    headers: hdrs,
   });
   if (!res.ok && !retried) {
     const text = await res.text();
@@ -159,7 +168,7 @@ async function authedFetch(path: string, init: RequestInit, token: string, retri
 }
 
 export async function postFormData<T>(path: string, formData: FormData, token?: string): Promise<T> {
-  if (!token) throw new Error('Token requis');
+  if (!token) throw new Error('Session requise');
   const res = await authedFetch(path, { method: 'POST', body: formData }, token);
   if (!res.ok) {
     const text = await res.text();

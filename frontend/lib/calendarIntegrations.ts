@@ -11,7 +11,7 @@ export type IntegrationStatus = {
   status: string;
 };
 
-export type ConnectedAccountLike = { provider: string; status: string };
+export type ConnectedAccountLike = { id?: number; provider: string; status: string };
 
 export type OAuthStartResponse = { authorization_url: string; state?: string };
 
@@ -81,6 +81,21 @@ export function integrationConfigured(
 export async function syncCalendarAccount(token: string, accountId: number): Promise<string> {
   const res = await postJson<{ status: string }>(`/api/v1/accounts/${accountId}/sync`, {}, token);
   return res.status;
+}
+
+const SYNC_PROVIDERS: CalendarProvider[] = ['microsoft_calendar', 'google_calendar', 'apple_calendar'];
+
+export async function syncAllConnectedCalendars(
+  token: string,
+  accounts: ConnectedAccountLike[],
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const provider of SYNC_PROVIDERS) {
+    const acc = accounts.find((a) => a.provider === provider && a.status === 'connected' && a.id);
+    if (!acc?.id) continue;
+    out.push(await syncCalendarAccount(token, acc.id));
+  }
+  return out;
 }
 
 export function stripUrlSearchKeys(keys: string[]): void {

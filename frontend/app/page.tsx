@@ -15,7 +15,12 @@ import {
   saveBlobAsFile,
   tryRefreshAccessToken,
 } from '../lib/api';
-import { clearStoredAuthTokens, getStoredAccessToken, persistAccessToken } from '../lib/authTokens';
+import {
+  COOKIE_AUTH_SESSION,
+  clearStoredAuthTokens,
+  getStoredAccessToken,
+  persistAccessToken,
+} from '../lib/authTokens';
 import {
   type CalendarProvider,
   type OAuthStartResponse,
@@ -26,6 +31,7 @@ import {
   readOAuthCallbackNotice,
   stripUrlSearchKeys,
   syncCalendarAccount,
+  syncAllConnectedCalendars,
 } from '../lib/calendarIntegrations';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
 import {
@@ -1684,6 +1690,32 @@ export default function HomePage() {
     }
   }
 
+  async function syncAllAgendaCalendars() {
+    if (!token) return;
+    const connected = accounts.filter(
+      (a) =>
+        a.status === 'connected' &&
+        (a.provider === 'google_calendar' ||
+          a.provider === 'microsoft_calendar' ||
+          a.provider === 'apple_calendar'),
+    );
+    if (connected.length === 0) {
+      pushToast('info', 'Connecte un calendrier dans Intégrations.');
+      setOverlay('integrations');
+      return;
+    }
+    setCalendarSyncBusy('all');
+    try {
+      const statuses = await syncAllConnectedCalendars(token, accounts);
+      pushToast('success', `Agenda mis à jour (${statuses.join(', ')})`);
+      await loadData(token);
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Synchronisation impossible');
+    } finally {
+      setCalendarSyncBusy(null);
+    }
+  }
+
   async function syncCalendarProvider(provider: 'google_calendar' | 'microsoft_calendar') {
     if (!token) return;
     const account = accounts.find((a) => a.provider === provider && a.status === 'connected');
@@ -1737,7 +1769,7 @@ export default function HomePage() {
       setLayoutUserEmail(emLogin);
       setHomeLayout(loadHomeLayoutForUser(emLogin));
     }
-    setToken(res.access_token);
+    setToken(COOKIE_AUTH_SESSION);
   }
 
   async function submitAuth() {
@@ -2594,6 +2626,9 @@ export default function HomePage() {
           journalEntries={journalEntries}
           journalLoading={journalLoading}
           onOpenMoiJournal={() => goMainTab('moi')}
+          calendarSyncBusy={calendarSyncBusy === 'all'}
+          onSyncAllCalendars={() => void syncAllAgendaCalendars()}
+          onOpenIntegrations={() => setOverlay('integrations')}
         />
       );
     }

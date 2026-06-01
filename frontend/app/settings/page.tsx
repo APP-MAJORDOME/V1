@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { deleteJson, getJson, postJson, tryRefreshAccessToken } from '../../lib/api';
-import { clearStoredAuthTokens, getStoredAccessToken, persistAccessToken } from '../../lib/authTokens';
+import {
+  COOKIE_AUTH_SESSION,
+  clearStoredAuthTokens,
+  getStoredAccessToken,
+  persistAccessToken,
+} from '../../lib/authTokens';
 import { newToastId } from '../../lib/clientId';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LAYOUT_USER_EMAIL_KEY } from '../../lib/homeLayout';
@@ -119,7 +124,8 @@ export default function SettingsPage() {
       let access = getStoredAccessToken();
       if (!access) access = await tryRefreshAccessToken();
       if (!access) return;
-      setToken(access);
+      persistAccessToken(typeof access === 'string' && access !== COOKIE_AUTH_SESSION ? access : '');
+      setToken(COOKIE_AUTH_SESSION);
       setRefreshToken('cookie');
       const em = localStorage.getItem(LAYOUT_USER_EMAIL_KEY);
       if (em) setAccountEmail(em);

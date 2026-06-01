@@ -33,7 +33,7 @@ function Pill({ children, bg, color }: { children: React.ReactNode; bg: string; 
 }
 
 type AgendaEvent = { id: number; title: string; starts_at: string };
-type ConnectedAccount = { provider: string; status: string };
+type ConnectedAccount = { id: number; provider: string; status: string };
 
 export function AgendaTabPanel({
   C,
@@ -92,6 +92,9 @@ export function AgendaTabPanel({
   journalEntries,
   journalLoading,
   onOpenMoiJournal,
+  calendarSyncBusy,
+  onSyncAllCalendars,
+  onOpenIntegrations,
 }: {
   C: Record<string, string>;
   token: string;
@@ -149,12 +152,16 @@ export function AgendaTabPanel({
   journalEntries: JournalEntry[];
   journalLoading: boolean;
   onOpenMoiJournal: () => void;
+  calendarSyncBusy: boolean;
+  onSyncAllCalendars: () => void | Promise<void>;
+  onOpenIntegrations: () => void;
 }) {
   const client = useIsClient();
   const googleConnected = accounts.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
   const microsoftConnected = accounts.some((a) => a.provider === 'microsoft_calendar' && a.status === 'connected');
   const appleConnected = accounts.some((a) => a.provider === 'apple_calendar' && a.status === 'connected');
   const appleSyncPossible = appleConnected && appleCaldavAvailable !== false;
+  const anyCalendarConnected = googleConnected || microsoftConnected || appleConnected;
 
   return (
     <div
@@ -169,6 +176,67 @@ export function AgendaTabPanel({
       }}
     >
       <h2 style={{ margin: '0 0 10px', color: C.text }}>Agenda familial</h2>
+      <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: C.alexXL }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Synchronisation calendriers</div>
+        <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2, lineHeight: 1.45 }}>
+          {anyCalendarConnected
+            ? 'Récupère les événements Outlook, Google ou Apple dans ton agenda MajorDome.'
+            : 'Connecte au moins un calendrier pour importer tes rendez-vous.'}
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {microsoftConnected ? (
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: C.lilacL, color: C.lilac }}>
+              Outlook
+            </span>
+          ) : null}
+          {googleConnected ? (
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: C.terraXL, color: C.terra }}>
+              Google
+            </span>
+          ) : null}
+          {appleConnected ? (
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: C.sageL, color: C.sage }}>
+              Apple
+            </span>
+          ) : null}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button
+            type="button"
+            disabled={!anyCalendarConnected || calendarSyncBusy}
+            onClick={() => void onSyncAllCalendars()}
+            style={{
+              border: 'none',
+              borderRadius: 10,
+              padding: '8px 12px',
+              background: C.alex,
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: 12,
+              opacity: anyCalendarConnected && !calendarSyncBusy ? 1 : 0.5,
+            }}
+          >
+            {calendarSyncBusy ? 'Synchronisation…' : 'Synchroniser les agendas'}
+          </button>
+          {!anyCalendarConnected ? (
+            <button
+              type="button"
+              onClick={onOpenIntegrations}
+              style={{
+                border: `1px solid ${C.border}`,
+                borderRadius: 10,
+                padding: '8px 12px',
+                background: C.white,
+                color: C.terra,
+                fontWeight: 700,
+                fontSize: 12,
+              }}
+            >
+              Connecter un calendrier →
+            </button>
+          ) : null}
+        </div>
+      </GlassCard>
       <AgendaJournalSection
         C={C}
         selectedDay={selectedMealDay}

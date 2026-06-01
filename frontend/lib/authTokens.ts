@@ -1,10 +1,29 @@
-/** Session : access en sessionStorage (onglet) ; refresh en cookie HttpOnly côté serveur. */
+/** Session : jeton d’accès en cookie HttpOnly ; marqueur d’onglet en sessionStorage. */
 
 const ACCESS_KEY = 'majordome_access_token';
 const LEGACY_REFRESH_KEY = 'majordome_refresh_token';
+const SESSION_ACTIVE_KEY = 'majordome_session_active';
+
+/** Valeur sentinel pour les appels API (Bearer omis, cookie HttpOnly utilisé). */
+export const COOKIE_AUTH_SESSION = 'cookie';
+
+export function hasSessionActive(): boolean {
+  if (typeof window === 'undefined') return false;
+  return sessionStorage.getItem(SESSION_ACTIVE_KEY) === '1';
+}
+
+export function markSessionActive(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(SESSION_ACTIVE_KEY, '1');
+}
+
+export function isCookieAuthSession(token: string | null | undefined): boolean {
+  return token === COOKIE_AUTH_SESSION;
+}
 
 export function getStoredAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
+  if (hasSessionActive()) return COOKIE_AUTH_SESSION;
   const session = sessionStorage.getItem(ACCESS_KEY);
   if (session) return session;
   const legacy = localStorage.getItem(ACCESS_KEY);
@@ -18,13 +37,16 @@ export function getStoredAccessToken(): string | null {
 
 export function persistAccessToken(accessToken: string): void {
   if (typeof window === 'undefined') return;
-  sessionStorage.setItem(ACCESS_KEY, accessToken);
+  markSessionActive();
+  sessionStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(LEGACY_REFRESH_KEY);
+  void accessToken;
 }
 
 export function clearStoredAuthTokens(): void {
   if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(SESSION_ACTIVE_KEY);
   sessionStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(LEGACY_REFRESH_KEY);
