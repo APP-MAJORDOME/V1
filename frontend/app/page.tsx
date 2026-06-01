@@ -87,11 +87,10 @@ import { OverlayChrome } from '../components/OverlayChrome';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 import { BrandLoadingLogo, MajordomeWordmark } from '../components/BrandLogo';
 import { LoginAuthScreen } from '../components/LoginAuthScreen';
-import { MoiTabPanel } from '../components/MoiTabPanel';
+import { AppMainTabLayers } from '../components/AppMainTabLayers';
 import { AppModuleOverlays, isModuleOverlayLayer } from '../components/AppModuleOverlays';
 import { AlfredAppLayer } from '../components/AlfredAppLayer';
-import { AgendaTabPanel } from '../components/AgendaTabPanel';
-import { HomeTabPanel } from '../components/HomeTabPanel';
+import { useAgendaMealEditor } from '../hooks/useAgendaMealEditor';
 import { AppShellModals } from '../components/AppShellModals';
 import { type DebordeeResult } from '../components/DebordeeModal';
 import { formatDocStorageShort, docCategoryForApi } from '../lib/documentsUi';
@@ -2057,6 +2056,15 @@ export default function HomePage() {
   const doneCourses = useMemo(() => courses.filter((c) => c.done).length, [courses]);
   const budgetUsedPct = computeBudgetUsedPct(budget);
   const selectedMeal = mealPlans[selectedMealDay] || { lunch: '', dinner: '', missing: [] };
+  const agendaMealEditor = useAgendaMealEditor({
+    selectedMealDay,
+    selectedMeal,
+    setMealPlans,
+    mealsDirtyRef,
+    courses,
+    onAddCourseItem: (label) => void addCourseItem(label),
+    onInfo: setInfo,
+  });
   const weekEvents = useMemo(() => events.slice(0, 8), [events]);
   const selfDoneCount = useMemo(() => selfMoments.filter((m) => m.done).length, [selfMoments]);
   const fridgeSorted = useMemo(() => sortFridgeByExpiry(fridge), [fridge]);
@@ -2318,190 +2326,203 @@ export default function HomePage() {
       </OverlayChrome>
     );
 
-    if (layer === 'home') {
+    if (layer === 'home' || layer === 'agenda' || layer === 'moi') {
       const sec = (id: HomeSectionId) => homeLayout.sections[id] !== false;
       return (
-        <HomeTabPanel
-          C={C}
-          token={token}
-          aiName={aiName}
-          isSectionVisible={sec}
-          clientTodayLabel={clientTodayLabel}
-          family={{
+        <AppMainTabLayers
+          layer={layer}
+          home={
+            layer === 'home'
+              ? {
+          C,
+          token,
+          aiName,
+          isSectionVisible: sec,
+          clientTodayLabel,
+          family: {
             prenom: familyProfile.prenom,
             partenaire: familyProfile.partenaire,
             enfant: familyProfile.enfant,
-          }}
-          mentalWeather={mentalWeather}
-          todayUrgencies={todayUrgencies}
-          nextEventsCount={nextEvents.length}
-          openTasks={openTasks}
-          tasksCount={tasks.length}
-          taskSummary={taskSummary}
-          taskSummaryRefreshing={taskSummaryRefreshing}
-          fridgeAlertsCount={fridgeAlerts.length}
-          hubShortcuts={homeLayout.hubShortcuts}
-          hubModuleBadges={hubModuleBadges}
-          showDebordeeCta={showDebordeeCta}
-          showMorningMoodCard={showMorningMoodCard}
-          homeMood={homeMood}
-          budget={budget}
-          budgetUsedPct={budgetUsedPct}
-          equity={equity}
-          partnerContactDraft={partnerContactDraft}
-          partnerNotifyLoading={partnerNotifyLoading}
-          weekEvents={weekEvents}
-          opps={opps}
-          sortedDoneTasks={sortedDoneTasks}
-          taskAssignBusyId={taskAssignBusyId}
-          taskCompleteBusyId={taskCompleteBusyId}
-          taskReopenBusyId={taskReopenBusyId}
-          doneHistoryRefreshBusy={doneHistoryRefreshBusy}
-          doneHistoryMoreBusy={doneHistoryMoreBusy}
-          doneHistoryPagingExhausted={doneHistoryPagingExhausted}
-          docVaultCount={docVault.length}
-          primaryMemberId={primaryMemberId}
-          partnerMemberId={partnerMemberId}
-          childMemberId={childMemberId}
-          householdMembers={householdMembers}
-          onOpenHub={openHubModule}
-          onOpenAgenda={() => goMainTab('agenda')}
-          onOpenTasksHome={() => {
+          },
+          mentalWeather,
+          todayUrgencies,
+          nextEventsCount: nextEvents.length,
+          openTasks,
+          tasksCount: tasks.length,
+          taskSummary,
+          taskSummaryRefreshing,
+          fridgeAlertsCount: fridgeAlerts.length,
+          hubShortcuts: homeLayout.hubShortcuts,
+          hubModuleBadges,
+          showDebordeeCta,
+          showMorningMoodCard,
+          homeMood,
+          budget,
+          budgetUsedPct,
+          equity,
+          partnerContactDraft,
+          partnerNotifyLoading,
+          weekEvents,
+          opps,
+          sortedDoneTasks,
+          taskAssignBusyId,
+          taskCompleteBusyId,
+          taskReopenBusyId,
+          doneHistoryRefreshBusy,
+          doneHistoryMoreBusy,
+          doneHistoryPagingExhausted,
+          docVaultCount: docVault.length,
+          primaryMemberId,
+          partnerMemberId,
+          childMemberId,
+          householdMembers,
+          onOpenHub: openHubModule,
+          onOpenAgenda: () => goMainTab('agenda'),
+          onOpenTasksHome: () => {
             setOverlay(null);
             setMainTab('home');
-          }}
-          onOpenAlfred={() => goMainTab('alfred')}
-          onPersonalizeLayout={() => setHomeLayoutEditorOpen(true)}
-          onDebordee={() => {
+          },
+          onOpenAlfred: () => goMainTab('alfred'),
+          onPersonalizeLayout: () => setHomeLayoutEditorOpen(true),
+          onDebordee: () => {
             setDebordeeResult(null);
             setModalDebordee('confirm');
-          }}
-          onMorningMood={(i) => {
+          },
+          onMorningMood: (i) => {
             onHomeMoodChange(i);
             pushToast('success', 'Humeur enregistrée');
-          }}
-          onHomeMoodSelect={onHomeMoodChange}
-          onRefreshTaskSummary={() => void refreshTaskSummary({ trackBusy: true })}
-          onPartnerContactChange={setPartnerContactDraft}
-          onNotifyPartner={() => void notifyPartnerReal()}
-          onOpenEquiteModal={() => {
+          },
+          onHomeMoodSelect: onHomeMoodChange,
+          onRefreshTaskSummary: () => void refreshTaskSummary({ trackBusy: true }),
+          onPartnerContactChange: setPartnerContactDraft,
+          onNotifyPartner: () => void notifyPartnerReal(),
+          onOpenEquiteModal: () => {
             setEquitePlanText('');
             setEquiteTab('semaine');
             setModalEquite(true);
-          }}
-          onOpenAlexModal={() => {
+          },
+          onOpenAlexModal: () => {
             setAlexDoneIds([]);
             setAlexNotified(false);
             setModalAlex(true);
-          }}
-          onAlfredDelegatePrompt={() =>
+          },
+          onAlfredDelegatePrompt: () =>
             alfred.setAssistantInput(
               `Rédige un message WhatsApp à ${familyProfile.partenaire} pour déléguer 2 tâches aujourd'hui`,
-            )
+            ),
+          onGoMoi: () => goMainTab('moi'),
+          onOpenDocuments: () => setOverlay('documents'),
+          onOpenAssistant: () => setOverlay('assistant'),
+          onAssignTask: assignTaskMember,
+          onCompleteTask: completeTaskById,
+          onReopenTask: reopenTaskById,
+          onRefreshDoneFromServer: refreshDoneTasksFromServer,
+          onLoadMoreDonePage: loadMoreDoneTasksPage,
+              }
+              : null
           }
-          onGoMoi={() => goMainTab('moi')}
-          onOpenDocuments={() => setOverlay('documents')}
-          onOpenAssistant={() => setOverlay('assistant')}
-          onAssignTask={assignTaskMember}
-          onCompleteTask={completeTaskById}
-          onReopenTask={reopenTaskById}
-          onRefreshDoneFromServer={refreshDoneTasksFromServer}
-          onLoadMoreDonePage={loadMoreDoneTasksPage}
-        />
-      );
-    }
-
-    if (layer === 'agenda') {
-      return (
-        <AgendaTabPanel
-          C={C}
-          token={token}
-          accounts={accounts}
-          appleCaldavAvailable={appleCaldavAvailable}
-          newEventTitle={newEventTitle}
-          onNewEventTitleChange={setNewEventTitle}
-          newEventStart={newEventStart}
-          onNewEventStartChange={setNewEventStart}
-          newEventEnd={newEventEnd}
-          onNewEventEndChange={setNewEventEnd}
-          newEventProvider={newEventProvider}
-          onNewEventProviderChange={setNewEventProvider}
-          creatingEvent={creatingEvent}
-          onCreateEvent={createEventFromApp}
-          selectedMealDay={selectedMealDay}
-          onSelectedMealDayChange={setSelectedMealDay}
-          selectedMeal={selectedMeal}
-          onMealLunchChange={(v) => {
-            mealsDirtyRef.current = true;
-            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, lunch: v } }));
-          }}
-          onMealDinnerChange={(v) => {
-            mealsDirtyRef.current = true;
-            setMealPlans((m) => ({ ...m, [selectedMealDay]: { ...selectedMeal, dinner: v } }));
-          }}
-          onMealMissingChange={(raw) => {
-            mealsDirtyRef.current = true;
-            setMealPlans((m) => ({
-              ...m,
-              [selectedMealDay]: {
-                ...selectedMeal,
-                missing: raw.split(',').map((x) => x.trim()).filter(Boolean),
-              },
-            }));
-          }}
-          onGenerateCoursesFromMeal={() => {
-            const missingToAdd = selectedMeal.missing.filter(
-              (it) => !courses.some((c) => c.label.toLowerCase() === it.toLowerCase()),
-            );
-            if (missingToAdd.length === 0) {
-              setInfo('Aucun ingredient nouveau a ajouter.');
-              return;
-            }
-            for (const it of missingToAdd) void addCourseItem(it);
-            setInfo('Ingredients ajoutes a Courses.');
-          }}
-          agendaOpenTasks={agendaOpenTasks}
-          taskSummary={taskSummary}
-          familyNames={{
+          agenda={
+            layer === 'agenda'
+              ? {
+          C,
+          token,
+          accounts,
+          appleCaldavAvailable,
+          newEventTitle,
+          onNewEventTitleChange: setNewEventTitle,
+          newEventStart,
+          onNewEventStartChange: setNewEventStart,
+          newEventEnd,
+          onNewEventEndChange: setNewEventEnd,
+          newEventProvider,
+          onNewEventProviderChange: setNewEventProvider,
+          creatingEvent,
+          onCreateEvent: createEventFromApp,
+          selectedMealDay,
+          onSelectedMealDayChange: setSelectedMealDay,
+          selectedMeal,
+          ...agendaMealEditor,
+          agendaOpenTasks,
+          taskSummary,
+          familyNames: {
             prenom: familyProfile.prenom,
             partenaire: familyProfile.partenaire,
             enfant: familyProfile.enfant,
-          }}
-          primaryMemberId={primaryMemberId}
-          partnerMemberId={partnerMemberId}
-          childMemberId={childMemberId}
-          householdMembers={householdMembers}
-          taskAssignBusyId={taskAssignBusyId}
-          taskCompleteBusyId={taskCompleteBusyId}
-          onAssignTask={assignTaskMember}
-          onCompleteTask={completeTaskById}
-          sortedDoneTasks={sortedDoneTasks}
-          taskReopenBusyId={taskReopenBusyId}
-          onReopenTask={reopenTaskById}
-          onRefreshDoneFromServer={refreshDoneTasksFromServer}
-          doneHistoryRefreshBusy={doneHistoryRefreshBusy}
-          onLoadMoreDonePage={loadMoreDoneTasksPage}
-          doneHistoryMoreBusy={doneHistoryMoreBusy}
-          doneHistoryPagingExhausted={doneHistoryPagingExhausted}
-          urgentCount={urgentCount}
-          nextEvents={nextEvents}
-          editingEventId={editingEventId}
-          editTitle={editTitle}
-          onEditTitleChange={setEditTitle}
-          editStart={editStart}
-          onEditStartChange={setEditStart}
-          editEnd={editEnd}
-          onEditEndChange={setEditEnd}
-          onBeginEditEvent={beginEdit}
-          onDeleteEvent={deleteEventFromApp}
-          onSaveEditEvent={saveEditEvent}
-          onCancelEditEvent={() => setEditingEventId(null)}
-          journalEntries={journalEntries}
-          journalLoading={journalLoading}
-          onOpenMoiJournal={() => goMainTab('moi')}
-          calendarSyncBusy={calendarConnections.isSyncingAll}
-          onSyncAllCalendars={() => void syncAllAgendaCalendars()}
-          onOpenIntegrations={() => setOverlay('integrations')}
+          },
+          primaryMemberId,
+          partnerMemberId,
+          childMemberId,
+          householdMembers,
+          taskAssignBusyId,
+          taskCompleteBusyId,
+          onAssignTask: assignTaskMember,
+          onCompleteTask: completeTaskById,
+          sortedDoneTasks,
+          taskReopenBusyId,
+          onReopenTask: reopenTaskById,
+          onRefreshDoneFromServer: refreshDoneTasksFromServer,
+          doneHistoryRefreshBusy,
+          onLoadMoreDonePage: loadMoreDoneTasksPage,
+          doneHistoryMoreBusy,
+          doneHistoryPagingExhausted,
+          urgentCount,
+          nextEvents,
+          editingEventId,
+          editTitle,
+          onEditTitleChange: setEditTitle,
+          editStart,
+          onEditStartChange: setEditStart,
+          editEnd,
+          onEditEndChange: setEditEnd,
+          onBeginEditEvent: beginEdit,
+          onDeleteEvent: deleteEventFromApp,
+          onSaveEditEvent: saveEditEvent,
+          onCancelEditEvent: () => setEditingEventId(null),
+          journalEntries,
+          journalLoading,
+          onOpenMoiJournal: () => goMainTab('moi'),
+          calendarSyncBusy: calendarConnections.isSyncingAll,
+          onSyncAllCalendars: () => void syncAllAgendaCalendars(),
+          onOpenIntegrations: () => setOverlay('integrations'),
+              }
+              : null
+          }
+          moi={
+            layer === 'moi'
+              ? {
+          C,
+          token,
+          aiName,
+          openTaskCount: openTasks.length,
+          moiMood,
+          onMoiMoodChange,
+          sleep,
+          onSleepChange,
+          cycleDay,
+          onCycleDayChange,
+          journalEntries,
+          journalLoading,
+          journalSelectedDay: selectedMealDay,
+          onJournalSelectedDayChange: setSelectedMealDay,
+          onJournalRefresh: () => refreshJournalEntries(),
+          onGoAgenda: () => goMainTab('agenda'),
+          selfMoments,
+          onToggleSelfMoment: (id) => {
+            moiDirtyRef.current = true;
+            setSelfMoments((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+          },
+          selfDoneCount,
+          onAddSelfMomentAsTask: addSelfMomentAsTask,
+          budget,
+          onBudgetChange: setBudget,
+          budgetEditing,
+          onBudgetEditingToggle: () => setBudgetEditing((v) => !v),
+          onSaveBudget: saveBudgetToServer,
+          onLogout: logout,
+          onToast: pushToast,
+              }
+              : null
+          }
         />
       );
     }
@@ -2570,43 +2591,6 @@ export default function HomePage() {
           }}
           onNotifyPartner={() => void notifyPartnerReal()}
           onGoMoi={() => goMainTab('moi')}
-        />
-      );
-    }
-
-    if (layer === 'moi') {
-      return (
-        <MoiTabPanel
-          C={C}
-          token={token}
-          aiName={aiName}
-          openTaskCount={openTasks.length}
-          moiMood={moiMood}
-          onMoiMoodChange={onMoiMoodChange}
-          sleep={sleep}
-          onSleepChange={onSleepChange}
-          cycleDay={cycleDay}
-          onCycleDayChange={onCycleDayChange}
-          journalEntries={journalEntries}
-          journalLoading={journalLoading}
-          journalSelectedDay={selectedMealDay}
-          onJournalSelectedDayChange={setSelectedMealDay}
-          onJournalRefresh={() => refreshJournalEntries()}
-          onGoAgenda={() => goMainTab('agenda')}
-          selfMoments={selfMoments}
-          onToggleSelfMoment={(id) => {
-            moiDirtyRef.current = true;
-            setSelfMoments((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
-          }}
-          selfDoneCount={selfDoneCount}
-          onAddSelfMomentAsTask={addSelfMomentAsTask}
-          budget={budget}
-          onBudgetChange={setBudget}
-          budgetEditing={budgetEditing}
-          onBudgetEditingToggle={() => setBudgetEditing((v) => !v)}
-          onSaveBudget={saveBudgetToServer}
-          onLogout={logout}
-          onToast={pushToast}
         />
       );
     }
