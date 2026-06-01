@@ -28,7 +28,7 @@ import {
   preferredEventProvider,
 } from '../lib/calendarIntegrations';
 import { useCalendarConnections } from '../hooks/useCalendarConnections';
-import { IntegrationsOverlayPanel } from '../components/IntegrationsOverlayPanel';
+import { AppSecondaryOverlays, isSecondaryOverlayLayer } from '../components/AppSecondaryOverlays';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
 import {
   TOAST_DURATION_MS,
@@ -84,13 +84,6 @@ import {
 } from '../components/md-icons';
 import { PlusHub } from '../components/PlusHub';
 import { OverlayChrome } from '../components/OverlayChrome';
-import { AnniversairesPanel } from '../components/AnniversairesPanel';
-import { PoubellesPanel } from '../components/PoubellesPanel';
-import { NotifsStubPanel } from '../components/NotifsStubPanel';
-import { RecettesPanel } from '../components/RecettesPanel';
-import { CourrierPanel } from '../components/CourrierPanel';
-import { AlbumsPanel } from '../components/AlbumsPanel';
-import { RoutinesPanel } from '../components/RoutinesPanel';
 import { CoursesPanel } from '../components/CoursesPanel';
 import { AlfredChatPanel } from '../components/AlfredChatPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
@@ -168,7 +161,6 @@ import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/Glob
 import { MAJORDOME_PALETTE, type MainTab, type OverlayId } from '../lib/appNavigation';
 import { useAppNavigation } from '../hooks/useAppNavigation';
 import type { DocStorageSummary } from '../lib/documentsUi';
-import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
 import { WelcomeSetupWizard } from '../components/WelcomeSetupWizard';
 import { PLUS_HUB_ITEMS, type HubKey } from '../components/PlusHub';
@@ -284,14 +276,6 @@ type FridgeItem = { id: number; label: string; expires_at: string; qty: number }
 type UiToast = { id: string; kind: 'success' | 'error' | 'info'; text: string };
 
 const C = MAJORDOME_PALETTE;
-
-function GlassCard({ children, style = {}, onClick }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void }) {
-  return <div onClick={onClick} style={{ background: C.white, borderRadius: 20, border: `1.5px solid ${C.border}`, ...style }}>{children}</div>;
-}
-
-function Pill({ children, bg, color }: { children: React.ReactNode; bg: string; color: string }) {
-  return <span style={{ fontSize: 10, fontWeight: 700, color, background: bg, borderRadius: 20, padding: '3px 8px' }}>{children}</span>;
-}
 
 function StatusBar({
   onOpenSearch,
@@ -2656,12 +2640,19 @@ export default function HomePage() {
       );
     }
 
-    if (layer === 'recettes') {
-      return wrapOv(
-        'Recettes',
-        <RecettesPanel
+    if (isSecondaryOverlayLayer(layer)) {
+      return (
+        <AppSecondaryOverlays
+          layer={layer}
           C={C}
-          onAddIngredients={(labels) => {
+          onBack={closeOverlay}
+          token={token}
+          userFirstName={familyProfile.prenom}
+          partenaireName={familyProfile.partenaire}
+          enfantName={familyProfile.enfant}
+          courrierImportBusy={courrierImportBusy}
+          onImportCourrierTasks={importCourrierTaskTitles}
+          onAddCourseItems={(labels) => {
             const lower = new Set(courses.map((c) => c.label.toLowerCase()));
             const unique = labels.filter((l) => !lower.has(l.toLowerCase()));
             if (unique.length === 0) {
@@ -2671,49 +2662,6 @@ export default function HomePage() {
             for (const label of unique) void addCourseItem(label);
             pushToast('success', `${unique.length} ingrédient(s) ajouté(s) à la liste`);
           }}
-        />,
-      );
-    }
-
-    if (layer === 'routines') {
-      return wrapOv('Routines', <RoutinesPanel C={C} userName={familyProfile.prenom} />);
-    }
-
-    if (layer === 'courrier') {
-      return wrapOv(
-        'Courrier IA',
-        <CourrierPanel C={C} token={token} busy={courrierImportBusy} onImportTasks={importCourrierTaskTitles} />,
-      );
-    }
-
-    if (layer === 'albums') {
-      return wrapOv('Souvenirs', <AlbumsPanel C={C} />);
-    }
-
-    if (layer === 'anniversaires') {
-      return wrapOv('Anniversaires', <AnniversairesPanel C={C} />);
-    }
-
-    if (layer === 'poubelles') {
-      return wrapOv('Poubelles & collecte', <PoubellesPanel C={C} />);
-    }
-
-    if (layer === 'messages') {
-      return wrapOv(
-        'Famille temps réel',
-        <FamilleTempsReelPanel C={C} partenaire={familyProfile.partenaire} enfant={familyProfile.enfant} />,
-      );
-    }
-
-    if (layer === 'notifs') {
-      return wrapOv('Notifications', <NotifsStubPanel C={C} />);
-    }
-
-    if (layer === 'integrations') {
-      return wrapOv(
-        'Intégrations tierces',
-        <IntegrationsOverlayPanel
-          C={C}
           accounts={accounts}
           integrationStatuses={integrationStatuses}
           calendarSyncBusy={calendarConnections.syncBusy}
@@ -2721,12 +2669,8 @@ export default function HomePage() {
           onConnectMicrosoft={() => void calendarConnections.connectMicrosoft()}
           onSyncGoogle={() => void calendarConnections.syncProvider('google_calendar')}
           onSyncMicrosoft={() => void calendarConnections.syncProvider('microsoft_calendar')}
-          onOpenSettings={() => {
-            window.location.href = '/settings';
-          }}
           onAlfredPrompt={(text) => alfred.setAssistantInput(text)}
-          partenaireName={familyProfile.partenaire}
-        />,
+        />
       );
     }
 

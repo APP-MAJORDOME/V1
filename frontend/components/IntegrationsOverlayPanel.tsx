@@ -6,22 +6,7 @@ import {
   integrationConfigured,
   isCalendarConnected,
 } from '../lib/calendarIntegrations';
-
-function GlassCard({
-  C,
-  children,
-  style = {},
-}: {
-  C: Record<string, string>;
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div style={{ background: C.white, borderRadius: 20, border: `1.5px solid ${C.border}`, ...style }}>
-      {children}
-    </div>
-  );
-}
+import { GlassCard } from './GlassCard';
 
 export type IntegrationsOverlayPanelProps = {
   C: Record<string, string>;
