@@ -12,7 +12,8 @@ import {
   IconSearch,
   InlineDocGlyph,
 } from './md-icons';
-import { DOC_COFFRE_CATEGORIES, formatDocStorageShort } from '../lib/documentsUi';
+import { DOC_COFFRE_CATEGORIES, formatDocStorageShort, type DocStorageSummary } from '../lib/documentsUi';
+import { VaultEncryptionBadge } from './VaultEncryptionBadge';
 import { LocalDataNotice, PrivacyPolicyLink } from './PrivacyLinks';
 
 export type DocVaultItem = {
@@ -77,7 +78,7 @@ export function CoffreModal({
   loading: boolean;
   prenom: string;
   docVault: DocVaultItem[];
-  docStorageSummary: { used_bytes: number; quota_bytes: number | null } | null;
+  docStorageSummary: DocStorageSummary | null;
   docCat: string;
   onDocCatChange: (cat: string) => void;
   docSearch: string;
@@ -114,14 +115,18 @@ export function CoffreModal({
           <h3 style={{ fontSize: 17, fontWeight: 800, color: C.text, margin: 0 }}>Coffre famille</h3>
           <p style={{ fontSize: 11, color: C.text2, margin: 0 }}>{docVault.length} documents</p>
           {token && docStorageSummary ? (
-            <p style={{ fontSize: 10, color: C.text2, margin: '6px 0 0', lineHeight: 1.35 }}>
-              {formatDocStorageShort(docStorageSummary.used_bytes, docStorageSummary.quota_bytes)}
-            </p>
+            <div style={{ margin: '6px 0 0', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+              <VaultEncryptionBadge C={C} encryptionAtRest={docStorageSummary.encryption_at_rest} />
+              <p style={{ fontSize: 10, color: C.text2, margin: 0, lineHeight: 1.35 }}>
+                {formatDocStorageShort(docStorageSummary.used_bytes, docStorageSummary.quota_bytes)}
+              </p>
+            </div>
           ) : null}
           {!token ? <p style={{ fontSize: 10, color: C.terra, margin: '6px 0 0' }}>Connecte-toi pour synchroniser le coffre sur le serveur.</p> : null}
           <p style={{ fontSize: 10, color: C.text2, margin: '8px 0 0', lineHeight: 1.45 }}>
-            Passeports, mutuelle et pièces sensibles : stockage serveur isolé par foyer, chiffrement en transit (HTTPS).
-            Chiffrement au repos renforcé — déploiement progressif. <PrivacyPolicyLink C={C} style={{ fontSize: 10 }} />
+            Passeports, mutuelle et pièces sensibles : stockage isolé par foyer, HTTPS en transit
+            {docStorageSummary?.encryption_at_rest ? ' et chiffrement des fichiers sur le serveur.' : '.'}{' '}
+            <PrivacyPolicyLink C={C} style={{ fontSize: 10 }} />
           </p>
           <LocalDataNotice C={C} compact />
         </div>

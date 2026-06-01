@@ -169,7 +169,9 @@ import {
   type SelfMoment,
 } from '../lib/moiWellness';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
-import { MAJORDOME_PALETTE, resolveAppLayer, type MainTab, type OverlayId } from '../lib/appNavigation';
+import { MAJORDOME_PALETTE, type MainTab, type OverlayId } from '../lib/appNavigation';
+import { useAppNavigation } from '../hooks/useAppNavigation';
+import type { DocStorageSummary } from '../lib/documentsUi';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
 import { WelcomeSetupWizard } from '../components/WelcomeSetupWizard';
@@ -381,8 +383,18 @@ function StatusBar({
 }
 
 export default function HomePage() {
-  const [mainTab, setMainTab] = useState<MainTab>('home');
-  const [overlay, setOverlay] = useState<OverlayId | null>(null);
+  const {
+    mainTab,
+    setMainTab,
+    overlay,
+    setOverlay,
+    layer,
+    goMainTab,
+    closeOverlay,
+    handleBottomTab,
+    openHubModule,
+    bottomTabActive,
+  } = useAppNavigation({ onBeforeOpenWallet: () => setCoursesTab('wallet') });
   const globalSearchOpen = useAppUiStore((s) => s.globalSearchOpen);
   const setGlobalSearchOpen = useAppUiStore((s) => s.setGlobalSearchOpen);
   const toggleGlobalSearch = useAppUiStore((s) => s.toggleGlobalSearch);
@@ -480,7 +492,7 @@ export default function HomePage() {
   const [docSearch, setDocSearch] = useState('');
   const [docAddedFlash, setDocAddedFlash] = useState(false);
   const [docVault, setDocVault] = useState<DocVaultItem[]>([]);
-  const [docStorageSummary, setDocStorageSummary] = useState<{ used_bytes: number; quota_bytes: number | null } | null>(null);
+  const [docStorageSummary, setDocStorageSummary] = useState<DocStorageSummary | null>(null);
   const [docEdit, setDocEdit] = useState<DocEditDraft | null>(null);
   const [docEditSaving, setDocEditSaving] = useState(false);
 
@@ -1273,10 +1285,7 @@ export default function HomePage() {
       }
       setDocVault(docsRes.map(mapDocFromApi));
       try {
-        const st = await getJson<{ used_bytes: number; quota_bytes: number | null }>(
-          '/api/v1/documents/storage-summary',
-          accessToken
-        );
+        const st = await getJson<DocStorageSummary>('/api/v1/documents/storage-summary', accessToken);
         setDocStorageSummary(st);
       } catch {
         setDocStorageSummary(null);
@@ -2395,52 +2404,10 @@ export default function HomePage() {
     }
   }
 
-  function goMainTab(t: MainTab) {
-    setMainTab(t);
-    if (t === 'alfred') {
-      setOverlay('assistant');
-      return;
-    }
-    if (t === 'modules') {
-      setOverlay('plus');
-      return;
-    }
-    setOverlay(null);
-  }
-
-  function handleBottomTab(tab: AppTabId) {
-    if (tab === 'home') goMainTab('home');
-    else if (tab === 'alfred') goMainTab('alfred');
-    else if (tab === 'modules') goMainTab('modules');
-    else goMainTab('moi');
-  }
-
-  const bottomTabActive: AppTabId = useMemo(() => {
-    if (overlay === 'assistant' || mainTab === 'alfred') return 'alfred';
-    if (overlay === 'plus' || mainTab === 'modules') return 'modules';
-    if (mainTab === 'moi') return 'moi';
-    return 'home';
-  }, [overlay, mainTab]);
-
-  function openHubModule(hubKey: HubKey) {
-    if (hubKey === 'wallet') {
-      setCoursesTab('wallet');
-      setOverlay('courses');
-      return;
-    }
-    if (hubKey === 'integrations') {
-      setOverlay('integrations');
-      return;
-    }
-    setOverlay(hubKey as OverlayId);
-  }
-
-
   function renderAppLayer() {
-    const layer = resolveAppLayer(overlay, mainTab);
     const sec = (id: HomeSectionId) => homeLayout.sections[id] !== false;
     const wrapOv = (title: string, body: React.ReactNode) => (
-      <OverlayChrome title={title} onBack={() => setOverlay(null)} white={C.white} border={C.border} text={C.text}>
+      <OverlayChrome title={title} onBack={closeOverlay} white={C.white} border={C.border} text={C.text}>
         {body}
       </OverlayChrome>
     );

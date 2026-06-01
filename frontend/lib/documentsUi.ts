@@ -17,6 +17,12 @@ export function docCategoryForApi(filterId: string): string {
   return DOC_FILTER_TO_API_CAT[filterId] ?? filterId;
 }
 
+export type DocStorageSummary = {
+  used_bytes: number;
+  quota_bytes: number | null;
+  encryption_at_rest?: boolean;
+};
+
 export function formatDocStorageShort(usedBytes: number, quotaBytes: number | null): string {
   const fmt = (b: number) =>
     b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`;

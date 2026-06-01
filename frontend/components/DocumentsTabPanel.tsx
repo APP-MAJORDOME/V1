@@ -1,7 +1,8 @@
 'use client';
 
 import { DocGlyphBubble, docCategoryLabel, IconFolderVault, IconPaperclip } from './md-icons';
-import { formatDocStorageShort } from '../lib/documentsUi';
+import { formatDocStorageShort, type DocStorageSummary } from '../lib/documentsUi';
+import { VaultEncryptionBadge } from './VaultEncryptionBadge';
 
 type DocPreview = {
   id: number;
@@ -41,7 +42,7 @@ export function DocumentsTabPanel({
   C: Record<string, string>;
   token: string | null;
   docVault: DocPreview[];
-  docStorageSummary: { used_bytes: number; quota_bytes: number | null } | null;
+  docStorageSummary: DocStorageSummary | null;
   onOpenVault: () => void;
   onOpenDoc: (docId: number) => void;
   onDownloadAttachment: (docId: number) => void | Promise<void>;
@@ -180,9 +181,12 @@ export function DocumentsTabPanel({
         </div>
       ))}
       {token && docStorageSummary ? (
-        <p style={{ fontSize: 11, color: C.text3, marginTop: 14, textAlign: 'center' }}>
-          {formatDocStorageShort(docStorageSummary.used_bytes, docStorageSummary.quota_bytes)}
-        </p>
+        <div style={{ marginTop: 14, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <VaultEncryptionBadge C={C} encryptionAtRest={docStorageSummary.encryption_at_rest} />
+          <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>
+            {formatDocStorageShort(docStorageSummary.used_bytes, docStorageSummary.quota_bytes)}
+          </p>
+        </div>
       ) : null}
     </div>
   );
