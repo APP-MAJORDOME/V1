@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     upload_dir: str = "./data/uploads"
     attachment_max_mb: int = 12
     attachment_quota_mb_per_household: int = 500
+    # Clé Fernet (ex. python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    vault_encryption_key: str = ""
 
     # Recherche web Alfred (DuckDuckGo, sans clé API)
     web_search_enabled: bool = True

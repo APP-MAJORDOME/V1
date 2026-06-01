@@ -345,8 +345,7 @@ def _load_document_excerpt(
             )
         return meta
     try:
-        path = doc_attach.path_for_storage_key(doc.attachment_storage_key)
-        data = path.read_bytes()
+        data = doc_attach.read_bytes(doc.attachment_storage_key)
     except Exception as exc:
         logger.warning("document read failed id=%s: %s", doc.id, exc)
         meta["excerpt"] = f"(fichier illisible : {exc})"

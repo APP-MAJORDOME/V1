@@ -206,6 +206,7 @@ class IntegrationCapabilitiesResponse(BaseModel):
 class DocumentStorageSummary(BaseModel):
     used_bytes: int
     quota_bytes: int | None = None
+    encryption_at_rest: bool = False
 
 
 class HouseholdDocumentRead(BaseModel):

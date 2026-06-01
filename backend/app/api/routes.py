@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 import redis
 from sqlalchemy.orm import Session
 from app.core.auth_cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies
@@ -155,6 +155,7 @@ from app.services.conflicts import detect_conflicts
 from app.services import document_attachments as doc_attach
 from app.services.document_storage_usage import household_attachment_bytes_used
 from app.services.household_documents import default_document_templates
+from app.services.vault_crypto import vault_encryption_enabled
 from app.services.household_profile_members import resolve_partner_member, sync_members_from_profile_names
 from app.services.partner_delegation import build_message_body, deliver_partner_delegation
 from app.services.home import get_home_status, execute_scene
@@ -2135,7 +2136,11 @@ def documents_storage_summary(auth: AuthContext = Depends(get_current_auth_conte
     used = household_attachment_bytes_used(db, auth.household_id)
     qmb = settings.attachment_quota_mb_per_household
     quota_bytes = qmb * 1024 * 1024 if qmb and qmb > 0 else None
-    return DocumentStorageSummary(used_bytes=used, quota_bytes=quota_bytes)
+    return DocumentStorageSummary(
+        used_bytes=used,
+        quota_bytes=quota_bytes,
+        encryption_at_rest=vault_encryption_enabled(),
+    )
 
 
 @router.post("/documents", response_model=HouseholdDocumentRead)
@@ -2234,14 +2239,18 @@ def download_document_attachment(
     if not row.attachment_storage_key:
         raise api_error("attachment_not_found", "Aucune pièce jointe.", 404)
     try:
-        path = doc_attach.path_for_storage_key(row.attachment_storage_key)
-    except ValueError:
-        raise api_error("attachment_corrupt", "Référence fichier invalide.", 500)
-    if not path.is_file():
+        body = doc_attach.read_bytes(row.attachment_storage_key)
+    except FileNotFoundError:
         raise api_error("attachment_missing", "Fichier absent du serveur.", 404)
+    except ValueError:
+        raise api_error("attachment_corrupt", "Fichier chiffré illisible (clé serveur ?).", 500)
     fname = row.attachment_original_name or "piece-jointe"
     media = row.attachment_mime or "application/octet-stream"
-    return FileResponse(path, media_type=media, filename=fname)
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.delete("/documents/{document_id}/attachment", response_model=HouseholdDocumentRead)

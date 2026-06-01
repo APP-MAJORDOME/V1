@@ -13,6 +13,7 @@ python-docx==1.1.2
 python-dotenv==1.0.1
 PyJWT==2.9.0
 bcrypt>=4.1,<5
+cryptography>=42.0.0
 caldav
 vobject
 alembic==1.14.0

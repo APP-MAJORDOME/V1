@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.config import settings
+from app.services.vault_crypto import decrypt_vault_blob, encrypt_vault_blob
 
 _HEX32 = re.compile(r"^[0-9a-f]{32}$")
 
@@ -41,12 +42,19 @@ def ensure_household_upload_dir(household_id: int) -> Path:
     return d
 
 
+def read_bytes(storage_key: str) -> bytes:
+    path = path_for_storage_key(storage_key)
+    if not path.is_file():
+        raise FileNotFoundError(storage_key)
+    return decrypt_vault_blob(path.read_bytes())
+
+
 def save_bytes(household_id: int, data: bytes) -> str:
     ensure_household_upload_dir(household_id)
     key = build_storage_key(household_id)
     path = path_for_storage_key(key)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
+    path.write_bytes(encrypt_vault_blob(data))
     return key
 
 
