@@ -103,8 +103,8 @@ export function AgendaTabPanel({
   onNewEventStartChange: (v: string) => void;
   newEventEnd: string;
   onNewEventEndChange: (v: string) => void;
-  newEventProvider: 'none' | 'google_calendar' | 'apple_calendar';
-  onNewEventProviderChange: (v: 'none' | 'google_calendar' | 'apple_calendar') => void;
+  newEventProvider: 'none' | 'google_calendar' | 'microsoft_calendar' | 'apple_calendar';
+  onNewEventProviderChange: (v: 'none' | 'google_calendar' | 'microsoft_calendar' | 'apple_calendar') => void;
   creatingEvent: boolean;
   onCreateEvent: () => void | Promise<void>;
   selectedMealDay: string;
@@ -152,6 +152,7 @@ export function AgendaTabPanel({
 }) {
   const client = useIsClient();
   const googleConnected = accounts.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
+  const microsoftConnected = accounts.some((a) => a.provider === 'microsoft_calendar' && a.status === 'connected');
   const appleConnected = accounts.some((a) => a.provider === 'apple_calendar' && a.status === 'connected');
   const appleSyncPossible = appleConnected && appleCaldavAvailable !== false;
 
@@ -233,11 +234,16 @@ export function AgendaTabPanel({
               id="event-provider"
               value={newEventProvider}
               onChange={(e) =>
-                onNewEventProviderChange(e.target.value as 'none' | 'google_calendar' | 'apple_calendar')
+                onNewEventProviderChange(
+                  e.target.value as 'none' | 'google_calendar' | 'microsoft_calendar' | 'apple_calendar',
+                )
               }
               aria-label="Calendrier de synchronisation"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             >
+              <option value="microsoft_calendar" disabled={!microsoftConnected}>
+                Outlook / Microsoft 365
+              </option>
               <option value="google_calendar" disabled={!googleConnected}>
                 Google Calendar
               </option>

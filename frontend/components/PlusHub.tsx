@@ -61,7 +61,7 @@ export const PLUS_HUB_ITEMS: {
 ];
 
 /** Modules affichés dans la section « Bientôt disponible » (non interactifs). */
-export const COMING_SOON_HUB_IDS: HubKey[] = ['messages', 'integrations'];
+export const COMING_SOON_HUB_IDS: HubKey[] = ['messages'];
 
 const HUB_CATEGORIES: { title: string; ids: HubKey[] }[] = [
   {
@@ -74,7 +74,7 @@ const HUB_CATEGORIES: { title: string; ids: HubKey[] }[] = [
   },
   {
     title: 'Outils',
-    ids: ['wallet', 'notifs'],
+    ids: ['wallet', 'notifs', 'integrations'],
   },
 ];
 

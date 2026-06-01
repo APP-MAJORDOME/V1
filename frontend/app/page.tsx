@@ -16,6 +16,14 @@ import {
   tryRefreshAccessToken,
 } from '../lib/api';
 import { clearStoredAuthTokens, getStoredAccessToken, persistAccessToken } from '../lib/authTokens';
+import {
+  type CalendarProvider,
+  type OAuthStartResponse,
+  isCalendarConnected,
+  preferredEventProvider,
+  readOAuthCallbackNotice,
+  stripUrlSearchKeys,
+} from '../lib/calendarIntegrations';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
 import {
   TOAST_DURATION_MS,
@@ -394,7 +402,7 @@ export default function HomePage() {
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventStart, setNewEventStart] = useState('');
   const [newEventEnd, setNewEventEnd] = useState('');
-  const [newEventProvider, setNewEventProvider] = useState<'none' | 'google_calendar' | 'apple_calendar'>('google_calendar');
+  const [newEventProvider, setNewEventProvider] = useState<CalendarProvider>('none');
   const [editingEventId, setEditingEventId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editStart, setEditStart] = useState('');
@@ -1176,11 +1184,19 @@ export default function HomePage() {
       setAccounts(accountsRes);
       setHouseholdMembers(membersRes);
 
+      setNewEventProvider((prev) => {
+        const next = preferredEventProvider(accountsRes);
+        if (prev === 'none' || prev === 'google_calendar' || prev === 'microsoft_calendar' || prev === 'apple_calendar') {
+          if (isCalendarConnected(accountsRes, prev)) return prev;
+          return next;
+        }
+        return next;
+      });
+
       if (caldavServerOk === false) {
         setNewEventProvider((prev) => {
           if (prev !== 'apple_calendar') return prev;
-          const g = accountsRes.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
-          return g ? 'google_calendar' : 'none';
+          return preferredEventProvider(accountsRes);
         });
       }
 
@@ -1647,21 +1663,45 @@ export default function HomePage() {
     if (!modalCoffre) setDocEdit(null);
   }, [modalCoffre]);
 
-  type GoogleOAuthStartResponse = { authorization_url: string };
-
   async function connectGoogleCalendar() {
     if (!token) {
       pushToast('info', 'Connecte-toi d’abord pour lier Google Calendar.');
       return;
     }
     try {
-      const res = await postJson<GoogleOAuthStartResponse>('/api/v1/integrations/google/oauth/start', {}, token);
+      const res = await postJson<OAuthStartResponse>('/api/v1/integrations/google/oauth/start', {}, token);
       window.location.href = res.authorization_url;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Connexion Google impossible';
       pushToast('error', msg);
     }
   }
+
+  async function connectMicrosoftCalendar() {
+    if (!token) {
+      pushToast('info', 'Connecte-toi d’abord pour lier Outlook.');
+      return;
+    }
+    try {
+      const res = await postJson<OAuthStartResponse>('/api/v1/integrations/microsoft/oauth/start', {}, token);
+      window.location.href = res.authorization_url;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Connexion Microsoft impossible';
+      pushToast('error', msg);
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const { notice, keysToStrip } = readOAuthCallbackNotice(window.location.search);
+    if (!notice) return;
+    pushToast(notice.kind, notice.message);
+    stripUrlSearchKeys(keysToStrip);
+    if (notice.kind === 'success') {
+      setOverlay('integrations');
+      if (token) void loadData(token);
+    }
+  }, [token]);
 
   function applyAuthSession(res: LoginResponse) {
     persistAccessToken(res.access_token);
@@ -2717,10 +2757,26 @@ export default function HomePage() {
     }
 
     if (layer === 'integrations') {
-      const googleConnected = accounts.some((a) => a.provider === 'google_calendar' && a.status === 'connected');
+      const googleConnected = isCalendarConnected(accounts, 'google_calendar');
+      const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
       return wrapOv(
         'Intégrations tierces',
         <div>
+          <GlassCard style={{ padding: 12, marginBottom: 10, background: C.lilacL }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Outlook / Microsoft 365</div>
+            <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
+              {microsoftConnected
+                ? 'Connecté — agenda pro synchronisé avec MajorDome.'
+                : 'Connecte ton calendrier Outlook ou Microsoft 365.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void connectMicrosoftCalendar()}
+              style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.lilac, color: '#fff', fontWeight: 700, fontSize: 12 }}
+            >
+              {microsoftConnected ? 'Reconnecter Outlook' : 'Connecter Outlook'}
+            </button>
+          </GlassCard>
           <GlassCard style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Google Calendar</div>
             <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>

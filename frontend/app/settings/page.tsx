@@ -7,10 +7,14 @@ import { newToastId } from '../../lib/clientId';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LAYOUT_USER_EMAIL_KEY } from '../../lib/homeLayout';
 import { maskEmail } from '../../lib/maskEmail';
+import {
+  type OAuthStartResponse,
+  readOAuthCallbackNotice,
+  stripUrlSearchKeys,
+} from '../../lib/calendarIntegrations';
 
 type ConnectedAccount = { id: number; provider: string; status: string; last_sync_at?: string | null };
 type IntegrationStatus = { provider: string; configured: boolean; connected: boolean; status: string };
-type GoogleOAuthStartResponse = { authorization_url: string };
 type RefreshTokenResponse = { access_token: string };
 type DoctolibSummary = { count: number; status: string; events: Array<{ id: number; title: string; starts_at: string }> };
 type UiToast = { id: string; kind: 'success' | 'error' | 'info'; text: string };
@@ -56,6 +60,7 @@ export default function SettingsPage() {
   const [memorySaving, setMemorySaving] = useState(false);
 
   const [syncingGoogle, setSyncingGoogle] = useState(false);
+  const [syncingMicrosoft, setSyncingMicrosoft] = useState(false);
   const [syncingApple, setSyncingApple] = useState(false);
   const [syncingHome, setSyncingHome] = useState(false);
   const [refreshingSession, setRefreshingSession] = useState(false);
@@ -127,26 +132,65 @@ export default function SettingsPage() {
     } else {
       setAiName(storedAiName.trim() || 'Alfred');
     }
+    if (typeof window !== 'undefined') {
+      const { notice, keysToStrip } = readOAuthCallbackNotice(window.location.search);
+      if (notice) {
+        pushToast(notice.kind, notice.message);
+        stripUrlSearchKeys(keysToStrip);
+        setActiveTab('connexions');
+      }
+    }
   }, []);
 
   const googleAccount = useMemo(() => accounts.find((a) => a.provider === 'google_calendar') || null, [accounts]);
+  const microsoftAccount = useMemo(() => accounts.find((a) => a.provider === 'microsoft_calendar') || null, [accounts]);
   const appleAccount = useMemo(() => accounts.find((a) => a.provider === 'apple_calendar') || null, [accounts]);
   const homeAccount = useMemo(() => accounts.find((a) => a.provider === 'home_assistant') || null, [accounts]);
   const googleIntegration = useMemo(() => integrations.find((i) => i.provider === 'google_calendar') || null, [integrations]);
+  const microsoftIntegration = useMemo(() => integrations.find((i) => i.provider === 'microsoft_calendar') || null, [integrations]);
   const appleIntegration = useMemo(() => integrations.find((i) => i.provider === 'apple_calendar') || null, [integrations]);
   const llmIntegration = useMemo(() => integrations.find((i) => i.provider === 'openai_llm') ?? null, [integrations]);
-  const agendaConnectedCount = [googleAccount, appleAccount, homeAccount].filter(Boolean).length;
+  const agendaConnectedCount = [googleAccount, microsoftAccount, appleAccount, homeAccount].filter(Boolean).length;
   const readyServicesCount = agendaConnectedCount + (llmIntegration?.connected ? 1 : 0);
 
   async function connectGoogle() {
     if (!token) return;
     try {
-      const res = await postJson<GoogleOAuthStartResponse>('/api/v1/integrations/google/oauth/start', {}, token);
+      const res = await postJson<OAuthStartResponse>('/api/v1/integrations/google/oauth/start', {}, token);
       window.location.href = res.authorization_url;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Connexion Google impossible';
       setError(msg);
       pushToast('error', msg);
+    }
+  }
+
+  async function connectMicrosoft() {
+    if (!token) return;
+    try {
+      const res = await postJson<OAuthStartResponse>('/api/v1/integrations/microsoft/oauth/start', {}, token);
+      window.location.href = res.authorization_url;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Connexion Microsoft impossible';
+      setError(msg);
+      pushToast('error', msg);
+    }
+  }
+
+  async function syncMicrosoftNow() {
+    if (!token || !microsoftAccount) return;
+    setSyncingMicrosoft(true);
+    try {
+      const res = await postJson<{ status: string }>(`/api/v1/accounts/${microsoftAccount.id}/sync`, {}, token);
+      setInfo(`Microsoft: ${res.status}`);
+      pushToast('success', `Outlook: ${res.status}`);
+      await loadData(token);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erreur sync Microsoft';
+      setError(msg);
+      pushToast('error', msg);
+    } finally {
+      setSyncingMicrosoft(false);
     }
   }
 
@@ -316,7 +360,7 @@ export default function SettingsPage() {
             <strong style={{ color: C.text }}>Progression de configuration</strong>
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               <span style={{ fontSize: 10, background: C.terraXL, color: C.terra, padding: '4px 8px', borderRadius: 14 }}>
-                {readyServicesCount}/4 services prêts (agendas + Alfred serveur)
+                {readyServicesCount}/5 services prêts (agendas + Alfred serveur)
               </span>
               <span style={{ fontSize: 10, background: C.lilacL, color: C.text2, padding: '4px 8px', borderRadius: 14, border: `1px solid ${C.lilac}33` }}>
                 {doctolibSummary?.count || 0} RDV Doctolib détectés
@@ -352,6 +396,21 @@ export default function SettingsPage() {
 
             {activeTab === 'connexions' ? (
               <>
+                <Card title="Outlook / Microsoft 365">
+                  <p style={{ fontSize: 11, color: C.text2, margin: '0 0 8px' }}>
+                    Statut: {microsoftAccount ? microsoftAccount.status : 'non connecté'} — OAuth:{' '}
+                    {microsoftIntegration?.configured ? 'prêt' : 'à configurer sur le serveur'}
+                  </p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Btn onClick={connectMicrosoft} disabled={!microsoftIntegration?.configured}>
+                      Connecter Outlook
+                    </Btn>
+                    <Btn light onClick={syncMicrosoftNow} disabled={!microsoftAccount || syncingMicrosoft}>
+                      {syncingMicrosoft ? '...' : 'Sync'}
+                    </Btn>
+                  </div>
+                </Card>
+
                 <Card title="Google Calendar">
                   <p style={{ fontSize: 11, color: C.text2, margin: '0 0 8px' }}>Statut: {googleAccount ? googleAccount.status : 'non connecte'} - OAuth: {googleIntegration?.configured ? 'ok' : 'a configurer'}</p>
                   <div style={{ display: 'flex', gap: 8 }}>

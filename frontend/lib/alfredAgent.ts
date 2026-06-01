@@ -335,10 +335,13 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
     const startsAt = toStr((proposal as { starts_at?: unknown }).starts_at) || now.toISOString();
     const endsAt = toStr((proposal as { ends_at?: unknown }).ends_at) || inOneHour.toISOString();
     const eventTitle = titleFromProposal || command.slice(0, 120);
+    const msConnected = ctx.accounts.some(
+      (a) => a.provider === 'microsoft_calendar' && a.status === 'connected',
+    );
     const googleConnected = ctx.accounts.some(
       (a) => a.provider === 'google_calendar' && a.status === 'connected',
     );
-    const eventProvider = googleConnected ? 'google_calendar' : 'none';
+    const eventProvider = msConnected ? 'microsoft_calendar' : googleConnected ? 'google_calendar' : 'none';
     const created = await postJson<AlfredEvent>(
       '/api/v1/events/create-and-sync',
       { title: eventTitle, starts_at: startsAt, ends_at: endsAt, provider: eventProvider },
