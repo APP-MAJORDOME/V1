@@ -1,6 +1,6 @@
 'use client';
 
-import { AppLoader, MajordomeWordmark } from './BrandLogo';
+import { BrandLoadingPicto, MajordomeWordmark } from './BrandLogo';
 import { LoginSplash } from './LoginSplash';
 
 type AuthMode = 'login' | 'register';
@@ -111,7 +111,7 @@ export function LoginAuthScreen({
           ) : null}
           {loading ? (
             <div style={{ marginBottom: 12 }}>
-              <AppLoader label="Connexion en cours…" compact />
+              <BrandLoadingPicto compact />
             </div>
           ) : null}
           <form

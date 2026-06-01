@@ -144,9 +144,6 @@ body {
     box-shadow: none;
   }
 
-  .app-logo-fixed {
-    display: none !important;
-  }
 }
 
 /* Micro-interactions */

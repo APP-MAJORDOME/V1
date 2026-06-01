@@ -50,6 +50,32 @@ export function MajordomeWordmark({
   );
 }
 
+/** Pictogramme animé pendant un chargement (sans texte). */
+export function BrandLoadingPicto({
+  size = 72,
+  compact = false,
+}: {
+  size?: number;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Chargement"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: compact ? 12 : 24,
+      }}
+    >
+      <MajordomeMark size={compact ? 48 : size} animated />
+    </div>
+  );
+}
+
 /** Loader plein écran ou inline. */
 export function AppLoader({
   label = 'Chargement…',

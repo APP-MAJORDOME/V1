@@ -79,7 +79,7 @@ import { RoutinesPanel } from '../components/RoutinesPanel';
 import { CoursesPanel } from '../components/CoursesPanel';
 import { AlfredChatPanel } from '../components/AlfredChatPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
-import { AppLoader, MajordomeMark, MajordomeWordmark } from '../components/BrandLogo';
+import { BrandLoadingPicto, MajordomeMark, MajordomeWordmark } from '../components/BrandLogo';
 import { LoginAuthScreen } from '../components/LoginAuthScreen';
 import { MoiTabPanel } from '../components/MoiTabPanel';
 import { AgendaTabPanel } from '../components/AgendaTabPanel';
@@ -2815,25 +2815,7 @@ export default function HomePage() {
         Aller au contenu principal
       </a>
       <style>{`*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body{overscroll-behavior-y:none;}::-webkit-scrollbar{display:none;}`}</style>
-      <div className="app-outer" style={{ position: 'relative' }}>
-        <a
-          href="/"
-          className="app-logo-fixed"
-          style={{
-            position: 'fixed',
-            top: 'max(14px, env(safe-area-inset-top))',
-            left: 'max(14px, env(safe-area-inset-left))',
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            textDecoration: 'none',
-            lineHeight: 1,
-          }}
-          aria-label="MAJORDOME — accueil"
-        >
-          <MajordomeWordmark maxHeight={36} />
-        </a>
+      <div className="app-outer">
         <div className="app-device" style={{ background: C.bg }}>
           <div style={{ position: 'relative' }}>
             <StatusBar
@@ -2862,7 +2844,7 @@ export default function HomePage() {
 
           {!clientReady ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <AppLoader label="Chargement de l'application…" />
+              <BrandLoadingPicto />
             </div>
           ) : !token ? (
             <LoginAuthScreen
@@ -2884,7 +2866,7 @@ export default function HomePage() {
             />
           ) : !postLoginSetupResolved ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
-              <AppLoader label="Préparation de ton espace…" />
+              <BrandLoadingPicto />
             </div>
           ) : !postLoginSetupDone ? (
             <WelcomeSetupWizard
