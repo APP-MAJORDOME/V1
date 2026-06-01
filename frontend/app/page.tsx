@@ -20,9 +20,12 @@ import {
   type CalendarProvider,
   type OAuthStartResponse,
   isCalendarConnected,
+  type IntegrationStatus,
   preferredEventProvider,
+  integrationConfigured,
   readOAuthCallbackNotice,
   stripUrlSearchKeys,
+  syncCalendarAccount,
 } from '../lib/calendarIntegrations';
 import { newToastId, newLocalNumericId } from '../lib/clientId';
 import {
@@ -396,6 +399,8 @@ export default function HomePage() {
   const [opps, setOpps] = useState<OpportunityItem[]>([]);
   const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
+  const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([]);
+  const [calendarSyncBusy, setCalendarSyncBusy] = useState<string | null>(null);
   /** null = pas encore chargé depuis /integrations/capabilities */
   const [appleCaldavAvailable, setAppleCaldavAvailable] = useState<boolean | null>(null);
   const [creatingEvent, setCreatingEvent] = useState(false);
@@ -1127,7 +1132,7 @@ export default function HomePage() {
     setLoading(true);
     setError('');
     try {
-      const [eventsRes, tasksPayload, oppsRes, conflictsRes, accountsRes, membersRes, taskSummaryRes, capRes, memoryRes] =
+      const [eventsRes, tasksPayload, oppsRes, conflictsRes, accountsRes, membersRes, taskSummaryRes, capRes, memoryRes, integrationsRes] =
         await Promise.all([
         getJson<EventItem[]>('/api/v1/events', accessToken),
         (async (): Promise<{ merged: TaskItem[]; donePagingExhausted: boolean }> => {
@@ -1161,6 +1166,7 @@ export default function HomePage() {
         getJson<TaskSummaryApi>('/api/v1/tasks/summary', accessToken).catch(() => null),
         getJson<{ apple_caldav_available: boolean }>('/api/v1/integrations/capabilities', accessToken).catch(() => null),
         getJson<{ id: number; fact_text: string }[]>('/api/v1/memory/facts', accessToken).catch(() => []),
+        getJson<IntegrationStatus[]>('/api/v1/integrations/status', accessToken).catch(() => []),
       ]);
       if (memoryRes.length > 0) {
         const fromServer = memoryRes.map((f) => f.fact_text.trim()).filter(Boolean);
@@ -1182,6 +1188,7 @@ export default function HomePage() {
       setOpps(oppsRes);
       setConflicts(conflictsRes.conflicts || []);
       setAccounts(accountsRes);
+      setIntegrationStatuses(integrationsRes);
       setHouseholdMembers(membersRes);
 
       setNewEventProvider((prev) => {
@@ -1674,6 +1681,25 @@ export default function HomePage() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Connexion Google impossible';
       pushToast('error', msg);
+    }
+  }
+
+  async function syncCalendarProvider(provider: 'google_calendar' | 'microsoft_calendar') {
+    if (!token) return;
+    const account = accounts.find((a) => a.provider === provider && a.status === 'connected');
+    if (!account) {
+      pushToast('info', 'Connecte d’abord ce calendrier.');
+      return;
+    }
+    setCalendarSyncBusy(provider);
+    try {
+      const status = await syncCalendarAccount(token, account.id);
+      pushToast('success', `Synchronisation : ${status}`);
+      await loadData(token);
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Synchronisation impossible');
+    } finally {
+      setCalendarSyncBusy(null);
     }
   }
 
@@ -2759,6 +2785,9 @@ export default function HomePage() {
     if (layer === 'integrations') {
       const googleConnected = isCalendarConnected(accounts, 'google_calendar');
       const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
+      const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
+      const googleConfigured = integrationConfigured(integrationStatuses, 'google_calendar');
+      const btnRow = { display: 'flex' as const, flexWrap: 'wrap' as const, gap: 8 };
       return wrapOv(
         'Intégrations tierces',
         <div>
@@ -2767,28 +2796,94 @@ export default function HomePage() {
             <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
               {microsoftConnected
                 ? 'Connecté — agenda pro synchronisé avec MajorDome.'
-                : 'Connecte ton calendrier Outlook ou Microsoft 365.'}
+                : msConfigured
+                  ? 'Connecte ton calendrier Outlook ou Microsoft 365.'
+                  : 'Connexion Outlook : à activer sur le serveur (clés Azure).'}
             </p>
-            <button
-              type="button"
-              onClick={() => void connectMicrosoftCalendar()}
-              style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.lilac, color: '#fff', fontWeight: 700, fontSize: 12 }}
-            >
-              {microsoftConnected ? 'Reconnecter Outlook' : 'Connecter Outlook'}
-            </button>
+            <div style={btnRow}>
+              <button
+                type="button"
+                disabled={!msConfigured}
+                onClick={() => void connectMicrosoftCalendar()}
+                style={{
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '8px 12px',
+                  background: C.lilac,
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 12,
+                  opacity: msConfigured ? 1 : 0.5,
+                }}
+              >
+                {microsoftConnected ? 'Reconnecter Outlook' : 'Connecter Outlook'}
+              </button>
+              {microsoftConnected ? (
+                <button
+                  type="button"
+                  onClick={() => void syncCalendarProvider('microsoft_calendar')}
+                  disabled={calendarSyncBusy === 'microsoft_calendar'}
+                  style={{
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 10,
+                    padding: '8px 12px',
+                    background: C.white,
+                    color: C.text,
+                    fontWeight: 700,
+                    fontSize: 12,
+                  }}
+                >
+                  {calendarSyncBusy === 'microsoft_calendar' ? 'Sync…' : 'Synchroniser'}
+                </button>
+              ) : null}
+            </div>
           </GlassCard>
           <GlassCard style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Google Calendar</div>
             <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
-              {googleConnected ? 'Connecté — tes événements se synchronisent.' : 'Connecte ton agenda pour remplir automatiquement ton planning.'}
+              {googleConnected
+                ? 'Connecté — tes événements se synchronisent.'
+                : googleConfigured
+                  ? 'Connecte ton agenda pour remplir automatiquement ton planning.'
+                  : 'Connexion Google : à configurer sur le serveur.'}
             </p>
-            <button
-              type="button"
-              onClick={() => void connectGoogleCalendar()}
-              style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.terra, color: '#fff', fontWeight: 700, fontSize: 12 }}
-            >
-              {googleConnected ? 'Reconnecter Google' : 'Connecter Google Calendar'}
-            </button>
+            <div style={btnRow}>
+              <button
+                type="button"
+                disabled={!googleConfigured}
+                onClick={() => void connectGoogleCalendar()}
+                style={{
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '8px 12px',
+                  background: C.terra,
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 12,
+                  opacity: googleConfigured ? 1 : 0.5,
+                }}
+              >
+                {googleConnected ? 'Reconnecter Google' : 'Connecter Google Calendar'}
+              </button>
+              {googleConnected ? (
+                <button
+                  type="button"
+                  onClick={() => void syncCalendarProvider('google_calendar')}
+                  disabled={calendarSyncBusy === 'google_calendar'}
+                  style={{
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 10,
+                    padding: '8px 12px',
+                    background: C.white,
+                    color: C.text,
+                    fontWeight: 700,
+                    fontSize: 12,
+                  }}
+                >
+                  {calendarSyncBusy === 'google_calendar' ? 'Sync…' : 'Synchroniser'}
+                </button>
+              ) : null}
+            </div>
           </GlassCard>
           <p style={{ margin: '0 0 10px', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
             Raccourcis web et messages Alfred pour les autres services.

@@ -9,6 +9,25 @@ export type AgentInterpretResponse = {
 
 export type AgentExecutionResult = { done: boolean; message?: string };
 
+export type AgentActResponse = {
+  status: string;
+  preview: AgentInterpretResponse;
+  message?: string | null;
+  result?: Record<string, unknown> | null;
+};
+
+/** Exécution côté serveur (tâches, courses, mémoire, événements…). */
+export async function runServerAgentAct(
+  token: string,
+  command: string,
+): Promise<{ completed: boolean; message?: string; preview: AgentInterpretResponse }> {
+  const act = await postJson<AgentActResponse>('/api/v1/agent/act', { command }, token);
+  if (act.status === 'completed' && act.message) {
+    return { completed: true, message: act.message, preview: act.preview };
+  }
+  return { completed: false, preview: act.preview };
+}
+
 export type AlfredWebSource = { title: string; snippet?: string; url: string };
 
 /** Document du coffre cité par Alfred (consultation foyer). */

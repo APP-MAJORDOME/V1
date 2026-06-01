@@ -1,6 +1,15 @@
 /** Connexions calendrier (Google, Microsoft, Apple). */
 
+import { postJson } from './api';
+
 export type CalendarProvider = 'none' | 'google_calendar' | 'microsoft_calendar' | 'apple_calendar';
+
+export type IntegrationStatus = {
+  provider: string;
+  configured: boolean;
+  connected: boolean;
+  status: string;
+};
 
 export type ConnectedAccountLike = { provider: string; status: string };
 
@@ -60,6 +69,18 @@ export function readOAuthCallbackNotice(search: string): {
     };
   }
   return { notice: null, keysToStrip };
+}
+
+export function integrationConfigured(
+  statuses: IntegrationStatus[],
+  provider: string,
+): boolean {
+  return statuses.find((s) => s.provider === provider)?.configured ?? false;
+}
+
+export async function syncCalendarAccount(token: string, accountId: number): Promise<string> {
+  const res = await postJson<{ status: string }>(`/api/v1/accounts/${accountId}/sync`, {}, token);
+  return res.status;
 }
 
 export function stripUrlSearchKeys(keys: string[]): void {

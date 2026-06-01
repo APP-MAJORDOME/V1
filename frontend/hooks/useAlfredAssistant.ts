@@ -9,6 +9,7 @@ import {
   extractVaultDocuments,
   extractWebSources,
   isAlfredConsultationIntent,
+  runServerAgentAct,
   tryExtractAlfredMemory,
   type AgentExecutionResult,
   type AgentInterpretResponse,
@@ -342,9 +343,19 @@ export function useAlfredAssistant({
           });
           return;
         }
-        const execution = await onExecuteIntent(text, res).catch(
+        let execution = await onExecuteIntent(text, res).catch(
           () => ({ done: false }) as AgentExecutionResult,
         );
+        if (
+          !execution.done &&
+          !isAlfredConsultationIntent(res.intent) &&
+          res.mode === 'auto'
+        ) {
+          const server = await runServerAgentAct(token, text).catch(() => null);
+          if (server?.completed) {
+            execution = { done: true, message: server.message };
+          }
+        }
         if (execution.done && execution.message) {
           aiText = execution.message;
         } else if (!aiText.trim()) {
@@ -513,9 +524,19 @@ export function useAlfredAssistant({
           }
           return;
         }
-        const execution = await onExecuteIntent(text, res).catch(
+        let execution = await onExecuteIntent(text, res).catch(
           () => ({ done: false }) as AgentExecutionResult,
         );
+        if (
+          !execution.done &&
+          !isAlfredConsultationIntent(res.intent) &&
+          res.mode === 'auto'
+        ) {
+          const server = await runServerAgentAct(token, text).catch(() => null);
+          if (server?.completed) {
+            execution = { done: true, message: server.message };
+          }
+        }
         if (execution.done && execution.message) {
           aiText = `${aiText}\n\n${execution.message}`.trim();
         }
@@ -587,7 +608,13 @@ export function useAlfredAssistant({
           explanation: '',
           proposal: proposal ?? {},
         };
-        const execution = await onExecuteIntent(command, res);
+        let execution = await onExecuteIntent(command, res);
+        if (!execution.done && res.mode === 'auto' && !isAlfredConsultationIntent(res.intent)) {
+          const server = await runServerAgentAct(token, command).catch(() => null);
+          if (server?.completed) {
+            execution = { done: true, message: server.message };
+          }
+        }
         if (execution.done && execution.message) {
           setAssistantHistory((h) => [
             ...h.map((m) => ({ ...m, pendingConfirm: undefined })),
