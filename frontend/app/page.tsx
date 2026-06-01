@@ -2895,19 +2895,6 @@ export default function HomePage() {
             />
           ) : (
             <main id="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
-              <header
-                style={{
-                  flexShrink: 0,
-                  padding: '10px 12px',
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  background: C.white,
-                  borderBottom: `1px solid ${C.border}`,
-                }}
-              >
-                <MajordomeWordmark maxHeight={26} />
-              </header>
               <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
                 {renderAppLayer()}
               </div>

@@ -2,6 +2,7 @@
 
 import type { HubKey } from './PlusHub';
 import { PLUS_HUB_ITEMS } from './PlusHub';
+import { MajordomeMark } from './BrandLogo';
 import { hubColor } from '../lib/moduleColors';
 import type { MentalWeather } from '../lib/mentalLoad';
 
@@ -146,7 +147,17 @@ export function TodayHome({
       }}
     >
       {showPersonalize ? (
-        <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'flex-end' }}>
+        <div
+          style={{
+            marginBottom: 8,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            minHeight: 36,
+          }}
+        >
+          <MajordomeMark size={32} />
           <button
             type="button"
             onClick={onPersonalize}
@@ -160,6 +171,7 @@ export function TodayHome({
               borderRadius: 12,
               padding: '6px 10px',
               cursor: 'pointer',
+              flexShrink: 0,
             }}
           >
             Personnaliser
