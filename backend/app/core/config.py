@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     google_oauth_client_secret: str = ""
     google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/integrations/google/oauth/callback"
     google_oauth_scopes: str = "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+    microsoft_oauth_client_id: str = ""
+    microsoft_oauth_client_secret: str = ""
+    microsoft_oauth_redirect_uri: str = "http://localhost:8000/api/v1/integrations/microsoft/oauth/callback"
+    microsoft_oauth_tenant: str = "common"
+    microsoft_oauth_scopes: str = "openid profile offline_access Calendars.ReadWrite User.Read"
     frontend_base_url: str = "http://localhost:3000"
     oauth_state_ttl_seconds: int = 600
     rate_limit_requests_per_minute: int = 120

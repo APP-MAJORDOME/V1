@@ -41,6 +41,12 @@ from app.connectors.google_calendar import (
     sync_google_events,
     update_google_event,
 )
+from app.connectors.microsoft_calendar import (
+    create_microsoft_event,
+    exchange_microsoft_code_for_tokens,
+    microsoft_oauth_authorize_url,
+    sync_microsoft_events,
+)
 from app.models.models import (
     User,
     Household,
@@ -141,6 +147,7 @@ from app.schemas.schemas import (
 )
 from app.services.briefing import build_today_briefing
 from app.services.agent import analyze_debordee, interpret_command
+from app.services.agent_executor import execute_agent_act
 from app.services.alfred_household import build_household_answer, command_wants_household_answer
 from app.services.alfred_attachments import ALFRED_ATTACHMENT_MIME, analyze_alfred_attachment, resolve_attachment_mime
 from app.services.realtime_voice import RealtimeVoiceError, build_alfred_realtime_instructions, exchange_realtime_webrtc_sdp
@@ -154,6 +161,7 @@ from app.services.home import get_home_status, execute_scene
 
 router = APIRouter(prefix="/api/v1")
 google_oauth_states: dict[str, dict[str, int]] = {}
+microsoft_oauth_states: dict[str, dict[str, int]] = {}
 redis_client = redis.from_url(settings.redis_url, decode_responses=True)
 
 _ATTACHMENT_ALLOWED_MIME = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"})
@@ -202,17 +210,19 @@ def _parse_expected_updated_at(payload: dict) -> datetime | None:
         raise api_error("invalid_expected_updated_at", "expected_updated_at must be a valid ISO datetime.", 400)
 
 
-def set_oauth_state(state: str, user_id: int, household_id: int) -> None:
+def set_oauth_state(state: str, user_id: int, household_id: int, provider: str = "google") -> None:
     value = json.dumps({"user_id": user_id, "household_id": household_id})
+    fallback = google_oauth_states if provider == "google" else microsoft_oauth_states
     try:
-        redis_client.setex(f"oauth:google:state:{state}", settings.oauth_state_ttl_seconds, value)
+        redis_client.setex(f"oauth:{provider}:state:{state}", settings.oauth_state_ttl_seconds, value)
     except Exception:
-        google_oauth_states[state] = {"user_id": user_id, "household_id": household_id}
+        fallback[state] = {"user_id": user_id, "household_id": household_id}
 
 
-def pop_oauth_state(state: str) -> dict[str, int] | None:
+def pop_oauth_state(state: str, provider: str = "google") -> dict[str, int] | None:
+    fallback = google_oauth_states if provider == "google" else microsoft_oauth_states
     try:
-        key = f"oauth:google:state:{state}"
+        key = f"oauth:{provider}:state:{state}"
         value = redis_client.get(key)
         if value:
             redis_client.delete(key)
@@ -220,7 +230,7 @@ def pop_oauth_state(state: str) -> dict[str, int] | None:
             return {"user_id": int(parsed["user_id"]), "household_id": int(parsed["household_id"])}
     except Exception:
         pass
-    return google_oauth_states.pop(state, None)
+    return fallback.pop(state, None)
 
 
 @router.post("/integrations/google/oauth/start", response_model=GoogleOAuthStartResponse)
@@ -252,6 +262,7 @@ def integrations_status(auth: AuthContext = Depends(get_current_auth_context), d
     accounts = db.query(ConnectedAccount).filter(ConnectedAccount.user_id == auth.user_id).all()
     by_provider = {a.provider: a for a in accounts}
     google = by_provider.get("google_calendar")
+    microsoft = by_provider.get("microsoft_calendar")
     apple = by_provider.get("apple_calendar")
     home_assistant = by_provider.get("home_assistant")
 
@@ -272,6 +283,12 @@ def integrations_status(auth: AuthContext = Depends(get_current_auth_context), d
             "configured": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret),
             "connected": google is not None and google.status == "connected",
             "status": google.status if google else "not_connected",
+        },
+        {
+            "provider": "microsoft_calendar",
+            "configured": bool(settings.microsoft_oauth_client_id and settings.microsoft_oauth_client_secret),
+            "connected": microsoft is not None and microsoft.status == "connected",
+            "status": microsoft.status if microsoft else "not_connected",
         },
         {
             "provider": "apple_calendar",
@@ -427,6 +444,72 @@ def google_oauth_callback(
         provider=account.provider,
     )
     return RedirectResponse(url=f"{redirect_base}/?google_oauth=connected", status_code=303)
+
+
+@router.post("/integrations/microsoft/oauth/start", response_model=GoogleOAuthStartResponse)
+def start_microsoft_oauth(auth: AuthContext = Depends(get_current_auth_context)):
+    if not settings.microsoft_oauth_client_id or not settings.microsoft_oauth_client_secret:
+        raise api_error("microsoft_oauth_not_configured", "Microsoft OAuth is not configured.", 400)
+
+    state = token_urlsafe(24)
+    set_oauth_state(state=state, user_id=auth.user_id, household_id=auth.household_id, provider="microsoft")
+    return GoogleOAuthStartResponse(
+        authorization_url=microsoft_oauth_authorize_url(state),
+        state=state,
+    )
+
+
+@router.get("/integrations/microsoft/oauth/callback")
+def microsoft_oauth_callback(
+    request: Request,
+    code: str = Query(...),
+    state: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    rid = getattr(request.state, "request_id", None)
+    redirect_base = settings.frontend_base_url.rstrip("/")
+
+    state_context = pop_oauth_state(state, provider="microsoft")
+    if state_context is None:
+        log_event("oauth_microsoft_callback", request_id=rid, outcome="failure", reason="invalid_oauth_state")
+        return RedirectResponse(url=f"{redirect_base}/?microsoft_oauth=error&reason=invalid_state", status_code=303)
+
+    try:
+        tokens = exchange_microsoft_code_for_tokens(code)
+    except Exception:
+        log_event("oauth_microsoft_callback", request_id=rid, outcome="failure", reason="token_exchange_failed")
+        return RedirectResponse(url=f"{redirect_base}/?microsoft_oauth=error&reason=exchange_failed", status_code=303)
+
+    account = (
+        db.query(ConnectedAccount)
+        .filter(
+            ConnectedAccount.user_id == state_context["user_id"],
+            ConnectedAccount.provider == "microsoft_calendar",
+        )
+        .first()
+    )
+    if account is None:
+        account = ConnectedAccount(
+            user_id=state_context["user_id"],
+            provider="microsoft_calendar",
+            status="connected",
+            scopes_json=json.dumps(tokens),
+        )
+        db.add(account)
+    else:
+        account.scopes_json = json.dumps(tokens)
+        account.status = "connected"
+    db.commit()
+    db.refresh(account)
+    log_event(
+        "oauth_microsoft_callback",
+        request_id=rid,
+        outcome="success",
+        user_id=state_context["user_id"],
+        account_id=account.id,
+        provider=account.provider,
+    )
+    return RedirectResponse(url=f"{redirect_base}/?microsoft_oauth=connected", status_code=303)
 
 
 def _normalize_auth_email(email: str) -> str:
@@ -737,6 +820,11 @@ def sync_account(
         if not result.ok:
             raise api_error("google_sync_failed", result.message or "Google sync failed.", 502)
         return {"account_id": account_id, "provider": item.provider, "status": result.message}
+    if item.provider == "microsoft_calendar":
+        result = sync_microsoft_events(db=db, account=item, household_id=auth.household_id)
+        if not result.ok:
+            raise api_error("microsoft_sync_failed", result.message or "Microsoft sync failed.", 502)
+        return {"account_id": account_id, "provider": item.provider, "status": result.message}
     if item.provider == "apple_calendar":
         result = sync_apple_events(db=db, account=item, household_id=auth.household_id)
         if not result.ok:
@@ -872,6 +960,32 @@ def create_event_and_sync(
         if not result.ok:
             raise api_error("google_create_failed", "Failed to create event on Google Calendar.", 502)
         event.source_provider = "google_calendar"
+        event.source_event_id = str(result.payload.get("event_id") or "")
+        event.raw_payload_json = json.dumps(result.payload.get("raw") or {})
+    elif provider == "microsoft_calendar":
+        account = (
+            db.query(ConnectedAccount)
+            .filter(
+                ConnectedAccount.user_id == auth.user_id,
+                ConnectedAccount.provider == "microsoft_calendar",
+            )
+            .first()
+        )
+        if account is None:
+            raise api_error("microsoft_account_not_connected", "Microsoft Calendar account is not connected.", 400)
+        result = create_microsoft_event(
+            db=db,
+            account=account,
+            title=title,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            description=description,
+            location=location,
+            timezone=timezone,
+        )
+        if not result.ok:
+            raise api_error("microsoft_create_failed", "Failed to create event on Microsoft Calendar.", 502)
+        event.source_provider = "microsoft_calendar"
         event.source_event_id = str(result.payload.get("event_id") or "")
         event.raw_payload_json = json.dumps(result.payload.get("raw") or {})
     elif provider == "apple_calendar":
@@ -2317,7 +2431,7 @@ def agent_act(
     db: Session = Depends(get_db),
 ):
     mem = household_memory_lines(db, auth.household_id)
-    return {"status": "not_implemented", "preview": interpret_command(payload.command, memory_lines=mem)}
+    return execute_agent_act(payload.command, db, auth, mem)
 
 
 @router.get("/agent/realtime/status", response_model=AgentRealtimeStatusResponse)

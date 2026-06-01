@@ -162,6 +162,8 @@ class AgentInterpretResponse(BaseModel):
 class AgentActResponse(BaseModel):
     status: str
     preview: AgentInterpretResponse
+    message: str | None = None
+    result: dict[str, Any] | None = None
 
 
 class HomeStatusResponse(BaseModel):

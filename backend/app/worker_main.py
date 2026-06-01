@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.connectors.apple_bridge import sync_apple_events
 from app.connectors.google_calendar import sync_google_events
+from app.connectors.microsoft_calendar import sync_microsoft_events
 from app.core.database import SessionLocal
 from app.core.dt import utc_now_naive
 from app.models.models import ConnectedAccount, Household
@@ -40,6 +41,8 @@ def sync_account_with_retry(account_id: int, household_id: int, cycle_id: str, p
                 return False, "account_not_found"
             if provider == "google_calendar":
                 result = sync_google_events(db=db, account=account, household_id=household_id)
+            elif provider == "microsoft_calendar":
+                result = sync_microsoft_events(db=db, account=account, household_id=household_id)
             elif provider == "apple_calendar":
                 result = sync_apple_events(db=db, account=account, household_id=household_id)
             else:
@@ -94,7 +97,7 @@ def run_sync_cycle(cycle_id: str) -> None:
                 db.query(ConnectedAccount)
                 .filter(
                     ConnectedAccount.user_id == household.owner_user_id,
-                    ConnectedAccount.provider.in_(["google_calendar", "apple_calendar"]),
+                    ConnectedAccount.provider.in_(["google_calendar", "microsoft_calendar", "apple_calendar"]),
                     ConnectedAccount.status.in_(["connected", "reauth_required"]),
                 )
                 .all()

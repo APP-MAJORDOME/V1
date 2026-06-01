@@ -471,7 +471,7 @@ def test_agent_interpret_returns_structured_payload():
     assert isinstance(data.get("proposal"), dict)
 
 
-def test_agent_act_returns_not_implemented_with_preview():
+def test_agent_act_returns_preview_for_confirm_intents():
     _cleanup_db()
     client = TestClient(app)
     token = _login(client, "agentact@majordome.test")
@@ -483,10 +483,28 @@ def test_agent_act_returns_not_implemented_with_preview():
     )
     assert r.status_code == 200
     data = r.json()
-    assert data.get("status") == "not_implemented"
+    assert data.get("status") == "preview_only"
     preview = data.get("preview")
     assert isinstance(preview, dict)
     assert isinstance(preview.get("intent"), str) and preview["intent"].strip()
+
+
+def test_agent_act_creates_task():
+    _cleanup_db()
+    client = TestClient(app)
+    token = _login(client, "agentacttask@majordome.test")
+    headers = {"Authorization": f"Bearer {token}"}
+    r = client.post(
+        "/api/v1/agent/act",
+        headers=headers,
+        json={"command": "ajoute une tâche : acheter du lait"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("status") == "completed"
+    assert data.get("result", {}).get("task_id")
+    tasks = client.get("/api/v1/tasks", headers=headers).json()
+    assert any("lait" in (t.get("title") or "").lower() for t in tasks)
 
 
 def test_agent_debordee_fallback_when_no_llm():
@@ -519,7 +537,7 @@ def test_integrations_status_has_core_providers():
     rows = r.json()
     assert isinstance(rows, list)
     providers = {x["provider"] for x in rows}
-    assert providers >= {"google_calendar", "apple_calendar", "home_assistant", "openai_llm"}
+    assert providers >= {"google_calendar", "microsoft_calendar", "apple_calendar", "home_assistant", "openai_llm"}
     for row in rows:
         assert "configured" in row and "connected" in row and "status" in row
 
@@ -1150,7 +1168,15 @@ def test_delete_document_attachment_when_none_still_ok():
     assert data.get("attachment_size_bytes") is None
 
 
-def test_accounts_microsoft_calendar_sync_returns_stub():
+@patch("app.api.routes.sync_microsoft_events")
+def test_accounts_microsoft_calendar_sync(mock_sync):
+    from app.connectors.base import ConnectorResult
+
+    mock_sync.return_value = ConnectorResult(
+        ok=True,
+        payload={"provider": "microsoft_calendar", "events_synced": 2},
+        message="microsoft_sync_ok",
+    )
     _cleanup_db()
     client = TestClient(app)
     token = _login(client, "msftstub@majordome.test")
@@ -1164,7 +1190,7 @@ def test_accounts_microsoft_calendar_sync_returns_stub():
     aid = created.json()["id"]
     sync = client.post(f"/api/v1/accounts/{aid}/sync", headers=headers)
     assert sync.status_code == 200
-    assert sync.json()["status"] == "sync_stub_ok"
+    assert sync.json()["status"] == "microsoft_sync_ok"
 
 
 def test_household_scoping_isolation_between_users():
