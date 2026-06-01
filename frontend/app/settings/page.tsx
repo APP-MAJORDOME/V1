@@ -428,6 +428,45 @@ export default function SettingsPage() {
             {activeTab === 'compte' ? (
               <>
                 <Card title="État du compte">
+                  <p style={{ fontSize: 11, color: C.text2, margin: '0 0 10px', lineHeight: 1.5 }}>
+                    Revoir les 10 écrans de découverte (fonctionnalités + personnalisation) ou les valider en aperçu
+                    avant mise à jour.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    <a
+                      href="/onboarding-preview"
+                      style={{
+                        display: 'block',
+                        textAlign: 'center',
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        border: `1px solid ${C.border}`,
+                        background: C.surface,
+                        color: C.terra,
+                        fontWeight: 700,
+                        fontSize: 12,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      Aperçu du parcours (liste + écrans)
+                    </a>
+                    <a
+                      href="/?replay_onboarding=1"
+                      style={{
+                        display: 'block',
+                        textAlign: 'center',
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        background: C.terraXL,
+                        color: C.terra,
+                        fontWeight: 700,
+                        fontSize: 12,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      Relancer le parcours dans l’app
+                    </a>
+                  </div>
                   <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text2 }}>
                     <li>Session: active</li>
                     <li>

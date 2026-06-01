@@ -162,6 +162,8 @@ import {
 } from '../lib/homeLayout';
 import {
   buildHomeLayoutFromPostLoginChoices,
+  clearPostLoginPersonalizationFlag,
+  clearWelcomeWizardV2Flag,
   isWelcomeWizardV2Complete,
   markPostLoginPersonalizationComplete,
   markWelcomeWizardV2Complete,
@@ -985,6 +987,18 @@ export default function HomePage() {
       return;
     }
     setLayoutUserEmail(em);
+    const params = new URLSearchParams(window.location.search);
+    const replayOnboarding = params.get('replay_onboarding') === '1';
+    if (replayOnboarding) {
+      clearWelcomeWizardV2Flag(em);
+      clearPostLoginPersonalizationFlag(em);
+      params.delete('replay_onboarding');
+      const qs = params.toString();
+      window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+      setPostLoginSetupDone(false);
+      setPostLoginSetupResolved(true);
+      return;
+    }
     setPostLoginSetupDone(isWelcomeWizardV2Complete(em));
     setPostLoginSetupResolved(true);
   }, [token]);
@@ -1681,6 +1695,15 @@ export default function HomePage() {
     try {
       const res = await postJson<LoginResponse>(path, payload);
       applyAuthSession(res);
+      if (authMode === 'register') {
+        const emNew = email.trim().toLowerCase();
+        if (emNew) {
+          clearWelcomeWizardV2Flag(emNew);
+          clearPostLoginPersonalizationFlag(emNew);
+        }
+        setPostLoginSetupDone(false);
+        setPostLoginSetupResolved(true);
+      }
       setInfo(authMode === 'register' ? 'Compte créé. Bienvenue !' : 'Connexion réussie.');
       pushToast('success', authMode === 'register' ? 'Compte créé' : 'Connexion réussie');
       void notifySystem('MajorDome', 'Bienvenue dans MajorDome.');
