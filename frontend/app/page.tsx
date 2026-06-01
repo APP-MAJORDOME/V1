@@ -87,10 +87,8 @@ import { HomeTabPanel } from '../components/HomeTabPanel';
 import { MaisonTabPanel } from '../components/MaisonTabPanel';
 import { DocumentsTabPanel } from '../components/DocumentsTabPanel';
 import { FamilleTabPanel } from '../components/FamilleTabPanel';
-import { EquiteModal } from '../components/EquiteModal';
-import { DebordeeModal, type DebordeeResult } from '../components/DebordeeModal';
-import { AlexModal } from '../components/AlexModal';
-import { CoffreModal } from '../components/CoffreModal';
+import { AppShellModals } from '../components/AppShellModals';
+import { type DebordeeResult } from '../components/DebordeeModal';
 import { formatDocStorageShort, docCategoryForApi } from '../lib/documentsUi';
 import { filterOutTestTasks, isTestTaskTitle } from '../lib/taskHygiene';
 import { formatDateFr, formatDateTimeFr } from '../lib/formatClientDate';
@@ -146,6 +144,7 @@ import {
   type SelfMoment,
 } from '../lib/moiWellness';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
+import { MAJORDOME_PALETTE, resolveAppLayer, type MainTab, type OverlayId } from '../lib/appNavigation';
 import { FamilleTempsReelPanel } from '../components/FamilleTempsReelPanel';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
 import { WelcomeSetupWizard } from '../components/WelcomeSetupWizard';
@@ -259,52 +258,7 @@ function mapDocFromApi(d: HouseholdDocumentApi): DocVaultItem {
 type FridgeItem = { id: number; label: string; expires_at: string; qty: number };
 type UiToast = { id: string; kind: 'success' | 'error' | 'info'; text: string };
 
-const C = {
-  bg: '#FEF9F5',
-  white: '#FFFFFF',
-  surface: '#FFF5F0',
-  surface2: '#F5EDE8',
-  surface3: '#EDE3DE',
-  terra: '#D96B52',
-  terraL: '#F0896E',
-  terraXL: '#FDEAE5',
-  sage: '#6BA898',
-  sageL: '#EAF4F1',
-  blush: '#F2A98F',
-  lilac: '#B49BD1',
-  lilacL: '#F0EBFA',
-  sun: '#F5B942',
-  text: '#2C1F1A',
-  text2: '#9A8882',
-  text3: '#C8BAB5',
-  border: '#EDE3DE',
-  green: '#5BAA8A',
-  greenL: '#E8F6EF',
-  red: '#E05C5C',
-  redL: '#FDEAEA',
-  alex: '#4A72B8',
-  alexL: '#E8EEFB',
-  alexXL: '#EEF3FE',
-  mint: '#3DAF88',
-};
-
-type MainTab = 'home' | 'alfred' | 'modules' | 'moi' | 'agenda';
-type OverlayId =
-  | 'plus'
-  | 'courses'
-  | 'maison'
-  | 'documents'
-  | 'assistant'
-  | 'famille'
-  | 'anniversaires'
-  | 'poubelles'
-  | 'notifs'
-  | 'messages'
-  | 'recettes'
-  | 'routines'
-  | 'courrier'
-  | 'albums'
-  | 'integrations';
+const C = MAJORDOME_PALETTE;
 
 function GlassCard({ children, style = {}, onClick }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void }) {
   return <div onClick={onClick} style={{ background: C.white, borderRadius: 20, border: `1.5px solid ${C.border}`, ...style }}>{children}</div>;
@@ -2364,10 +2318,9 @@ export default function HomePage() {
     setOverlay(hubKey as OverlayId);
   }
 
+
   function renderAppLayer() {
-    const layer: MainTab | OverlayId =
-      overlay ??
-      (mainTab === 'modules' ? 'plus' : mainTab === 'alfred' ? 'assistant' : mainTab);
+    const layer = resolveAppLayer(overlay, mainTab);
     const sec = (id: HomeSectionId) => homeLayout.sections[id] !== false;
     const wrapOv = (title: string, body: React.ReactNode) => (
       <OverlayChrome title={title} onBack={() => setOverlay(null)} white={C.white} border={C.border} text={C.text}>
@@ -2961,14 +2914,16 @@ export default function HomePage() {
               <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
                 {renderAppLayer()}
               </div>
-              <DebordeeModal
+              <AppShellModals
                 C={C}
-                phase={modalDebordee}
+                modalDebordee={modalDebordee}
                 openTasks={openTasks}
                 debordeeResult={debordeeResult}
-                prenom={familyProfile.prenom}
-                partenaire={familyProfile.partenaire}
-                enfant={familyProfile.enfant}
+                family={{
+                  prenom: familyProfile.prenom,
+                  partenaire: familyProfile.partenaire,
+                  enfant: familyProfile.enfant,
+                }}
                 primaryMemberId={primaryMemberId}
                 partnerMemberId={partnerMemberId}
                 childMemberId={childMemberId}
@@ -2976,45 +2931,25 @@ export default function HomePage() {
                 token={token}
                 taskAssignBusyId={taskAssignBusyId}
                 taskCompleteBusyId={taskCompleteBusyId}
-                onClose={() => setModalDebordee('closed')}
-                onLaunch={() => void launchDebordee()}
-                onAssign={assignTaskMember}
-                onDone={completeTaskById}
-              />
-              <AlexModal
-                C={C}
-                open={modalAlex}
-                prenom={familyProfile.prenom}
-                partenaire={familyProfile.partenaire}
-                enfant={familyProfile.enfant}
-                tasks={alexTasksList}
-                doneIds={alexDoneIds}
-                notified={alexNotified}
-                primaryMemberId={primaryMemberId}
-                partnerMemberId={partnerMemberId}
-                childMemberId={childMemberId}
-                householdMembers={householdMembers}
-                token={token}
-                taskAssignBusyId={taskAssignBusyId}
-                taskCompleteBusyId={taskCompleteBusyId}
-                onClose={() => setModalAlex(false)}
-                onToggleDone={(taskId) =>
+                onCloseDebordee={() => setModalDebordee('closed')}
+                onLaunchDebordee={() => void launchDebordee()}
+                onAssignTask={assignTaskMember}
+                onCompleteTask={completeTaskById}
+                modalAlex={modalAlex}
+                alexTasksList={alexTasksList}
+                alexDoneIds={alexDoneIds}
+                alexNotified={alexNotified}
+                onCloseAlex={() => setModalAlex(false)}
+                onToggleAlexDone={(taskId) =>
                   setAlexDoneIds((d) => (d.includes(taskId) ? d.filter((x) => x !== taskId) : [...d, taskId]))
                 }
-                onAssign={assignTaskMember}
-                onDone={completeTaskById}
                 onNotifyPrimary={async () => {
                   setAlexNotified(true);
                   pushToast('success', `${familyProfile.prenom} a été notifiée`);
                   await notifySystem('MajorDome', `${familyProfile.partenaire} : ${alexDoneIds.length} tâche(s) cochée(s).`);
                 }}
-              />
-              <CoffreModal
-                C={C}
-                open={modalCoffre}
-                token={token}
+                modalCoffre={modalCoffre}
                 loading={loading}
-                prenom={familyProfile.prenom}
                 docVault={docVault}
                 docStorageSummary={docStorageSummary}
                 docCat={docCat}
@@ -3027,25 +2962,19 @@ export default function HomePage() {
                 docEditSaving={docEditSaving}
                 docAttachmentReplaceRef={docAttachmentReplaceRef}
                 docPhotoInputRef={docPhotoInputRef}
-                onClose={() => setModalCoffre(false)}
-                onRefresh={() => token && void loadData(token)}
-                onQuickAdd={() => void quickAddDocument()}
+                onCloseCoffre={() => setModalCoffre(false)}
+                onRefreshCoffre={() => token && void loadData(token)}
+                onQuickAddDoc={() => void quickAddDocument()}
                 onOpenDocEdit={openDocEdit}
                 onSaveDocEdit={() => void saveDocEdit()}
                 onDownloadAttachment={downloadDocAttachment}
                 onUploadAttachment={uploadAttachmentForDoc}
                 onRemoveAttachment={removeAttachmentForDoc}
-                onToggleUrgent={(d) => void toggleDocUrgent(d)}
+                onToggleDocUrgent={(d) => void toggleDocUrgent(d)}
                 onDeleteDoc={(d) => void deleteDocumentFromVault(d)}
-                onCreateFromPhoto={(f) => void createDocFromPhotoFile(f)}
+                onCreateDocFromPhoto={(f) => void createDocFromPhotoFile(f)}
                 onOpenDocEmailDraft={openDocEmailDraft}
-              />
-              <EquiteModal
-                C={C}
-                open={modalEquite}
-                prenom={familyProfile.prenom}
-                partenaire={familyProfile.partenaire}
-                enfant={familyProfile.enfant}
+                modalEquite={modalEquite}
                 equiteTab={equiteTab}
                 onEquiteTabChange={(id) => {
                   setEquiteTab(id);
@@ -3056,7 +2985,7 @@ export default function HomePage() {
                 equitySuggestions={equitySuggestions}
                 equitePlanText={equitePlanText}
                 equitePlanLoading={equitePlanLoading}
-                onClose={() => {
+                onCloseEquite={() => {
                   setModalEquite(false);
                   setEquitePlanText('');
                 }}
