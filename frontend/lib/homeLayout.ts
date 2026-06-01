@@ -75,7 +75,7 @@ export type HomeLayoutConfig = {
 
 export const DEFAULT_HOME_LAYOUT: HomeLayoutConfig = {
   hubShortcuts: [...DEFAULT_HOME_HUB_SHORTCUTS],
-  sections: { ...DEFAULT_HOME_SECTIONS },
+  sections: { ...DEFAULT_HOME_SECTIONS, agenda_snippet: true, stats_pair: true },
 };
 
 /** Slug email pour clés localStorage par compte (disposition, personnalisation…). */

@@ -1,9 +1,9 @@
 'use client';
 
 import type { ComponentType } from 'react';
-import { IconDotsGrid, IconHome, IconSparkleAI, IconUserHeart } from './md-icons';
+import { IconCalendar, IconDotsGrid, IconHome, IconSparkleAI, IconUserHeart } from './md-icons';
 
-export type AppTabId = 'home' | 'alfred' | 'modules' | 'moi';
+export type AppTabId = 'home' | 'agenda' | 'alfred' | 'modules' | 'moi';
 
 const TABS: {
   id: AppTabId;
@@ -11,6 +11,7 @@ const TABS: {
   Icon: ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 }[] = [
   { id: 'home', label: "Aujourd'hui", Icon: IconHome },
+  { id: 'agenda', label: 'Agenda', Icon: IconCalendar },
   { id: 'alfred', label: (ai) => ai, Icon: IconSparkleAI },
   { id: 'modules', label: 'Modules', Icon: IconDotsGrid },
   { id: 'moi', label: 'Moi', Icon: IconUserHeart },
@@ -71,7 +72,7 @@ export function BottomTabBar({
                 minWidth: 64,
                 minHeight: 44,
                 flex: 1,
-                maxWidth: 96,
+                maxWidth: 72,
               }}
             >
               <span

@@ -31,6 +31,7 @@ export function useAppNavigation(options: UseAppNavigationOptions = {}) {
   const handleBottomTab = useCallback(
     (tab: AppTabId) => {
       if (tab === 'home') goMainTab('home');
+      else if (tab === 'agenda') goMainTab('agenda');
       else if (tab === 'alfred') goMainTab('alfred');
       else if (tab === 'modules') goMainTab('modules');
       else goMainTab('moi');
@@ -57,6 +58,7 @@ export function useAppNavigation(options: UseAppNavigationOptions = {}) {
   const bottomTabActive: AppTabId = useMemo(() => {
     if (overlay === 'assistant' || mainTab === 'alfred') return 'alfred';
     if (overlay === 'plus' || mainTab === 'modules') return 'modules';
+    if (mainTab === 'agenda') return 'agenda';
     if (mainTab === 'moi') return 'moi';
     return 'home';
   }, [overlay, mainTab]);

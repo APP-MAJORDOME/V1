@@ -180,7 +180,7 @@ import {
   markWelcomeWizardV2Complete,
 } from '../lib/postLoginPersonalization';
 
-type EventItem = { id: number; title: string; starts_at: string; ends_at?: string; updated_at?: string; source_provider?: string | null };
+type EventItem = { id: number; title: string; starts_at: string; ends_at?: string | null; updated_at?: string; source_provider?: string | null };
 type TaskItem = {
   id: number;
   title: string;
@@ -2480,7 +2480,8 @@ export default function HomePage() {
           doneHistoryMoreBusy,
           doneHistoryPagingExhausted,
           urgentCount,
-          nextEvents,
+          allEvents: events,
+          onOpenTask: openTaskDetail,
           editingEventId,
           editTitle,
           onEditTitleChange: setEditTitle,

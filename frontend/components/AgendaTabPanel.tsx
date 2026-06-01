@@ -1,6 +1,7 @@
 'use client';
 
 import { AgendaJournalSection } from './IntimateJournalPanel';
+import { VisualFamilyCalendar } from './VisualFamilyCalendar';
 import { IconAlertOutline, IconCheckSmall, IconMeal } from './md-icons';
 import type { JournalEntry } from '../lib/journalEntries';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton, type TaskUiItem, type TaskUiMember } from './taskUi';
@@ -32,7 +33,7 @@ function Pill({ children, bg, color }: { children: React.ReactNode; bg: string; 
   );
 }
 
-type AgendaEvent = { id: number; title: string; starts_at: string };
+type AgendaEvent = { id: number; title: string; starts_at: string; ends_at?: string | null; source_provider?: string | null };
 type ConnectedAccount = { id: number; provider: string; status: string };
 
 export function AgendaTabPanel({
@@ -77,7 +78,8 @@ export function AgendaTabPanel({
   doneHistoryMoreBusy,
   doneHistoryPagingExhausted,
   urgentCount,
-  nextEvents,
+  allEvents,
+  onOpenTask,
   editingEventId,
   editTitle,
   onEditTitleChange,
@@ -137,7 +139,8 @@ export function AgendaTabPanel({
   doneHistoryMoreBusy: boolean;
   doneHistoryPagingExhausted: boolean;
   urgentCount: number;
-  nextEvents: AgendaEvent[];
+  allEvents: AgendaEvent[];
+  onOpenTask?: (taskId: number) => void;
   editingEventId: number | null;
   editTitle: string;
   onEditTitleChange: (v: string) => void;
@@ -161,7 +164,6 @@ export function AgendaTabPanel({
   const microsoftConnected = accounts.some((a) => a.provider === 'microsoft_calendar' && a.status === 'connected');
   const appleConnected = accounts.some((a) => a.provider === 'apple_calendar' && a.status === 'connected');
   const appleSyncPossible = appleConnected && appleCaldavAvailable !== false;
-  const anyCalendarConnected = googleConnected || microsoftConnected || appleConnected;
 
   return (
     <div
@@ -176,67 +178,25 @@ export function AgendaTabPanel({
       }}
     >
       <h2 style={{ margin: '0 0 10px', color: C.text }}>Agenda familial</h2>
-      <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: C.alexXL }}>
-        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Synchronisation calendriers</div>
-        <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2, lineHeight: 1.45 }}>
-          {anyCalendarConnected
-            ? 'Récupère les événements Outlook, Google ou Apple dans ton agenda MajorDome.'
-            : 'Connecte au moins un calendrier pour importer tes rendez-vous.'}
-        </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-          {microsoftConnected ? (
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: C.lilacL, color: C.lilac }}>
-              Outlook
-            </span>
-          ) : null}
-          {googleConnected ? (
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: C.terraXL, color: C.terra }}>
-              Google
-            </span>
-          ) : null}
-          {appleConnected ? (
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: C.sageL, color: C.sage }}>
-              Apple
-            </span>
-          ) : null}
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <button
-            type="button"
-            disabled={!anyCalendarConnected || calendarSyncBusy}
-            onClick={() => void onSyncAllCalendars()}
-            style={{
-              border: 'none',
-              borderRadius: 10,
-              padding: '8px 12px',
-              background: C.alex,
-              color: '#fff',
-              fontWeight: 700,
-              fontSize: 12,
-              opacity: anyCalendarConnected && !calendarSyncBusy ? 1 : 0.5,
-            }}
-          >
-            {calendarSyncBusy ? 'Synchronisation…' : 'Synchroniser les agendas'}
-          </button>
-          {!anyCalendarConnected ? (
-            <button
-              type="button"
-              onClick={onOpenIntegrations}
-              style={{
-                border: `1px solid ${C.border}`,
-                borderRadius: 10,
-                padding: '8px 12px',
-                background: C.white,
-                color: C.terra,
-                fontWeight: 700,
-                fontSize: 12,
-              }}
-            >
-              Connecter un calendrier →
-            </button>
-          ) : null}
-        </div>
-      </GlassCard>
+      <VisualFamilyCalendar
+        C={C}
+        events={allEvents}
+        tasks={agendaOpenTasks}
+        selectedDay={selectedMealDay}
+        onSelectedDayChange={onSelectedMealDayChange}
+        googleConnected={googleConnected}
+        microsoftConnected={microsoftConnected}
+        appleConnected={appleConnected}
+        conflictCount={urgentCount}
+        onOpenIntegrations={onOpenIntegrations}
+        onSyncCalendars={() => void onSyncAllCalendars()}
+        calendarSyncBusy={calendarSyncBusy}
+        onSelectEvent={(eventId) => {
+          const ev = allEvents.find((e) => e.id === eventId);
+          if (ev) onBeginEditEvent(ev);
+        }}
+        onSelectTask={onOpenTask}
+      />
       <AgendaJournalSection
         C={C}
         selectedDay={selectedMealDay}
@@ -483,42 +443,6 @@ export function AgendaTabPanel({
           {urgentCount} conflit(s) detecte(s)
         </div>
       ) : null}
-      {nextEvents.map((e) => (
-        <GlassCard C={C} key={e.id} style={{ padding: 12, marginBottom: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{e.title}</div>
-          <div style={{ fontSize: 11, color: C.text2 }} suppressHydrationWarning>{formatDateTimeFr(e.starts_at, client)}</div>
-          <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              onClick={() => onBeginEditEvent(e)}
-              style={{
-                borderRadius: 8,
-                border: `1px solid ${C.border}`,
-                background: '#fff',
-                color: C.text2,
-                fontSize: 11,
-                padding: '4px 8px',
-              }}
-            >
-              Modifier
-            </button>
-            <button
-              type="button"
-              onClick={() => void onDeleteEvent(e.id)}
-              style={{
-                borderRadius: 8,
-                border: `1px solid ${C.border}`,
-                background: '#fff',
-                color: C.text2,
-                fontSize: 11,
-                padding: '4px 8px',
-              }}
-            >
-              Annuler
-            </button>
-          </div>
-        </GlassCard>
-      ))}
       {editingEventId !== null ? (
         <GlassCard C={C} style={{ padding: 12, marginTop: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Modifier l evenement</div>
@@ -551,6 +475,13 @@ export function AgendaTabPanel({
                 style={{ borderRadius: 10, border: 'none', background: C.terra, color: '#fff', padding: 8, fontWeight: 700 }}
               >
                 Enregistrer
+              </button>
+              <button
+                type="button"
+                onClick={() => void onDeleteEvent(editingEventId)}
+                style={{ borderRadius: 10, border: `1px solid ${C.red}`, background: C.redL, color: C.red, padding: 8 }}
+              >
+                Supprimer
               </button>
               <button
                 type="button"
