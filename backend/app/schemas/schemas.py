@@ -212,6 +212,31 @@ class HomeProviderTestResponse(BaseModel):
     message: str
 
 
+class HomeProviderDeviceRead(BaseModel):
+    id: str
+    name: str
+    provider: str
+    device_type: str | None = None
+    controllable: bool = True
+
+
+class HomeProviderDevicesResponse(BaseModel):
+    provider: str
+    devices: list[HomeProviderDeviceRead]
+
+
+class HomeProviderDeviceActionRequest(BaseModel):
+    action: str = Field(min_length=2, max_length=64)
+
+
+class HomeProviderDeviceActionResponse(BaseModel):
+    provider: str
+    device_id: str
+    action: str
+    status: str
+    message: str
+
+
 class GoogleOAuthStartResponse(BaseModel):
     authorization_url: str
     state: str

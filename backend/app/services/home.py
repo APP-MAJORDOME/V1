@@ -301,6 +301,175 @@ def test_home_provider_connection(db: Session, user_id: int, provider: str) -> d
     }
 
 
+def _tahoma_login_context(scoped: dict[str, str]):
+    username = str(scoped.get("username") or "").strip()
+    password = str(scoped.get("password") or "").strip()
+    base_url = str(scoped.get("base_url") or "https://ha101-1.overkiz.com").strip().rstrip("/")
+    if not username or not password:
+        return None, base_url, "missing_credentials"
+    client = httpx.Client(timeout=15)
+    try:
+        response = client.post(
+            f"{base_url}/enduser-mobile-web/enduserAPI/login",
+            data={"userId": username, "userPassword": password},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if response.status_code not in {200, 204}:
+            client.close()
+            return None, base_url, f"login_http_{response.status_code}"
+        return client, base_url, None
+    except Exception:
+        client.close()
+        return None, base_url, "login_failed"
+
+
+def list_provider_devices(db: Session, user_id: int, provider: str) -> dict:
+    provider_id = (provider or "").strip().lower()
+    account = _load_provider_account(db, user_id, provider_id)
+    if account is None:
+        return {"provider": provider_id, "devices": []}
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        scoped = {}
+
+    if provider_id != "tahoma":
+        return {"provider": provider_id, "devices": []}
+
+    client, base_url, error = _tahoma_login_context(scoped)
+    if client is None:
+        return {"provider": provider_id, "devices": [], "error": error}
+    try:
+        response = client.get(f"{base_url}/enduser-mobile-web/enduserAPI/setup")
+        response.raise_for_status()
+        payload = response.json()
+        raw_devices = payload.get("devices") if isinstance(payload, dict) else []
+        devices: list[dict[str, str | bool | None]] = []
+        if isinstance(raw_devices, list):
+            for d in raw_devices[:120]:
+                if not isinstance(d, dict):
+                    continue
+                device_id = str(d.get("deviceURL") or d.get("oid") or d.get("id") or "").strip()
+                if not device_id:
+                    continue
+                name = str(d.get("label") or d.get("name") or device_id).strip()[:160]
+                device_type = str(d.get("uiClass") or d.get("controllableName") or "").strip()[:120] or None
+                devices.append(
+                    {
+                        "id": device_id,
+                        "name": name,
+                        "provider": provider_id,
+                        "device_type": device_type,
+                        "controllable": True,
+                    }
+                )
+        return {"provider": provider_id, "devices": devices}
+    except Exception:
+        return {"provider": provider_id, "devices": [], "error": "setup_failed"}
+    finally:
+        client.close()
+
+
+def execute_provider_device_action(
+    db: Session,
+    user_id: int,
+    provider: str,
+    device_id: str,
+    action: str,
+) -> dict:
+    provider_id = (provider or "").strip().lower()
+    device = (device_id or "").strip()
+    action_id = (action or "").strip().lower()
+    if not device:
+        return {
+            "provider": provider_id,
+            "device_id": "",
+            "action": action_id,
+            "status": "invalid_device",
+            "message": "Identifiant appareil manquant.",
+        }
+
+    account = _load_provider_account(db, user_id, provider_id)
+    if account is None:
+        return {
+            "provider": provider_id,
+            "device_id": device,
+            "action": action_id,
+            "status": "not_connected",
+            "message": "Provider non connecté.",
+        }
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        scoped = {}
+
+    if provider_id != "tahoma":
+        return {
+            "provider": provider_id,
+            "device_id": device,
+            "action": action_id,
+            "status": "pending_api",
+            "message": "Action device non implémentée pour ce provider.",
+        }
+
+    client, base_url, error = _tahoma_login_context(scoped)
+    if client is None:
+        return {
+            "provider": provider_id,
+            "device_id": device,
+            "action": action_id,
+            "status": error or "login_failed",
+            "message": "Connexion TaHoma impossible pour exécuter l’action.",
+        }
+
+    command_name = {
+        "on": "on",
+        "off": "off",
+        "open": "open",
+        "close": "close",
+        "up": "open",
+        "down": "close",
+        "stop": "stop",
+        "toggle": "my",
+    }.get(action_id, action_id or "my")
+    payload = {
+        "label": f"MajorDome {command_name}",
+        "actions": [
+            {
+                "deviceURL": device,
+                "commands": [{"name": command_name}],
+            }
+        ],
+    }
+    try:
+        response = client.post(f"{base_url}/enduser-mobile-web/enduserAPI/exec/apply", json=payload)
+        if response.status_code in {200, 201, 202, 204}:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "executed",
+                "message": f"Action {command_name} envoyée à TaHoma.",
+            }
+        return {
+            "provider": provider_id,
+            "device_id": device,
+            "action": action_id,
+            "status": "failed",
+            "message": f"TaHoma a refusé la commande (HTTP {response.status_code}).",
+        }
+    except Exception:
+        return {
+            "provider": provider_id,
+            "device_id": device,
+            "action": action_id,
+            "status": "failed",
+            "message": "Erreur réseau TaHoma lors de l’exécution de la commande.",
+        }
+    finally:
+        client.close()
+
+
 def get_home_status(db: Session, user_id: int) -> dict:
     account = _load_home_assistant_account(db=db, user_id=user_id)
     creds = _parse_home_assistant_credentials(account)

@@ -132,6 +132,9 @@ from app.schemas.schemas import (
     HomeDeviceControlRequest,
     HomeDeviceControlResponse,
     HomeProviderTestResponse,
+    HomeProviderDevicesResponse,
+    HomeProviderDeviceActionRequest,
+    HomeProviderDeviceActionResponse,
     HomeAssistantConnectRequest,
     HomeProviderConnectRequest,
     HomeProviderCredentialsUpsertRequest,
@@ -175,6 +178,8 @@ from app.services.home import (
     connect_home_provider,
     upsert_home_provider_credentials,
     test_home_provider_connection,
+    list_provider_devices,
+    execute_provider_device_action,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -2574,6 +2579,35 @@ def home_provider_test(
     db: Session = Depends(get_db),
 ):
     return test_home_provider_connection(db=db, user_id=auth.user_id, provider=provider)
+
+
+@router.get("/home/providers/{provider}/devices", response_model=HomeProviderDevicesResponse)
+def home_provider_devices(
+    provider: str,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return list_provider_devices(db=db, user_id=auth.user_id, provider=provider)
+
+
+@router.post(
+    "/home/providers/{provider}/devices/{device_id}/action",
+    response_model=HomeProviderDeviceActionResponse,
+)
+def home_provider_device_action(
+    provider: str,
+    device_id: str,
+    payload: HomeProviderDeviceActionRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return execute_provider_device_action(
+        db=db,
+        user_id=auth.user_id,
+        provider=provider,
+        device_id=device_id,
+        action=payload.action,
+    )
 
 
 @router.post("/home/devices/control", response_model=HomeDeviceControlResponse)

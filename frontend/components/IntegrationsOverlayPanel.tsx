@@ -52,6 +52,9 @@ export function IntegrationsOverlayPanel({
   const [credUsername, setCredUsername] = useState('');
   const [credPassword, setCredPassword] = useState('');
   const [credBaseUrl, setCredBaseUrl] = useState('');
+  const [tahomaDevices, setTahomaDevices] = useState<{ id: string; name: string; device_type?: string }[]>([]);
+  const [selectedTahomaDeviceId, setSelectedTahomaDeviceId] = useState('');
+  const [selectedTahomaAction, setSelectedTahomaAction] = useState('toggle');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
   const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
   const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
@@ -167,6 +170,44 @@ export function IntegrationsOverlayPanel({
       await refreshHomeProviders();
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Sauvegarde des identifiants impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function loadTahomaDevices() {
+    if (!token) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await getJson<{ provider: string; devices: { id: string; name: string; device_type?: string }[] }>(
+        '/api/v1/home/providers/tahoma/devices',
+        token,
+      );
+      const rows = Array.isArray(res.devices) ? res.devices : [];
+      setTahomaDevices(rows);
+      setSelectedTahomaDeviceId(rows[0]?.id ?? '');
+      setHomeMsg(rows.length > 0 ? `${rows.length} appareil(s) TaHoma chargés.` : 'Aucun appareil TaHoma trouvé.');
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Impossible de charger les appareils TaHoma.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function runTahomaDeviceAction() {
+    if (!token || !selectedTahomaDeviceId) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ message: string; status: string }>(
+        `/api/v1/home/providers/tahoma/devices/${encodeURIComponent(selectedTahomaDeviceId)}/action`,
+        { action: selectedTahomaAction },
+        token,
+      );
+      setHomeMsg(res.message || `Action ${res.status}`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Action TaHoma impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -371,6 +412,56 @@ export function IntegrationsOverlayPanel({
               Enregistrer credentials
             </button>
           </div>
+        </div>
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: `1px dashed ${C.border}`, background: '#F7FBFF' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Contrôle TaHoma devices</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => void loadTahomaDevices()}
+              disabled={homeBusy}
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+            >
+              Charger appareils TaHoma
+            </button>
+          </div>
+          {tahomaDevices.length > 0 ? (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <select
+                value={selectedTahomaDeviceId}
+                onChange={(e) => setSelectedTahomaDeviceId(e.target.value)}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+              >
+                {tahomaDevices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}{d.device_type ? ` (${d.device_type})` : ''}
+                  </option>
+                ))}
+              </select>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <select
+                  value={selectedTahomaAction}
+                  onChange={(e) => setSelectedTahomaAction(e.target.value)}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+                >
+                  <option value="toggle">toggle</option>
+                  <option value="on">on</option>
+                  <option value="off">off</option>
+                  <option value="open">open</option>
+                  <option value="close">close</option>
+                  <option value="stop">stop</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void runTahomaDeviceAction()}
+                  disabled={homeBusy || !selectedTahomaDeviceId}
+                  style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.terra, color: '#fff', fontWeight: 700, fontSize: 12 }}
+                >
+                  Exécuter action TaHoma
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
         {homeMsg ? <div style={{ marginTop: 8, fontSize: 11, color: C.text2 }}>{homeMsg}</div> : null}
         {homeProviders.length > 0 ? (
