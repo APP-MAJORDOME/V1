@@ -66,6 +66,21 @@ export function IntegrationsOverlayPanel({
   const googleConfigured = integrationConfigured(integrationStatuses, 'google_calendar');
   const btnRow = { display: 'flex' as const, flexWrap: 'wrap' as const, gap: 8 };
   const homeConnectedCount = homeProviders.filter((p) => p.connected).length;
+  const selectedGroup = savedGroups.find((g) => g.name === selectedGroupName) ?? null;
+
+  function tahomaDeviceLabel(deviceId: string): string {
+    const d = tahomaDevices.find((x) => x.id === deviceId);
+    if (d) return d.device_type ? `${d.name} (${d.device_type})` : d.name;
+    if (deviceId.length > 28) return `${deviceId.slice(0, 26)}…`;
+    return deviceId || 'Appareil inconnu';
+  }
+
+  function formatGroupMembersPreview(deviceIds: string[], max = 2): string {
+    if (deviceIds.length === 0) return 'aucun appareil';
+    const labels = deviceIds.slice(0, max).map((id) => tahomaDeviceLabel(id));
+    if (deviceIds.length > max) labels.push(`+${deviceIds.length - max}`);
+    return labels.join(', ');
+  }
 
   async function refreshHomeProviders() {
     if (!token) return;
@@ -760,10 +775,18 @@ export function IntegrationsOverlayPanel({
                 >
                   {savedGroups.map((g) => (
                     <option key={g.name} value={g.name}>
-                      {g.name} ({g.device_ids.length})
+                      {g.name} · {g.device_ids.length} — {formatGroupMembersPreview(g.device_ids)}
                     </option>
                   ))}
                 </select>
+                {selectedGroup ? (
+                  <div style={{ width: '100%', fontSize: 11, color: C.text2, lineHeight: 1.45 }}>
+                    <span style={{ fontWeight: 700, color: C.text }}>Membres du groupe « {selectedGroup.name} » :</span>{' '}
+                    {selectedGroup.device_ids.length > 0
+                      ? selectedGroup.device_ids.map((id) => tahomaDeviceLabel(id)).join(' · ')
+                      : 'aucun appareil (charge TaHoma pour voir les noms)'}
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void runGroupAction()}
