@@ -100,10 +100,49 @@ def _parse_home_device_action(command: str) -> dict[str, str] | None:
         action = "toggle"
 
     zone = ""
-    match = re.search(r"(salon|cuisine|chambre|bureau|entree|entrée|sdb|garage)", lowered)
+    match = re.search(
+        r"(salon|cuisine|chambre|chambres|bureau|entree|entrée|sdb|garage|rdc|rez de chaussee|rez-de-chaussee|etage|étage)",
+        lowered,
+    )
     if match:
         zone = match.group(1)
     return {"capability": capability, "action": action, "zone": zone}
+
+
+def _tahoma_candidates(rows: list[dict], lowered_command: str, zone_hint: str) -> list[dict]:
+    if not rows:
+        return []
+    normalized_zone = (zone_hint or "").strip().lower()
+    normalized_command = lowered_command.lower()
+    out: list[dict] = []
+
+    def matches(name: str, token: str) -> bool:
+        return token in name
+
+    for d in rows:
+        if not isinstance(d, dict):
+            continue
+        name = str(d.get("name") or "").strip().lower()
+        if not name:
+            continue
+        if normalized_zone and matches(name, normalized_zone):
+            out.append(d)
+            continue
+        # Groupes implicites
+        if any(k in normalized_command for k in ("chambres", "chambre")) and "chambre" in name:
+            out.append(d)
+            continue
+        if any(k in normalized_command for k in ("rdc", "rez de chaussee", "rez-de-chaussee")) and any(
+            k in name for k in ("rdc", "rez", "salon", "cuisine")
+        ):
+            out.append(d)
+            continue
+        if any(k in normalized_command for k in ("etage", "étage")) and any(
+            k in name for k in ("etage", "étage", "chambre", "bureau")
+        ):
+            out.append(d)
+            continue
+    return out
 
 
 def get_home_providers(db: Session, user_id: int) -> dict:
@@ -618,14 +657,11 @@ def infer_and_execute_device_control(command: str, db: Session, user_id: int) ->
             }
         query = (parsed.get("zone") or "").strip().lower()
         request_all = any(k in lowered for k in ("tous", "toutes", "tout ", "all "))
-        candidates: list[dict] = []
-        if query:
-            for d in rows:
-                if not isinstance(d, dict):
-                    continue
-                name = str(d.get("name") or "").strip().lower()
-                if query in name:
-                    candidates.append(d)
+        candidates: list[dict] = _tahoma_candidates(
+            [x for x in rows if isinstance(x, dict)],
+            lowered_command=lowered,
+            zone_hint=query,
+        )
         if not candidates and rows:
             candidates = [rows[0]] if isinstance(rows[0], dict) else []
         if not candidates:
