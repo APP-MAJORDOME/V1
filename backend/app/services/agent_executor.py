@@ -19,6 +19,7 @@ from app.models.models import (
 )
 from app.services.agent import interpret_command
 from app.services.alfred_household import build_household_answer, command_wants_household_answer
+from app.services.home import infer_and_execute_device_control
 from app.services.shopping_advisor import build_shopping_plan_response, command_wants_shopping_plan
 
 _CONSULTATION_INTENTS = frozenset({"household_answer", "web_search", "document_analyze"})
@@ -71,6 +72,16 @@ def _execute_intent(
         db.commit()
         db.refresh(row)
         return {"executed": True, "message": "C’est noté, je m’en souviendrai.", "payload": {"fact_id": row.id}}
+
+    if intent == "home_control":
+        result = infer_and_execute_device_control(command, db=db, user_id=auth.user_id)
+        status = str(result.get("status") or "")
+        ok = status in {"executed", "executed_mock", "planned_integration", "connector_pending"}
+        return {
+            "executed": ok,
+            "message": str(result.get("message") or "Action domotique traitée."),
+            "payload": result,
+        }
 
     if intent == "shopping_plan":
         plan = proposal.get("shopping_plan") if isinstance(proposal.get("shopping_plan"), dict) else {}

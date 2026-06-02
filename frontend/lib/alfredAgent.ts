@@ -220,6 +220,7 @@ export function confirmLabelForIntent(intent: string): string {
   if (intent === 'email_draft') return 'Ouvrir le brouillon';
   if (intent === 'call_prepare') return 'Copier le script';
   if (intent === 'shopping_plan') return 'Ajouter à la liste courses';
+  if (intent === 'home_control') return 'Exécuter domotique';
   return 'Confirmer';
 }
 

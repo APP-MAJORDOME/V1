@@ -179,6 +179,33 @@ class HomeSceneResponse(BaseModel):
     status: str
 
 
+class HomeProviderStatus(BaseModel):
+    id: str
+    label: str
+    connected: bool
+    status: str
+
+
+class HomeProvidersResponse(BaseModel):
+    providers: list[HomeProviderStatus]
+
+
+class HomeDeviceControlRequest(BaseModel):
+    provider: str = Field(default="home_assistant", max_length=64)
+    capability: str = Field(min_length=2, max_length=64)
+    action: str = Field(min_length=2, max_length=32)
+    target: str | None = Field(default=None, max_length=80)
+
+
+class HomeDeviceControlResponse(BaseModel):
+    provider: str
+    capability: str
+    action: str
+    target: str | None = None
+    status: str
+    message: str
+
+
 class GoogleOAuthStartResponse(BaseModel):
     authorization_url: str
     state: str

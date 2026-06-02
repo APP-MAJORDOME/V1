@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import json
+import re
 
 import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.models import ConnectedAccount
+
+_SUPPORTED_PROVIDERS: tuple[dict[str, str], ...] = (
+    {"id": "home_assistant", "label": "Home Assistant"},
+    {"id": "google_home", "label": "Google Home"},
+    {"id": "legrand_control", "label": "Legrand Home + Control"},
+    {"id": "tahoma", "label": "TaHoma"},
+    {"id": "sharkclean", "label": "SharkClean"},
+    {"id": "ezviz", "label": "Ezviz"},
+    {"id": "verisure", "label": "Verisure"},
+    {"id": "lsc_smart_connect", "label": "LSC Smart Connect"},
+)
 
 
 def _load_home_assistant_account(db: Session, user_id: int) -> ConnectedAccount | None:
@@ -47,6 +59,67 @@ def _mock_home_status() -> dict:
     }
 
 
+def _load_provider_account(db: Session, user_id: int, provider_id: str) -> ConnectedAccount | None:
+    return (
+        db.query(ConnectedAccount)
+        .filter(
+            ConnectedAccount.user_id == user_id,
+            ConnectedAccount.provider == provider_id,
+        )
+        .first()
+    )
+
+
+def _parse_home_device_action(command: str) -> dict[str, str] | None:
+    text = (command or "").strip()
+    lowered = text.lower()
+    if not text:
+        return None
+    if "lumi" in lowered:
+        capability = "lights"
+    elif "radiateur" in lowered or "chauff" in lowered:
+        capability = "heating"
+    elif "ventilation" in lowered or "ventilo" in lowered or "vmc" in lowered:
+        capability = "ventilation"
+    elif "scene" in lowered or "scène" in lowered:
+        capability = "scene"
+    else:
+        return None
+
+    if any(x in lowered for x in ("eteins", "éteins", "off", "arrete", "arrête")):
+        action = "off"
+    elif any(x in lowered for x in ("allume", "on", "active", "demarre", "démarre")):
+        action = "on"
+    elif any(x in lowered for x in ("baisse", "dim", "reduis", "réduis")):
+        action = "down"
+    elif any(x in lowered for x in ("augmente", "monte", "boost")):
+        action = "up"
+    else:
+        action = "toggle"
+
+    zone = ""
+    match = re.search(r"(salon|cuisine|chambre|bureau|entree|entrée|sdb|garage)", lowered)
+    if match:
+        zone = match.group(1)
+    return {"capability": capability, "action": action, "zone": zone}
+
+
+def get_home_providers(db: Session, user_id: int) -> dict:
+    providers: list[dict[str, str | bool]] = []
+    for p in _SUPPORTED_PROVIDERS:
+        provider_id = p["id"]
+        account = _load_provider_account(db, user_id, provider_id)
+        providers.append(
+            {
+                "id": provider_id,
+                "label": p["label"],
+                "connected": bool(account and account.status == "connected"),
+                "status": account.status if account else "not_connected",
+            }
+        )
+    return {"providers": providers}
+
+
 def get_home_status(db: Session, user_id: int) -> dict:
     account = _load_home_assistant_account(db=db, user_id=user_id)
     creds = _parse_home_assistant_credentials(account)
@@ -84,6 +157,108 @@ def get_home_status(db: Session, user_id: int) -> dict:
             "Lancer la scene soir depuis l app Maison",
         ],
     }
+
+
+def execute_device_control(
+    db: Session,
+    user_id: int,
+    *,
+    provider: str,
+    capability: str,
+    action: str,
+    target: str | None = None,
+) -> dict:
+    provider_id = (provider or "home_assistant").strip().lower()
+    capability_id = (capability or "").strip().lower()
+    action_id = (action or "").strip().lower()
+    target_id = (target or "").strip()[:80] or None
+
+    if capability_id not in {"lights", "heating", "ventilation", "scene"}:
+        return {
+            "provider": provider_id,
+            "capability": capability_id,
+            "action": action_id,
+            "target": target_id,
+            "status": "unsupported_capability",
+            "message": "Capacité domotique non supportée.",
+        }
+
+    if provider_id == "home_assistant":
+        account = _load_home_assistant_account(db=db, user_id=user_id)
+        creds = _parse_home_assistant_credentials(account)
+        if settings.home_adapter_mode == "home_assistant" and creds is not None:
+            base_url, token = creds
+            headers = {"Authorization": f"Bearer {token}"}
+            if capability_id == "scene":
+                scene = (target_id or "soir").replace(" ", "_")
+                payload = {"entity_id": f"scene.{scene}"}
+                endpoint = "scene/turn_on"
+            else:
+                domain = "light" if capability_id == "lights" else ("climate" if capability_id == "heating" else "fan")
+                verb = "turn_on" if action_id in {"on", "up"} else "turn_off"
+                payload = {"entity_id": "all"}
+                endpoint = f"{domain}/{verb}"
+            try:
+                with httpx.Client(timeout=10) as client:
+                    response = client.post(
+                        f"{base_url}/api/services/{endpoint}",
+                        headers=headers,
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                return {
+                    "provider": provider_id,
+                    "capability": capability_id,
+                    "action": action_id,
+                    "target": target_id,
+                    "status": "executed",
+                    "message": "Action domotique exécutée via Home Assistant.",
+                }
+            except Exception:
+                pass
+        return {
+            "provider": provider_id,
+            "capability": capability_id,
+            "action": action_id,
+            "target": target_id,
+            "status": "executed_mock",
+            "message": "Action simulée: connecte Home Assistant pour exécution réelle.",
+        }
+
+    account = _load_provider_account(db, user_id, provider_id)
+    status = "planned_integration" if not account else "connector_pending"
+    return {
+        "provider": provider_id,
+        "capability": capability_id,
+        "action": action_id,
+        "target": target_id,
+        "status": status,
+        "message": (
+            "Connecteur en préparation. "
+            "Ajoute d'abord l'authentification partenaire pour activer les actions réelles."
+        ),
+    }
+
+
+def infer_and_execute_device_control(command: str, db: Session, user_id: int) -> dict:
+    parsed = _parse_home_device_action(command)
+    if not parsed:
+        return {
+            "provider": "home_assistant",
+            "capability": "unknown",
+            "action": "unknown",
+            "target": None,
+            "status": "unsupported_command",
+            "message": "Commande domotique non reconnue.",
+        }
+    return execute_device_control(
+        db=db,
+        user_id=user_id,
+        provider="home_assistant",
+        capability=parsed["capability"],
+        action=parsed["action"],
+        target=parsed["zone"] or None,
+    )
 
 
 def execute_scene(scene_id: str, db: Session, user_id: int) -> dict:

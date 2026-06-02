@@ -1,14 +1,17 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
   type ConnectedAccountLike,
   type IntegrationStatus,
   integrationConfigured,
   isCalendarConnected,
 } from '../lib/calendarIntegrations';
+import { getJson, postJson } from '../lib/api';
 import { GlassCard } from './GlassCard';
 
 export type IntegrationsOverlayPanelProps = {
+  token: string | null;
   C: Record<string, string>;
   accounts: ConnectedAccountLike[];
   integrationStatuses: IntegrationStatus[];
@@ -23,6 +26,7 @@ export type IntegrationsOverlayPanelProps = {
 };
 
 export function IntegrationsOverlayPanel({
+  token,
   C,
   accounts,
   integrationStatuses,
@@ -35,14 +39,100 @@ export function IntegrationsOverlayPanel({
   onAlfredPrompt,
   partenaireName,
 }: IntegrationsOverlayPanelProps) {
+  const [homeProviders, setHomeProviders] = useState<
+    { id: string; label: string; connected: boolean; status: string }[]
+  >([]);
+  const [homeBusy, setHomeBusy] = useState(false);
+  const [homeMsg, setHomeMsg] = useState('');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
   const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
   const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
   const googleConfigured = integrationConfigured(integrationStatuses, 'google_calendar');
   const btnRow = { display: 'flex' as const, flexWrap: 'wrap' as const, gap: 8 };
+  const homeConnectedCount = homeProviders.filter((p) => p.connected).length;
+
+  useEffect(() => {
+    if (!token) return;
+    void getJson<{ providers: { id: string; label: string; connected: boolean; status: string }[] }>(
+      '/api/v1/home/providers',
+      token,
+    )
+      .then((res) => setHomeProviders(res.providers || []))
+      .catch(() => setHomeProviders([]));
+  }, [token]);
+
+  async function runHomeAction(capability: string, action: string, target?: string) {
+    if (!token) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ message?: string; status: string }>(
+        '/api/v1/home/devices/control',
+        { provider: 'home_assistant', capability, action, target: target || null },
+        token,
+      );
+      setHomeMsg(res.message || `Action ${res.status}.`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : "Action domotique impossible.");
+    } finally {
+      setHomeBusy(false);
+    }
+  }
 
   return (
     <div>
+      <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: '#EEF5FF' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Domotique Home Hub</div>
+        <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
+          {homeProviders.length > 0
+            ? `${homeConnectedCount}/${homeProviders.length} connecteur(s) domotiques connectés.`
+            : 'Lecture des connecteurs domotiques...'}
+        </p>
+        <div style={btnRow}>
+          <button
+            type="button"
+            onClick={() => void runHomeAction('lights', 'off', 'salon')}
+            disabled={homeBusy}
+            style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.terra, color: '#fff', fontWeight: 700, fontSize: 12 }}
+          >
+            Éteindre lumières salon
+          </button>
+          <button
+            type="button"
+            onClick={() => void runHomeAction('heating', 'down')}
+            disabled={homeBusy}
+            style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+          >
+            Baisser chauffage
+          </button>
+          <button
+            type="button"
+            onClick={() => void runHomeAction('ventilation', 'on')}
+            disabled={homeBusy}
+            style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+          >
+            Activer ventilation
+          </button>
+          <button
+            type="button"
+            onClick={() => void runHomeAction('scene', 'on', 'soir')}
+            disabled={homeBusy}
+            style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+          >
+            Scène soir
+          </button>
+        </div>
+        {homeMsg ? <div style={{ marginTop: 8, fontSize: 11, color: C.text2 }}>{homeMsg}</div> : null}
+        {homeProviders.length > 0 ? (
+          <div style={{ marginTop: 8, fontSize: 11, color: C.text2, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {homeProviders.map((p) => (
+              <span key={p.id} style={{ border: `1px solid ${C.border}`, borderRadius: 999, padding: '4px 8px', background: p.connected ? '#E7F9ED' : C.white }}>
+                {p.label}: {p.connected ? 'connecté' : 'non connecté'}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </GlassCard>
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: C.lilacL }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Outlook / Microsoft 365</div>
         <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>

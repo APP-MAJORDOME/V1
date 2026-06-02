@@ -103,6 +103,7 @@ export function AppSecondaryOverlays(props: AppSecondaryOverlaysProps): ReactNod
       return wrapOv(
         'Intégrations tierces',
         <IntegrationsOverlayPanel
+          token={props.token}
           C={props.C}
           accounts={props.accounts}
           integrationStatuses={props.integrationStatuses}

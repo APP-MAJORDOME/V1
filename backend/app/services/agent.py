@@ -86,6 +86,32 @@ def interpret_command(command: str, memory_lines: list[str] | None = None) -> di
         return llm_result
 
     lowered = command.lower()
+    if any(
+        k in lowered
+        for k in (
+            "domot",
+            "maison",
+            "lumiere",
+            "lumière",
+            "radiateur",
+            "chauffage",
+            "ventilation",
+            "google home",
+            "home assistant",
+            "legrand",
+            "tahoma",
+            "verisure",
+            "ezviz",
+            "lsc",
+            "sharkclean",
+        )
+    ):
+        return {
+            "intent": "home_control",
+            "mode": "confirm",
+            "proposal": {"raw_command": command[:280]},
+            "explanation": "Je peux piloter cette action domotique si tu confirmes.",
+        }
     if "mail" in lowered or "email" in lowered:
         return {
             "intent": "email_draft",

@@ -128,6 +128,9 @@ from app.schemas.schemas import (
     DebordeeResponse,
     HomeStatusResponse,
     HomeSceneResponse,
+    HomeProvidersResponse,
+    HomeDeviceControlRequest,
+    HomeDeviceControlResponse,
     GoogleOAuthStartResponse,
     GoogleOAuthCallbackResponse,
     IntegrationCapabilitiesResponse,
@@ -159,7 +162,7 @@ from app.services.household_documents import default_document_templates
 from app.services.vault_crypto import vault_encryption_enabled
 from app.services.household_profile_members import resolve_partner_member, sync_members_from_profile_names
 from app.services.partner_delegation import build_message_body, deliver_partner_delegation
-from app.services.home import get_home_status, execute_scene
+from app.services.home import get_home_status, execute_scene, get_home_providers, execute_device_control
 
 router = APIRouter(prefix="/api/v1")
 google_oauth_states: dict[str, dict[str, int]] = {}
@@ -2491,6 +2494,27 @@ def agent_realtime_webrtc(
 @router.get("/home/status", response_model=HomeStatusResponse)
 def home_status(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
     return get_home_status(db=db, user_id=auth.user_id)
+
+
+@router.get("/home/providers", response_model=HomeProvidersResponse)
+def home_providers(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
+    return get_home_providers(db=db, user_id=auth.user_id)
+
+
+@router.post("/home/devices/control", response_model=HomeDeviceControlResponse)
+def home_device_control(
+    payload: HomeDeviceControlRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return execute_device_control(
+        db=db,
+        user_id=auth.user_id,
+        provider=payload.provider,
+        capability=payload.capability,
+        action=payload.action,
+        target=payload.target,
+    )
 
 
 @router.post("/home/scenes/{scene_id}/execute", response_model=HomeSceneResponse)
