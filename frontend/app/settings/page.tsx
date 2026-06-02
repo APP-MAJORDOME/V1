@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { deleteJson, getJson, postJson, tryRefreshAccessToken } from '../../lib/api';
+import { VaultEncryptionBadge } from '../../components/VaultEncryptionBadge';
 import {
   COOKIE_AUTH_SESSION,
   clearStoredAuthTokens,
@@ -25,6 +26,15 @@ type RefreshTokenResponse = { access_token: string };
 type DoctolibSummary = { count: number; status: string; events: Array<{ id: number; title: string; starts_at: string }> };
 type UiToast = { id: string; kind: 'success' | 'error' | 'info'; text: string };
 type MemoryFactRow = { id: number; fact_text: string };
+type VaultSecretRow = {
+  id: number;
+  label: string;
+  service_key: string;
+  username: string | null;
+  has_password: boolean;
+  login_url: string | null;
+  notes: string;
+};
 
 const C = {
   bg: '#FEF9F5',
@@ -41,6 +51,7 @@ const C = {
   text3: '#C8BAB5',
   border: '#EDE3DE',
   green: '#5BAA8A',
+  greenL: '#E8F6EF',
   red: '#E05C5C',
   redL: '#FDEAEA',
 };
@@ -64,6 +75,16 @@ export default function SettingsPage() {
   const [memoryFacts, setMemoryFacts] = useState<MemoryFactRow[]>([]);
   const [memoryDraft, setMemoryDraft] = useState('');
   const [memorySaving, setMemorySaving] = useState(false);
+  const [vaultSecrets, setVaultSecrets] = useState<VaultSecretRow[]>([]);
+  const [vaultEncryptionAtRest, setVaultEncryptionAtRest] = useState(false);
+  const [vaultLabel, setVaultLabel] = useState('');
+  const [vaultService, setVaultService] = useState('carrefour');
+  const [vaultUsername, setVaultUsername] = useState('');
+  const [vaultPassword, setVaultPassword] = useState('');
+  const [vaultUrl, setVaultUrl] = useState('');
+  const [vaultNotes, setVaultNotes] = useState('');
+  const [vaultSaving, setVaultSaving] = useState(false);
+  const [vaultRevealed, setVaultRevealed] = useState<{ id: number; password: string } | null>(null);
 
   const [syncingGoogle, setSyncingGoogle] = useState(false);
   const [syncingMicrosoft, setSyncingMicrosoft] = useState(false);
@@ -83,6 +104,22 @@ export default function SettingsPage() {
     }, TOAST_DURATION_MS);
   }
 
+  async function loadVaultSecrets(accessToken?: string) {
+    const auth = accessToken || token;
+    if (!auth) return;
+    try {
+      const res = await getJson<{ secrets: VaultSecretRow[]; encryption_at_rest: boolean }>(
+        '/api/v1/vault/secrets',
+        auth,
+      );
+      setVaultSecrets(res.secrets || []);
+      setVaultEncryptionAtRest(Boolean(res.encryption_at_rest));
+    } catch {
+      setVaultSecrets([]);
+      setVaultEncryptionAtRest(false);
+    }
+  }
+
   async function loadData(accessToken: string) {
     setLoading(true);
     setError('');
@@ -97,6 +134,7 @@ export default function SettingsPage() {
       setIntegrations(integrationsRes);
       setDoctolibSummary(doctolibRes);
       setMemoryFacts(memoryRes);
+      await loadVaultSecrets(accessToken);
 
       try {
         const emptyFam = { prenom: '', partenaire: '', enfant: '' };
@@ -343,6 +381,57 @@ export default function SettingsPage() {
       pushToast('info', 'Fait retiré');
     } catch (e) {
       pushToast('error', e instanceof Error ? e.message : 'Erreur');
+    }
+  }
+
+  async function addVaultSecret() {
+    if (!token || !vaultLabel.trim()) return;
+    setVaultSaving(true);
+    setVaultRevealed(null);
+    try {
+      await postJson(
+        '/api/v1/vault/secrets',
+        {
+          label: vaultLabel.trim(),
+          service_key: vaultService,
+          username: vaultUsername.trim() || null,
+          password: vaultPassword || null,
+          login_url: vaultUrl.trim() || null,
+          notes: vaultNotes.trim(),
+        },
+        token,
+      );
+      setVaultLabel('');
+      setVaultPassword('');
+      setVaultNotes('');
+      await loadVaultSecrets();
+      pushToast('success', 'Identifiant enregistré dans le trousseau');
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Enregistrement impossible');
+    } finally {
+      setVaultSaving(false);
+    }
+  }
+
+  async function revealVaultSecret(id: number) {
+    if (!token) return;
+    try {
+      const res = await postJson<{ id: number; password: string }>(`/api/v1/vault/secrets/${id}/reveal`, {}, token);
+      setVaultRevealed({ id: res.id, password: res.password });
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Révélation impossible');
+    }
+  }
+
+  async function removeVaultSecret(id: number) {
+    if (!token) return;
+    try {
+      await deleteJson(`/api/v1/vault/secrets/${id}`, token);
+      if (vaultRevealed?.id === id) setVaultRevealed(null);
+      await loadVaultSecrets();
+      pushToast('info', 'Secret supprimé');
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Suppression impossible');
     }
   }
 
@@ -611,6 +700,87 @@ export default function SettingsPage() {
 
             {activeTab === 'securite' ? (
               <>
+                <Card title="Trousseau mots de passe (intégrations)">
+                  <p style={{ fontSize: 11, color: C.text2, margin: '0 0 8px', lineHeight: 1.5 }}>
+                    Stocke les identifiants Carrefour Drive, enseignes ou autres services pour qu&apos;Alfred puisse s&apos;y connecter plus tard.
+                    Les mots de passe ne sont jamais affichés en clair dans la liste.
+                  </p>
+                  <VaultEncryptionBadge C={C} encryptionAtRest={vaultEncryptionAtRest} style={{ marginBottom: 8 }} />
+                  {vaultSecrets.length > 0 ? (
+                    <ul style={{ margin: '0 0 10px', padding: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
+                      {vaultSecrets.map((s) => (
+                        <li
+                          key={s.id}
+                          style={{
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 12,
+                            padding: '8px 10px',
+                            background: C.surface,
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{s.label}</div>
+                          <div style={{ fontSize: 10, color: C.text2, marginTop: 2 }}>
+                            {s.service_key}
+                            {s.username ? ` · ${s.username}` : ''}
+                            {s.has_password ? ' · mot de passe enregistré' : ''}
+                          </div>
+                          {s.login_url ? (
+                            <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{s.login_url}</div>
+                          ) : null}
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                            <Btn light onClick={() => void revealVaultSecret(s.id)}>
+                              Afficher MDP
+                            </Btn>
+                            <Btn light onClick={() => void removeVaultSecret(s.id)}>
+                              Supprimer
+                            </Btn>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ fontSize: 11, color: C.text3, margin: '0 0 10px' }}>Aucun secret enregistré.</p>
+                  )}
+                  {vaultRevealed ? (
+                    <div
+                      style={{
+                        marginBottom: 10,
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        background: C.terraXL,
+                        fontSize: 11,
+                        color: C.text,
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      <strong>Mot de passe (secret #{vaultRevealed.id}) :</strong> {vaultRevealed.password || '—'}
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <Input value={vaultLabel} onChange={setVaultLabel} placeholder="Libellé (ex: Carrefour Drive perso)" />
+                    <select
+                      value={vaultService}
+                      onChange={(e) => setVaultService(e.target.value)}
+                      style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', fontSize: 12, background: C.white }}
+                    >
+                      <option value="carrefour">Carrefour</option>
+                      <option value="marche_u">Marché U</option>
+                      <option value="leclerc">Leclerc</option>
+                      <option value="auchan">Auchan</option>
+                      <option value="tahoma">TaHoma</option>
+                      <option value="legrand_control">Legrand Control</option>
+                      <option value="verisure">Verisure</option>
+                      <option value="other">Autre</option>
+                    </select>
+                    <Input value={vaultUsername} onChange={setVaultUsername} placeholder="Identifiant / email" />
+                    <Input value={vaultPassword} onChange={setVaultPassword} placeholder="Mot de passe" type="password" />
+                    <Input value={vaultUrl} onChange={setVaultUrl} placeholder="URL de connexion (optionnel)" />
+                    <Input value={vaultNotes} onChange={setVaultNotes} placeholder="Notes (optionnel)" />
+                    <Btn onClick={() => void addVaultSecret()} disabled={vaultSaving || !vaultLabel.trim()}>
+                      {vaultSaving ? '...' : 'Ajouter au trousseau'}
+                    </Btn>
+                  </div>
+                </Card>
                 <Card title="Sécurité session">
                   <p style={{ fontSize: 11, color: C.text2, margin: '0 0 10px', lineHeight: 1.5 }}>
                     Le renouvellement de session passe par un cookie HttpOnly ; l&apos;accès actif reste en mémoire

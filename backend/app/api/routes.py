@@ -161,6 +161,11 @@ from app.schemas.schemas import (
     HouseholdMemoryFactCreate,
     HouseholdMemoryFactRead,
     HouseholdMembersProfileSyncRequest,
+    UserVaultSecretRead,
+    UserVaultSecretsListResponse,
+    UserVaultSecretCreate,
+    UserVaultSecretPatch,
+    UserVaultSecretRevealResponse,
 )
 from app.services.briefing import build_today_briefing
 from app.services.agent import analyze_debordee, interpret_command
@@ -174,6 +179,13 @@ from app.services import document_attachments as doc_attach
 from app.services.document_storage_usage import household_attachment_bytes_used
 from app.services.household_documents import default_document_templates
 from app.services.vault_crypto import vault_encryption_enabled
+from app.services.user_secrets_vault import (
+    create_user_vault_secret,
+    delete_user_vault_secret,
+    list_user_vault_secrets,
+    reveal_user_vault_secret_password,
+    update_user_vault_secret,
+)
 from app.services.household_profile_members import resolve_partner_member, sync_members_from_profile_names
 from app.services.partner_delegation import build_message_body, deliver_partner_delegation
 from app.services.home import (
@@ -2740,3 +2752,85 @@ def home_scene(scene_id: str, auth: AuthContext = Depends(get_current_auth_conte
     if not re.fullmatch(r"[a-zA-Z0-9_\-]{1,64}", scene_id):
         raise api_error("invalid_scene_id", "Scene id format is invalid.", 400)
     return execute_scene(scene_id, db=db, user_id=auth.user_id)
+
+
+@router.get("/vault/secrets", response_model=UserVaultSecretsListResponse)
+def vault_secrets_list(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return list_user_vault_secrets(db=db, user_id=auth.user_id)
+
+
+@router.post("/vault/secrets", response_model=UserVaultSecretRead)
+def vault_secret_create(
+    payload: UserVaultSecretCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    try:
+        return create_user_vault_secret(
+            db=db,
+            user_id=auth.user_id,
+            label=payload.label,
+            service_key=payload.service_key,
+            username=payload.username,
+            password=payload.password,
+            login_url=payload.login_url,
+            notes=payload.notes,
+        )
+    except ValueError as exc:
+        if str(exc) == "label_required":
+            raise api_error("label_required", "Le libellé du secret est obligatoire.", 400)
+        raise
+
+
+@router.patch("/vault/secrets/{secret_id}", response_model=UserVaultSecretRead)
+def vault_secret_patch(
+    secret_id: int,
+    payload: UserVaultSecretPatch,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    try:
+        out = update_user_vault_secret(
+            db=db,
+            user_id=auth.user_id,
+            secret_id=secret_id,
+            label=payload.label,
+            service_key=payload.service_key,
+            username=payload.username,
+            password=payload.password,
+            login_url=payload.login_url,
+            notes=payload.notes,
+        )
+    except ValueError as exc:
+        if str(exc) == "label_required":
+            raise api_error("label_required", "Le libellé du secret est obligatoire.", 400)
+        raise
+    if out is None:
+        raise api_error("secret_not_found", "Secret introuvable.", 404)
+    return out
+
+
+@router.delete("/vault/secrets/{secret_id}")
+def vault_secret_delete(
+    secret_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    if not delete_user_vault_secret(db=db, user_id=auth.user_id, secret_id=secret_id):
+        raise api_error("secret_not_found", "Secret introuvable.", 404)
+    return {"status": "deleted"}
+
+
+@router.post("/vault/secrets/{secret_id}/reveal", response_model=UserVaultSecretRevealResponse)
+def vault_secret_reveal(
+    secret_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    out = reveal_user_vault_secret_password(db=db, user_id=auth.user_id, secret_id=secret_id)
+    if out is None:
+        raise api_error("secret_not_found", "Secret introuvable.", 404)
+    return out

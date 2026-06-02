@@ -786,3 +786,44 @@ class PartnerDelegationRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserVaultSecretRead(BaseModel):
+    id: int
+    label: str
+    service_key: str
+    username: str | None = None
+    has_password: bool
+    login_url: str | None = None
+    notes: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserVaultSecretsListResponse(BaseModel):
+    secrets: list[UserVaultSecretRead]
+    encryption_at_rest: bool
+
+
+class UserVaultSecretCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=255)
+    service_key: str = Field(default="other", max_length=64)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, max_length=512)
+    login_url: str | None = Field(default=None, max_length=512)
+    notes: str = Field(default="", max_length=2000)
+
+
+class UserVaultSecretPatch(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=255)
+    service_key: str | None = Field(default=None, max_length=64)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, max_length=512)
+    login_url: str | None = Field(default=None, max_length=512)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class UserVaultSecretRevealResponse(BaseModel):
+    id: int
+    password: str
+    encryption_at_rest: bool

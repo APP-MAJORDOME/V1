@@ -262,6 +262,22 @@ class JournalEntry(Base, TimestampMixin):
     content: Mapped[str] = mapped_column(Text, default="")
 
 
+class UserVaultSecret(Base, TimestampMixin):
+    """Identifiants chiffrés pour intégrations externes (Drive, enseignes, etc.)."""
+
+    __tablename__ = "user_vault_secrets"
+    __table_args__ = (Index("ix_user_vault_secrets_user_service", "user_id", "service_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    label: Mapped[str] = mapped_column(String(255))
+    service_key: Mapped[str] = mapped_column(String(64), default="other")
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_blob: Mapped[str] = mapped_column(Text, default="")
+    login_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id: Mapped[int] = mapped_column(primary_key=True)
