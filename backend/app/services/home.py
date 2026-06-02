@@ -617,18 +617,18 @@ def infer_and_execute_device_control(command: str, db: Session, user_id: int) ->
                 "message": "Aucun appareil TaHoma trouvé. Charge d'abord les appareils dans Intégrations.",
             }
         query = (parsed.get("zone") or "").strip().lower()
-        picked = None
+        request_all = any(k in lowered for k in ("tous", "toutes", "tout ", "all "))
+        candidates: list[dict] = []
         if query:
             for d in rows:
                 if not isinstance(d, dict):
                     continue
                 name = str(d.get("name") or "").strip().lower()
-                if query and query in name:
-                    picked = d
-                    break
-        if picked is None:
-            picked = rows[0] if isinstance(rows[0], dict) else None
-        if not picked:
+                if query in name:
+                    candidates.append(d)
+        if not candidates and rows:
+            candidates = [rows[0]] if isinstance(rows[0], dict) else []
+        if not candidates:
             return {
                 "provider": "tahoma",
                 "capability": parsed["capability"],
@@ -637,6 +637,49 @@ def infer_and_execute_device_control(command: str, db: Session, user_id: int) ->
                 "status": "no_device_found",
                 "message": "Aucun appareil TaHoma compatible trouvé.",
             }
+        if "confirme tous les volets" in lowered and len(candidates) > 0:
+            ok = 0
+            for d in candidates:
+                out = execute_provider_device_action(
+                    db=db,
+                    user_id=user_id,
+                    provider="tahoma",
+                    device_id=str(d.get("id") or ""),
+                    action=parsed["action"],
+                )
+                if str(out.get("status")) == "executed":
+                    ok += 1
+            return {
+                "provider": "tahoma",
+                "capability": parsed["capability"],
+                "action": parsed["action"],
+                "target": parsed.get("zone") or None,
+                "status": "executed",
+                "message": f"Action appliquée sur {ok}/{len(candidates)} appareil(s) TaHoma.",
+            }
+        if request_all and len(candidates) > 1:
+            labels = ", ".join(str(c.get("name") or "") for c in candidates[:6])
+            return {
+                "provider": "tahoma",
+                "capability": parsed["capability"],
+                "action": parsed["action"],
+                "target": parsed.get("zone") or None,
+                "status": "requires_mass_confirm",
+                "message": (
+                    f"J’ai trouvé {len(candidates)} appareils ({labels}). "
+                    "Confirme explicitement: « confirme tous les volets » pour action groupée."
+                ),
+            }
+        if request_all and len(candidates) == 1:
+            picked = candidates[0]
+            return execute_provider_device_action(
+                db=db,
+                user_id=user_id,
+                provider="tahoma",
+                device_id=str(picked.get("id") or ""),
+                action=parsed["action"],
+            )
+        picked = candidates[0]
         return execute_provider_device_action(
             db=db,
             user_id=user_id,
