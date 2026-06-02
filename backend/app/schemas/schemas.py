@@ -266,6 +266,10 @@ class HomeDeviceGroupRenameRequest(BaseModel):
     new_name: str = Field(min_length=2, max_length=64)
 
 
+class HomeDeviceGroupDuplicateRequest(BaseModel):
+    new_name: str = Field(min_length=2, max_length=64)
+
+
 class HomeDeviceGroupActionResponse(BaseModel):
     group_name: str
     provider: str

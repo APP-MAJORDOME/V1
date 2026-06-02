@@ -139,6 +139,7 @@ from app.schemas.schemas import (
     HomeDeviceGroupUpsertRequest,
     HomeDeviceGroupMembersUpdateRequest,
     HomeDeviceGroupRenameRequest,
+    HomeDeviceGroupDuplicateRequest,
     HomeDeviceGroupActionRequest,
     HomeDeviceGroupActionResponse,
     HomeAssistantConnectRequest,
@@ -191,6 +192,7 @@ from app.services.home import (
     delete_device_group,
     update_device_group_members,
     rename_device_group,
+    duplicate_device_group,
     execute_device_group_action,
 )
 
@@ -2680,6 +2682,21 @@ def home_device_group_rename(
     db: Session = Depends(get_db),
 ):
     return rename_device_group(
+        db=db,
+        user_id=auth.user_id,
+        group_name=group_name,
+        new_name=payload.new_name,
+    )
+
+
+@router.post("/home/device-groups/{group_name}/duplicate", response_model=HomeDeviceGroupsResponse)
+def home_device_group_duplicate(
+    group_name: str,
+    payload: HomeDeviceGroupDuplicateRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return duplicate_device_group(
         db=db,
         user_id=auth.user_id,
         group_name=group_name,

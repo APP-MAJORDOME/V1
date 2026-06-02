@@ -6,6 +6,7 @@ from app.services.home import (
     delete_device_group,
     execute_device_control,
     get_home_providers,
+    duplicate_device_group,
     rename_device_group,
     update_device_group_members,
     upsert_device_group,
@@ -114,3 +115,17 @@ def test_rename_device_group(mock_load):
     out = rename_device_group(db, user_id=1, group_name="rdc", new_name="rez")
     assert any(g["name"] == "rez" for g in out["groups"])
     assert not any(g["name"] == "rdc" for g in out["groups"])
+
+
+@patch("app.services.home._load_provider_account")
+def test_duplicate_device_group(mock_load):
+    db = MagicMock()
+    account = _mock_tahoma_account(
+        {"device_groups": [{"name": "nuit", "provider": "tahoma", "device_ids": ["dev-1", "dev-2"]}]}
+    )
+    mock_load.return_value = account
+
+    out = duplicate_device_group(db, user_id=1, group_name="nuit", new_name="nuit-ete")
+    assert any(g["name"] == "nuit" for g in out["groups"])
+    copie = next(g for g in out["groups"] if g["name"] == "nuit-ete")
+    assert copie["device_ids"] == ["dev-1", "dev-2"]

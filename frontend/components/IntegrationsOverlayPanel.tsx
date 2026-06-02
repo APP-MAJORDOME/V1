@@ -58,6 +58,7 @@ export function IntegrationsOverlayPanel({
   const [selectedTahomaAction, setSelectedTahomaAction] = useState('toggle');
   const [groupName, setGroupName] = useState('');
   const [renameGroupName, setRenameGroupName] = useState('');
+  const [duplicateGroupName, setDuplicateGroupName] = useState('');
   const [savedGroups, setSavedGroups] = useState<{ name: string; provider: string; device_ids: string[] }[]>([]);
   const [selectedGroupName, setSelectedGroupName] = useState('');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
@@ -106,6 +107,7 @@ export function IntegrationsOverlayPanel({
     if (!group) return;
     setGroupName(group.name);
     setSelectedGroupDeviceIds(group.device_ids.slice(0, 120));
+    setDuplicateGroupName(`${group.name}-copie`);
   }, [selectedGroupName, savedGroups]);
 
   async function runHomeAction(capability: string, action: string, target?: string) {
@@ -391,6 +393,29 @@ export function IntegrationsOverlayPanel({
       );
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Mise à jour des membres du groupe impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function duplicateSelectedGroup() {
+    if (!token || !selectedGroupName || !duplicateGroupName.trim()) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    const copyName = duplicateGroupName.trim().toLowerCase();
+    try {
+      const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(selectedGroupName)}/duplicate`,
+        { new_name: copyName },
+        token,
+      );
+      const rows = res.groups || [];
+      setSavedGroups(rows);
+      setSelectedGroupName(copyName);
+      setGroupName(copyName);
+      setHomeMsg(`Groupe dupliqué en « ${copyName} ».`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Duplication du groupe impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -765,6 +790,22 @@ export function IntegrationsOverlayPanel({
                     style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
                   >
                     Renommer groupe
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    value={duplicateGroupName}
+                    onChange={(e) => setDuplicateGroupName(e.target.value)}
+                    placeholder="Nom de la copie"
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void duplicateSelectedGroup()}
+                    disabled={homeBusy || !selectedGroupName || !duplicateGroupName.trim()}
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+                  >
+                    Dupliquer groupe
                   </button>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

@@ -697,6 +697,31 @@ def rename_device_group(
     return {"groups": groups}
 
 
+def duplicate_device_group(
+    db: Session,
+    user_id: int,
+    group_name: str,
+    new_name: str,
+) -> dict:
+    current = (group_name or "").strip().lower()
+    target = (new_name or "").strip().lower()
+    if not current or not target:
+        return {"groups": list_device_groups(db, user_id).get("groups") or []}
+    groups = list_device_groups(db, user_id).get("groups") or []
+    source = next((g for g in groups if str(g.get("name") or "") == current), None)
+    if source is None:
+        return {"groups": groups}
+    provider = str(source.get("provider") or "tahoma")
+    ids = [str(x).strip() for x in (source.get("device_ids") or []) if str(x).strip()]
+    return upsert_device_group(
+        db=db,
+        user_id=user_id,
+        group_name=target,
+        provider=provider,
+        device_ids=ids,
+    )
+
+
 def execute_device_group_action(
     db: Session,
     user_id: int,
