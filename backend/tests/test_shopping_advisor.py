@@ -18,7 +18,7 @@ def test_command_wants_shopping_plan_triggers():
 
 @patch("app.services.shopping_advisor.compose_shopping_plan", return_value=None)
 @patch("app.services.shopping_advisor.fetch_search_results", return_value=[])
-def test_build_shopping_plan_fallback(_fetch, _llm):
+def test_build_shopping_plan_fallback(mock_fetch, mock_compose):
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = None
     db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
@@ -39,8 +39,8 @@ def test_build_shopping_plan_fallback(_fetch, _llm):
 
 @patch("app.services.shopping_advisor.compose_shopping_plan")
 @patch("app.services.shopping_advisor.fetch_search_results", return_value=[])
-def test_build_shopping_plan_llm(mock_llm, _fetch):
-    mock_llm.return_value = {
+def test_build_shopping_plan_llm(mock_fetch, mock_compose):
+    mock_compose.return_value = {
         "recipe_title": "Curry doux",
         "servings": 4,
         "mood_note": "Réconfortant",

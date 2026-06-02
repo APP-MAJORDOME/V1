@@ -2428,6 +2428,7 @@ def agent_interpret(
             db,
             auth.household_id,
             memory_lines=mem,
+            user_id=auth.user_id,
         )
     if command_wants_household_answer(payload.command):
         return build_household_answer(

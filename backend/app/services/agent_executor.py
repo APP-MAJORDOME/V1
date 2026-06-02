@@ -39,6 +39,7 @@ def interpret_for_act(
             db,
             household_id,
             memory_lines=memory_lines,
+            user_id=user_id,
         )
     if command_wants_household_answer(command):
         return build_household_answer(command, db, household_id, user_id, memory_lines=memory_lines)

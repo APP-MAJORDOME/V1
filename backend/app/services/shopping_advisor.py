@@ -20,6 +20,7 @@ from app.models.models import (
     HouseholdMoiWellness,
 )
 from app.services.llm import compose_shopping_plan
+from app.services.user_secrets_vault import credential_hints_for_stores, list_credential_hints
 from app.services.web_search import fetch_search_results
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,10 @@ _SHOPPING_TRIGGERS = (
     "humeur",
     "confort",
     "reconfort",
+    "drive",
+    "commander en ligne",
+    "passer commande",
+    "carrefour.fr",
 )
 
 _ACTION_BLOCK = (
@@ -147,7 +152,8 @@ def _gather_shopping_context(
     household_id: int,
     command: str,
     memory_lines: list[str] | None,
-) -> tuple[str, list[str], list[dict[str, str]]]:
+    user_id: int | None = None,
+) -> tuple[str, list[str], list[dict[str, str]], list[dict]]:
     now = utc_now_naive()
     lines: list[str] = []
     stores = _detect_stores(command)
@@ -235,6 +241,32 @@ def _gather_shopping_context(
     else:
         lines.append("Enseignes mentionnées : aucune — propose Carrefour ou Marché U si pertinent.")
 
+    vault_links: list[dict] = []
+    if user_id:
+        hints = list_credential_hints(db, user_id)
+        target_stores = stores or ["Carrefour", "Marché U"]
+        vault_links = credential_hints_for_stores(hints, target_stores)
+        if hints:
+            lines.append(
+                "Trousseau mots de passe MajorDome (identifiants enregistrés, mot de passe jamais envoyé au LLM) :"
+            )
+            for h in hints[:8]:
+                login = h.get("username") or "—"
+                pwd = "oui" if h.get("has_password") else "non"
+                lines.append(f"- {h.get('label')} ({h.get('service_key')}) : login {login}, MDP enregistré : {pwd}")
+        if vault_links:
+            lines.append("Enseignes ciblées avec compte enregistré (commande Drive auto : prochaine étape) :")
+            for link in vault_links:
+                lines.append(
+                    f"- {link.get('store')} : compte « {link.get('label')} » "
+                    f"({link.get('username') or 'identifiant'}) — statut {link.get('drive_status')}."
+                )
+        elif hints:
+            lines.append(
+                "Aucun compte du trousseau ne correspond aux enseignes demandées — "
+                "suggère d’ajouter les identifiants dans Réglages → Sécurité."
+            )
+
     web_sources: list[dict[str, str]] = []
     search_queries: list[str] = []
     week_hint = now.strftime("%B %Y")
@@ -260,7 +292,7 @@ def _gather_shopping_context(
             snippet = (src.get("snippet") or "")[:220]
             lines.append(f"- {src.get('title') or 'Lien'} : {snippet}")
 
-    return "\n".join(lines)[:12000], stores, web_sources
+    return "\n".join(lines)[:12000], stores, web_sources, vault_links
 
 
 def _normalize_ingredients(raw: Any) -> list[dict[str, Any]]:
@@ -297,6 +329,7 @@ def _fallback_plan(
     stores: list[str],
     context: str,
     web_sources: list[dict[str, str]],
+    vault_links: list[dict] | None = None,
 ) -> dict[str, Any]:
     store_label = stores[0] if stores else "supermarché"
     ingredients = [
@@ -327,7 +360,12 @@ def _fallback_plan(
             "Prix indicatifs France métropolitaine ; promos réelles à confirmer en magasin "
             "(pas d’API officielle Carrefour / Marché U)."
         ),
+        "vault_links": vault_links or [],
     }
+    if vault_links:
+        plan["disclaimer"] += (
+            " Compte enseigne détecté dans ton trousseau — commande Drive automatique en cours d’intégration."
+        )
     return {
         "intent": "shopping_plan",
         "mode": "confirm",
@@ -335,6 +373,7 @@ def _fallback_plan(
             "shopping_plan": plan,
             "stores": plan["stores"],
             "sources": web_sources,
+            "vault_links": vault_links or [],
         },
         "explanation": explanation,
     }
@@ -374,15 +413,18 @@ def build_shopping_plan_response(
     db: Session,
     household_id: int,
     memory_lines: list[str] | None = None,
+    user_id: int | None = None,
 ) -> dict[str, Any]:
-    context, stores, web_sources = _gather_shopping_context(db, household_id, command, memory_lines)
+    context, stores, web_sources, vault_links = _gather_shopping_context(
+        db, household_id, command, memory_lines, user_id=user_id
+    )
     parsed = compose_shopping_plan(command, context, stores, web_sources, memory_lines)
     if not parsed or not isinstance(parsed, dict):
-        return _fallback_plan(command, stores, context, web_sources)
+        return _fallback_plan(command, stores, context, web_sources, vault_links)
 
     ingredients = _normalize_ingredients(parsed.get("ingredients"))
     if not ingredients:
-        return _fallback_plan(command, stores, context, web_sources)
+        return _fallback_plan(command, stores, context, web_sources, vault_links)
 
     try:
         total = float(parsed.get("total_eur") or 0)
@@ -402,7 +444,12 @@ def build_shopping_plan_response(
             "Estimations et promos basées sur le web et ton contexte MajorDome — "
             "à vérifier en magasin (pas d’API officielle enseigne)."
         ),
+        "vault_links": vault_links,
     }
+    if vault_links:
+        plan["disclaimer"] += (
+            " Compte enseigne enregistré dans ton trousseau — la commande Drive automatique arrive bientôt."
+        )
     if not plan["stores"]:
         plan["stores"] = ["Carrefour", "Marché U"]
 
@@ -417,6 +464,7 @@ def build_shopping_plan_response(
             "shopping_plan": plan,
             "stores": plan["stores"],
             "sources": web_sources,
+            "vault_links": vault_links,
         },
         "explanation": explanation[:4000],
     }

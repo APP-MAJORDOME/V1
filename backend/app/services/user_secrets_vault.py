@@ -7,6 +7,42 @@ from sqlalchemy.orm import Session
 from app.models.models import UserVaultSecret
 from app.services.vault_crypto import decrypt_vault_blob, encrypt_vault_blob, vault_encryption_enabled
 
+_CREDENTIAL_ENC_PREFIX = "enc:v1:"
+_STORE_LABEL_TO_KEY: dict[str, str] = {
+    "carrefour": "carrefour",
+    "marche u": "marche_u",
+    "marché u": "marche_u",
+    "hyper u": "marche_u",
+    "super u": "marche_u",
+    "leclerc": "leclerc",
+    "e.leclerc": "leclerc",
+    "auchan": "auchan",
+    "intermarche": "intermarche",
+    "intermarché": "intermarche",
+    "lidl": "lidl",
+    "aldi": "aldi",
+}
+
+
+def store_label_to_service_key(store_label: str) -> str | None:
+    key = (store_label or "").strip().lower()
+    return _STORE_LABEL_TO_KEY.get(key)
+
+
+def encrypt_credential_field(plain: str) -> str:
+    """Chiffre un champ credential (ex. mot de passe domotique dans scopes_json)."""
+    if not plain:
+        return ""
+    return _CREDENTIAL_ENC_PREFIX + _encrypt_password(plain)
+
+
+def decrypt_credential_field(stored: str) -> str:
+    if not stored:
+        return ""
+    if stored.startswith(_CREDENTIAL_ENC_PREFIX):
+        return _decrypt_password(stored[len(_CREDENTIAL_ENC_PREFIX) :])
+    return stored
+
 
 def _encrypt_password(plain: str) -> str:
     if not plain:
@@ -132,6 +168,49 @@ def delete_user_vault_secret(db: Session, user_id: int, secret_id: int) -> bool:
     db.delete(row)
     db.commit()
     return True
+
+
+def list_credential_hints(db: Session, user_id: int) -> list[dict]:
+    rows = (
+        db.query(UserVaultSecret)
+        .filter(UserVaultSecret.user_id == user_id)
+        .order_by(UserVaultSecret.label.asc())
+        .limit(120)
+        .all()
+    )
+    return [
+        {
+            "service_key": r.service_key,
+            "label": r.label,
+            "username": r.username,
+            "has_password": bool((r.password_blob or "").strip()),
+            "login_url": r.login_url,
+        }
+        for r in rows
+    ]
+
+
+def credential_hints_for_stores(hints: list[dict], store_labels: list[str]) -> list[dict]:
+    out: list[dict] = []
+    for store in store_labels:
+        sk = store_label_to_service_key(store)
+        if not sk:
+            continue
+        match = next((h for h in hints if str(h.get("service_key") or "") == sk), None)
+        if not match:
+            continue
+        out.append(
+            {
+                "store": store,
+                "service_key": sk,
+                "label": match.get("label"),
+                "username": match.get("username"),
+                "has_password": bool(match.get("has_password")),
+                "login_url": match.get("login_url"),
+                "drive_status": "credentials_ready" if match.get("has_password") else "username_only",
+            }
+        )
+    return out
 
 
 def reveal_user_vault_secret_password(db: Session, user_id: int, secret_id: int) -> dict | None:

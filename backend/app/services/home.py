@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.models import ConnectedAccount
+from app.services.user_secrets_vault import decrypt_credential_field, encrypt_credential_field
 
 _SUPPORTED_PROVIDERS: tuple[dict[str, str], ...] = (
     {"id": "home_assistant", "label": "Home Assistant"},
@@ -237,7 +238,7 @@ def upsert_home_provider_credentials(
     if username is not None:
         scoped["username"] = username.strip()
     if password is not None:
-        scoped["password"] = password.strip()
+        scoped["password"] = encrypt_credential_field(password.strip())
     if access_token is not None:
         scoped["access_token"] = access_token.strip()
     if base_url is not None:
@@ -302,7 +303,7 @@ def test_home_provider_connection(db: Session, user_id: int, provider: str) -> d
         except Exception:
             scoped = {}
         username = str(scoped.get("username") or "").strip()
-        password = str(scoped.get("password") or "").strip()
+        password = decrypt_credential_field(str(scoped.get("password") or ""))
         base_url = str(scoped.get("base_url") or "https://ha101-1.overkiz.com").strip().rstrip("/")
         if not username or not password:
             return {
@@ -344,7 +345,7 @@ def test_home_provider_connection(db: Session, user_id: int, provider: str) -> d
 
 def _tahoma_login_context(scoped: dict[str, str]):
     username = str(scoped.get("username") or "").strip()
-    password = str(scoped.get("password") or "").strip()
+    password = decrypt_credential_field(str(scoped.get("password") or ""))
     base_url = str(scoped.get("base_url") or "https://ha101-1.overkiz.com").strip().rstrip("/")
     if not username or not password:
         return None, base_url, "missing_credentials"

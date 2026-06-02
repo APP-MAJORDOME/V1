@@ -38,6 +38,16 @@ export type AlfredShoppingIngredient = {
   store_hint?: string;
 };
 
+export type AlfredVaultStoreLink = {
+  store: string;
+  service_key: string;
+  label?: string;
+  username?: string | null;
+  has_password?: boolean;
+  login_url?: string | null;
+  drive_status?: string;
+};
+
 export type AlfredShoppingPlan = {
   recipe_title: string;
   servings?: number;
@@ -47,6 +57,7 @@ export type AlfredShoppingPlan = {
   total_eur?: number;
   promo_tips?: string[];
   disclaimer?: string;
+  vault_links?: AlfredVaultStoreLink[];
 };
 
 /** Document du coffre cité par Alfred (consultation foyer). */
@@ -168,6 +179,25 @@ export function extractShoppingPlan(proposal?: Record<string, unknown>): AlfredS
   const stores = Array.isArray(storesRaw)
     ? storesRaw.map((s) => String(s).trim()).filter(Boolean).slice(0, 4)
     : undefined;
+  const vaultRaw = row.vault_links ?? proposal?.vault_links;
+  const vault_links: AlfredVaultStoreLink[] = [];
+  if (Array.isArray(vaultRaw)) {
+    for (const item of vaultRaw) {
+      if (!item || typeof item !== 'object') continue;
+      const v = item as Record<string, unknown>;
+      const store = typeof v.store === 'string' ? v.store.trim() : '';
+      if (!store) continue;
+      vault_links.push({
+        store,
+        service_key: typeof v.service_key === 'string' ? v.service_key : 'other',
+        label: typeof v.label === 'string' ? v.label : undefined,
+        username: typeof v.username === 'string' ? v.username : null,
+        has_password: v.has_password === true,
+        login_url: typeof v.login_url === 'string' ? v.login_url : null,
+        drive_status: typeof v.drive_status === 'string' ? v.drive_status : undefined,
+      });
+    }
+  }
   return {
     recipe_title: title,
     servings: typeof row.servings === 'number' ? row.servings : undefined,
@@ -177,6 +207,7 @@ export function extractShoppingPlan(proposal?: Record<string, unknown>): AlfredS
     total_eur: typeof row.total_eur === 'number' ? row.total_eur : undefined,
     promo_tips,
     disclaimer: typeof row.disclaimer === 'string' ? row.disclaimer.trim() : undefined,
+    vault_links: vault_links.length > 0 ? vault_links : undefined,
   };
 }
 

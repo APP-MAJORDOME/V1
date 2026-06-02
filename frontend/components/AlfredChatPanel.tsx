@@ -370,6 +370,17 @@ export function AlfredChatPanel({
                       ))}
                     </div>
                   ) : null}
+                  {m.shoppingPlan.vault_links && m.shoppingPlan.vault_links.length > 0 ? (
+                    <div style={{ marginTop: 8, fontSize: 11, color: C.green, lineHeight: 1.45 }}>
+                      <div style={{ fontWeight: 800, marginBottom: 4 }}>Comptes enseignes (trousseau)</div>
+                      {m.shoppingPlan.vault_links.map((link) => (
+                        <div key={`${link.store}-${link.service_key}`}>
+                          {link.store} : {link.label || link.service_key}
+                          {link.username ? ` (${link.username})` : ''} — Drive auto bientôt
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {m.shoppingPlan.disclaimer ? (
                     <div style={{ fontSize: 10, color: C.text2, marginTop: 6, opacity: 0.85 }}>
                       {m.shoppingPlan.disclaimer}
