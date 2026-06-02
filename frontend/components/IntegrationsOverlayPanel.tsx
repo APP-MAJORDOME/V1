@@ -56,6 +56,7 @@ export function IntegrationsOverlayPanel({
   const [selectedTahomaDeviceId, setSelectedTahomaDeviceId] = useState('');
   const [selectedTahomaAction, setSelectedTahomaAction] = useState('toggle');
   const [groupName, setGroupName] = useState('');
+  const [renameGroupName, setRenameGroupName] = useState('');
   const [savedGroups, setSavedGroups] = useState<{ name: string; provider: string; device_ids: string[] }[]>([]);
   const [selectedGroupName, setSelectedGroupName] = useState('');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
@@ -330,6 +331,29 @@ export function IntegrationsOverlayPanel({
       );
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Mise à jour des membres du groupe impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function renameSelectedGroup() {
+    if (!token || !selectedGroupName || !renameGroupName.trim()) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    const nextName = renameGroupName.trim().toLowerCase();
+    try {
+      const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(selectedGroupName)}/rename`,
+        { new_name: nextName },
+        token,
+      );
+      const rows = res.groups || [];
+      setSavedGroups(rows);
+      setSelectedGroupName(nextName);
+      setRenameGroupName('');
+      setHomeMsg(`Groupe renommé en « ${nextName} ».`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Renommage du groupe impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -619,7 +643,24 @@ export function IntegrationsOverlayPanel({
               </button>
             </div>
             {savedGroups.length > 0 ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    value={renameGroupName}
+                    onChange={(e) => setRenameGroupName(e.target.value)}
+                    placeholder="Nouveau nom du groupe"
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void renameSelectedGroup()}
+                    disabled={homeBusy || !selectedGroupName || !renameGroupName.trim()}
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+                  >
+                    Renommer groupe
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <select
                   value={selectedGroupName}
                   onChange={(e) => setSelectedGroupName(e.target.value)}
@@ -663,6 +704,7 @@ export function IntegrationsOverlayPanel({
                 >
                   Retirer appareil sélectionné
                 </button>
+                </div>
               </div>
             ) : null}
           </div>

@@ -262,6 +262,10 @@ class HomeDeviceGroupMembersUpdateRequest(BaseModel):
     device_ids: list[str] = Field(default_factory=list, max_length=120)
 
 
+class HomeDeviceGroupRenameRequest(BaseModel):
+    new_name: str = Field(min_length=2, max_length=64)
+
+
 class HomeDeviceGroupActionResponse(BaseModel):
     group_name: str
     provider: str

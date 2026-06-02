@@ -654,6 +654,49 @@ def update_device_group_members(
     return {"groups": groups}
 
 
+def rename_device_group(
+    db: Session,
+    user_id: int,
+    group_name: str,
+    new_name: str,
+) -> dict:
+    current = (group_name or "").strip().lower()
+    target = (new_name or "").strip().lower()
+    if not current or not target:
+        return {"groups": list_device_groups(db, user_id).get("groups") or []}
+    account = _load_provider_account(db, user_id, "tahoma")
+    if account is None:
+        return {"groups": []}
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        scoped = {}
+    groups = _read_groups_from_account(account)
+    source = next((g for g in groups if str(g.get("name") or "") == current), None)
+    if source is None:
+        return {"groups": groups}
+
+    dest = next((g for g in groups if str(g.get("name") or "") == target), None)
+    if dest and dest is not source:
+        merged_ids = list(
+            dict.fromkeys(
+                [
+                    *[str(x).strip() for x in (dest.get("device_ids") or []) if str(x).strip()],
+                    *[str(x).strip() for x in (source.get("device_ids") or []) if str(x).strip()],
+                ]
+            )
+        )[:120]
+        dest["device_ids"] = merged_ids
+        groups = [g for g in groups if g is not source]
+    else:
+        source["name"] = target
+
+    scoped["device_groups"] = groups
+    account.scopes_json = json.dumps(scoped)
+    db.commit()
+    return {"groups": groups}
+
+
 def execute_device_group_action(
     db: Session,
     user_id: int,

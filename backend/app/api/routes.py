@@ -138,6 +138,7 @@ from app.schemas.schemas import (
     HomeDeviceGroupsResponse,
     HomeDeviceGroupUpsertRequest,
     HomeDeviceGroupMembersUpdateRequest,
+    HomeDeviceGroupRenameRequest,
     HomeDeviceGroupActionRequest,
     HomeDeviceGroupActionResponse,
     HomeAssistantConnectRequest,
@@ -189,6 +190,7 @@ from app.services.home import (
     upsert_device_group,
     delete_device_group,
     update_device_group_members,
+    rename_device_group,
     execute_device_group_action,
 )
 
@@ -2667,6 +2669,21 @@ def home_device_group_members_update(
         operation=payload.operation,
         provider=payload.provider,
         device_ids=payload.device_ids,
+    )
+
+
+@router.post("/home/device-groups/{group_name}/rename", response_model=HomeDeviceGroupsResponse)
+def home_device_group_rename(
+    group_name: str,
+    payload: HomeDeviceGroupRenameRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return rename_device_group(
+        db=db,
+        user_id=auth.user_id,
+        group_name=group_name,
+        new_name=payload.new_name,
     )
 
 
