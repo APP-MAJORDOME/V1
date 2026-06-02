@@ -7,7 +7,7 @@ import {
   integrationConfigured,
   isCalendarConnected,
 } from '../lib/calendarIntegrations';
-import { getJson, postJson } from '../lib/api';
+import { deleteJson, getJson, postJson } from '../lib/api';
 import { GlassCard } from './GlassCard';
 
 export type IntegrationsOverlayPanelProps = {
@@ -252,6 +252,26 @@ export function IntegrationsOverlayPanel({
     }
   }
 
+  async function saveGroupFromCurrentSelection() {
+    if (!token || !groupName.trim() || !selectedTahomaDeviceId) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(groupName.trim().toLowerCase())}`,
+        { provider: 'tahoma', device_ids: [selectedTahomaDeviceId] },
+        token,
+      );
+      setSavedGroups(res.groups || []);
+      setSelectedGroupName(groupName.trim().toLowerCase());
+      setHomeMsg(`Groupe « ${groupName.trim()} » mis à jour avec 1 appareil.`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Mise à jour du groupe impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
   async function runGroupAction() {
     if (!token || !selectedGroupName) return;
     setHomeBusy(true);
@@ -265,6 +285,25 @@ export function IntegrationsOverlayPanel({
       setHomeMsg(res.message || `Groupe ${res.status}`);
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Action groupe impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function deleteSelectedGroup() {
+    if (!token || !selectedGroupName) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await deleteJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(selectedGroupName)}`,
+        token,
+      );
+      setSavedGroups(res.groups || []);
+      setSelectedGroupName(res.groups?.[0]?.name ?? '');
+      setHomeMsg(`Groupe « ${selectedGroupName} » supprimé.`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Suppression du groupe impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -544,6 +583,14 @@ export function IntegrationsOverlayPanel({
               >
                 Sauver groupe
               </button>
+              <button
+                type="button"
+                onClick={() => void saveGroupFromCurrentSelection()}
+                disabled={homeBusy || !groupName.trim() || !selectedTahomaDeviceId}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+              >
+                Sauver avec appareil sélectionné
+              </button>
             </div>
             {savedGroups.length > 0 ? (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -565,6 +612,14 @@ export function IntegrationsOverlayPanel({
                   style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.terra, color: '#fff', fontWeight: 700, fontSize: 12 }}
                 >
                   Exécuter action groupe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deleteSelectedGroup()}
+                  disabled={homeBusy || !selectedGroupName}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+                >
+                  Supprimer groupe
                 </button>
               </div>
             ) : null}

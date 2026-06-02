@@ -584,6 +584,25 @@ def upsert_device_group(
     return {"groups": groups}
 
 
+def delete_device_group(db: Session, user_id: int, group_name: str) -> dict:
+    name = (group_name or "").strip().lower()
+    if not name:
+        return {"groups": list_device_groups(db, user_id).get("groups") or []}
+    account = _load_provider_account(db, user_id, "tahoma")
+    if account is None:
+        return {"groups": []}
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        scoped = {}
+    groups = _read_groups_from_account(account)
+    groups = [g for g in groups if str(g.get("name") or "") != name]
+    scoped["device_groups"] = groups
+    account.scopes_json = json.dumps(scoped)
+    db.commit()
+    return {"groups": groups}
+
+
 def execute_device_group_action(
     db: Session,
     user_id: int,
