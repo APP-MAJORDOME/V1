@@ -131,6 +131,7 @@ from app.schemas.schemas import (
     HomeProvidersResponse,
     HomeDeviceControlRequest,
     HomeDeviceControlResponse,
+    HomeProviderTestResponse,
     HomeAssistantConnectRequest,
     HomeProviderConnectRequest,
     GoogleOAuthStartResponse,
@@ -171,6 +172,7 @@ from app.services.home import (
     execute_device_control,
     connect_home_assistant,
     connect_home_provider,
+    test_home_provider_connection,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -2540,6 +2542,15 @@ def home_provider_connect(
     if account is None:
         raise api_error("provider_not_supported", "Provider domotique non supporté.", 400)
     return account
+
+
+@router.get("/home/providers/{provider}/test", response_model=HomeProviderTestResponse)
+def home_provider_test(
+    provider: str,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return test_home_provider_connection(db=db, user_id=auth.user_id, provider=provider)
 
 
 @router.post("/home/devices/control", response_model=HomeDeviceControlResponse)

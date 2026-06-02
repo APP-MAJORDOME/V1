@@ -47,6 +47,7 @@ export function IntegrationsOverlayPanel({
   const [haUrl, setHaUrl] = useState('');
   const [haToken, setHaToken] = useState('');
   const [providerToConnect, setProviderToConnect] = useState('google_home');
+  const [providerToTest, setProviderToTest] = useState('home_assistant');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
   const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
   const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
@@ -120,6 +121,23 @@ export function IntegrationsOverlayPanel({
       await refreshHomeProviders();
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Connexion provider impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function testProviderConnection() {
+    if (!token || !providerToTest) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await getJson<{ provider: string; status: string; message: string }>(
+        `/api/v1/home/providers/${encodeURIComponent(providerToTest)}/test`,
+        token,
+      );
+      setHomeMsg(res.message || `Test ${res.status}`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Test de connexion impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -234,6 +252,44 @@ export function IntegrationsOverlayPanel({
             }}
           >
             Marquer connecté
+          </button>
+        </div>
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <select
+            value={providerToTest}
+            onChange={(e) => setProviderToTest(e.target.value)}
+            style={{
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: '8px 10px',
+              fontSize: 12,
+              background: C.white,
+            }}
+          >
+            <option value="home_assistant">Home Assistant</option>
+            <option value="google_home">Google Home</option>
+            <option value="legrand_control">Legrand Home + Control</option>
+            <option value="tahoma">TaHoma</option>
+            <option value="sharkclean">SharkClean</option>
+            <option value="ezviz">Ezviz</option>
+            <option value="verisure">Verisure</option>
+            <option value="lsc_smart_connect">LSC Smart Connect</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void testProviderConnection()}
+            disabled={homeBusy}
+            style={{
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: '8px 12px',
+              background: C.white,
+              color: C.text,
+              fontWeight: 700,
+              fontSize: 12,
+            }}
+          >
+            Tester connexion
           </button>
         </div>
         {homeMsg ? <div style={{ marginTop: 8, fontSize: 11, color: C.text2 }}>{homeMsg}</div> : null}

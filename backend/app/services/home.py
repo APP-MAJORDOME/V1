@@ -171,6 +171,47 @@ def connect_home_provider(
     return account
 
 
+def test_home_provider_connection(db: Session, user_id: int, provider: str) -> dict:
+    provider_id = (provider or "").strip().lower()
+    if provider_id == "home_assistant":
+        account = _load_home_assistant_account(db=db, user_id=user_id)
+        creds = _parse_home_assistant_credentials(account)
+        if creds is None:
+            return {
+                "provider": "home_assistant",
+                "status": "not_configured",
+                "message": "Home Assistant non configuré (URL/token manquants).",
+            }
+        base_url, token = creds
+        try:
+            with httpx.Client(timeout=8) as client:
+                res = client.get(f"{base_url}/api/", headers={"Authorization": f"Bearer {token}"})
+                res.raise_for_status()
+            return {
+                "provider": "home_assistant",
+                "status": "ok",
+                "message": "Connexion Home Assistant valide.",
+            }
+        except Exception:
+            return {
+                "provider": "home_assistant",
+                "status": "failed",
+                "message": "Connexion Home Assistant échouée (URL/token ou accès réseau).",
+            }
+    account = _load_provider_account(db, user_id, provider_id)
+    if account is None:
+        return {
+            "provider": provider_id,
+            "status": "not_connected",
+            "message": "Provider non connecté.",
+        }
+    return {
+        "provider": provider_id,
+        "status": "pending_api",
+        "message": "Connecteur enregistré. Test API native à implémenter avec OAuth partenaire.",
+    }
+
+
 def get_home_status(db: Session, user_id: int) -> dict:
     account = _load_home_assistant_account(db=db, user_id=user_id)
     creds = _parse_home_assistant_credentials(account)

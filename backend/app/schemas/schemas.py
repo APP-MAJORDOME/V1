@@ -206,6 +206,12 @@ class HomeDeviceControlResponse(BaseModel):
     message: str
 
 
+class HomeProviderTestResponse(BaseModel):
+    provider: str
+    status: str
+    message: str
+
+
 class GoogleOAuthStartResponse(BaseModel):
     authorization_url: str
     state: str
