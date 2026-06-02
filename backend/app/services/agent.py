@@ -93,6 +93,8 @@ def interpret_command(command: str, memory_lines: list[str] | None = None) -> di
             "maison",
             "lumiere",
             "lumière",
+            "volet",
+            "store",
             "radiateur",
             "chauffage",
             "ventilation",

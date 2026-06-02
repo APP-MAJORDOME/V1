@@ -81,6 +81,8 @@ def _parse_home_device_action(command: str) -> dict[str, str] | None:
         capability = "heating"
     elif "ventilation" in lowered or "ventilo" in lowered or "vmc" in lowered:
         capability = "ventilation"
+    elif "volet" in lowered or "store" in lowered:
+        capability = "opening"
     elif "scene" in lowered or "scène" in lowered:
         capability = "scene"
     else:
@@ -523,7 +525,7 @@ def execute_device_control(
     action_id = (action or "").strip().lower()
     target_id = (target or "").strip()[:80] or None
 
-    if capability_id not in {"lights", "heating", "ventilation", "scene"}:
+    if capability_id not in {"lights", "heating", "ventilation", "scene", "opening"}:
         return {
             "provider": provider_id,
             "capability": capability_id,
@@ -591,6 +593,7 @@ def execute_device_control(
 
 
 def infer_and_execute_device_control(command: str, db: Session, user_id: int) -> dict:
+    lowered = (command or "").lower()
     parsed = _parse_home_device_action(command)
     if not parsed:
         return {
@@ -601,6 +604,47 @@ def infer_and_execute_device_control(command: str, db: Session, user_id: int) ->
             "status": "unsupported_command",
             "message": "Commande domotique non reconnue.",
         }
+    # Priorité TaHoma sur les demandes de volets/stores ou mention explicite.
+    if any(k in lowered for k in ("tahoma", "volet", "volets", "store", "stores")):
+        rows = list_provider_devices(db=db, user_id=user_id, provider="tahoma").get("devices") or []
+        if not isinstance(rows, list) or len(rows) == 0:
+            return {
+                "provider": "tahoma",
+                "capability": parsed["capability"],
+                "action": parsed["action"],
+                "target": parsed.get("zone") or None,
+                "status": "no_device_found",
+                "message": "Aucun appareil TaHoma trouvé. Charge d'abord les appareils dans Intégrations.",
+            }
+        query = (parsed.get("zone") or "").strip().lower()
+        picked = None
+        if query:
+            for d in rows:
+                if not isinstance(d, dict):
+                    continue
+                name = str(d.get("name") or "").strip().lower()
+                if query and query in name:
+                    picked = d
+                    break
+        if picked is None:
+            picked = rows[0] if isinstance(rows[0], dict) else None
+        if not picked:
+            return {
+                "provider": "tahoma",
+                "capability": parsed["capability"],
+                "action": parsed["action"],
+                "target": parsed.get("zone") or None,
+                "status": "no_device_found",
+                "message": "Aucun appareil TaHoma compatible trouvé.",
+            }
+        return execute_provider_device_action(
+            db=db,
+            user_id=user_id,
+            provider="tahoma",
+            device_id=str(picked.get("id") or ""),
+            action=parsed["action"],
+        )
+
     return execute_device_control(
         db=db,
         user_id=user_id,
