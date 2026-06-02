@@ -120,6 +120,57 @@ def get_home_providers(db: Session, user_id: int) -> dict:
     return {"providers": providers}
 
 
+def connect_home_assistant(db: Session, user_id: int, base_url: str, access_token: str) -> ConnectedAccount:
+    cleaned_url = str(base_url or "").strip().rstrip("/")
+    cleaned_token = str(access_token or "").strip()
+    if not cleaned_url.startswith("http://") and not cleaned_url.startswith("https://"):
+        cleaned_url = f"https://{cleaned_url}"
+    payload = {"base_url": cleaned_url, "access_token": cleaned_token}
+    account = _load_home_assistant_account(db, user_id)
+    if account is None:
+        account = ConnectedAccount(
+            user_id=user_id,
+            provider="home_assistant",
+            status="connected",
+            scopes_json=json.dumps(payload),
+        )
+        db.add(account)
+    else:
+        account.status = "connected"
+        account.scopes_json = json.dumps(payload)
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+def connect_home_provider(
+    db: Session,
+    user_id: int,
+    provider: str,
+    external_account_id: str | None = None,
+    status: str = "connected",
+) -> ConnectedAccount | None:
+    pid = (provider or "").strip().lower()
+    allowed = {p["id"] for p in _SUPPORTED_PROVIDERS if p["id"] != "home_assistant"}
+    if pid not in allowed:
+        return None
+    account = _load_provider_account(db, user_id, pid)
+    if account is None:
+        account = ConnectedAccount(
+            user_id=user_id,
+            provider=pid,
+            external_account_id=(external_account_id or "").strip() or None,
+            status=status,
+        )
+        db.add(account)
+    else:
+        account.status = status
+        account.external_account_id = (external_account_id or "").strip() or account.external_account_id
+    db.commit()
+    db.refresh(account)
+    return account
+
+
 def get_home_status(db: Session, user_id: int) -> dict:
     account = _load_home_assistant_account(db=db, user_id=user_id)
     creds = _parse_home_assistant_credentials(account)

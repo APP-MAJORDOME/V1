@@ -131,6 +131,8 @@ from app.schemas.schemas import (
     HomeProvidersResponse,
     HomeDeviceControlRequest,
     HomeDeviceControlResponse,
+    HomeAssistantConnectRequest,
+    HomeProviderConnectRequest,
     GoogleOAuthStartResponse,
     GoogleOAuthCallbackResponse,
     IntegrationCapabilitiesResponse,
@@ -162,7 +164,14 @@ from app.services.household_documents import default_document_templates
 from app.services.vault_crypto import vault_encryption_enabled
 from app.services.household_profile_members import resolve_partner_member, sync_members_from_profile_names
 from app.services.partner_delegation import build_message_body, deliver_partner_delegation
-from app.services.home import get_home_status, execute_scene, get_home_providers, execute_device_control
+from app.services.home import (
+    get_home_status,
+    execute_scene,
+    get_home_providers,
+    execute_device_control,
+    connect_home_assistant,
+    connect_home_provider,
+)
 
 router = APIRouter(prefix="/api/v1")
 google_oauth_states: dict[str, dict[str, int]] = {}
@@ -2499,6 +2508,38 @@ def home_status(auth: AuthContext = Depends(get_current_auth_context), db: Sessi
 @router.get("/home/providers", response_model=HomeProvidersResponse)
 def home_providers(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
     return get_home_providers(db=db, user_id=auth.user_id)
+
+
+@router.post("/home/providers/home_assistant/connect", response_model=ConnectedAccountRead)
+def home_assistant_connect(
+    payload: HomeAssistantConnectRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return connect_home_assistant(
+        db=db,
+        user_id=auth.user_id,
+        base_url=payload.base_url,
+        access_token=payload.access_token,
+    )
+
+
+@router.post("/home/providers/connect", response_model=ConnectedAccountRead)
+def home_provider_connect(
+    payload: HomeProviderConnectRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    account = connect_home_provider(
+        db=db,
+        user_id=auth.user_id,
+        provider=payload.provider,
+        external_account_id=payload.external_account_id,
+        status=payload.status,
+    )
+    if account is None:
+        raise api_error("provider_not_supported", "Provider domotique non supporté.", 400)
+    return account
 
 
 @router.post("/home/devices/control", response_model=HomeDeviceControlResponse)

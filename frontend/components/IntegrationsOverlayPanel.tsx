@@ -44,6 +44,9 @@ export function IntegrationsOverlayPanel({
   >([]);
   const [homeBusy, setHomeBusy] = useState(false);
   const [homeMsg, setHomeMsg] = useState('');
+  const [haUrl, setHaUrl] = useState('');
+  const [haToken, setHaToken] = useState('');
+  const [providerToConnect, setProviderToConnect] = useState('google_home');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
   const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
   const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
@@ -51,14 +54,22 @@ export function IntegrationsOverlayPanel({
   const btnRow = { display: 'flex' as const, flexWrap: 'wrap' as const, gap: 8 };
   const homeConnectedCount = homeProviders.filter((p) => p.connected).length;
 
+  async function refreshHomeProviders() {
+    if (!token) return;
+    try {
+      const res = await getJson<{ providers: { id: string; label: string; connected: boolean; status: string }[] }>(
+        '/api/v1/home/providers',
+        token,
+      );
+      setHomeProviders(res.providers || []);
+    } catch {
+      setHomeProviders([]);
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
-    void getJson<{ providers: { id: string; label: string; connected: boolean; status: string }[] }>(
-      '/api/v1/home/providers',
-      token,
-    )
-      .then((res) => setHomeProviders(res.providers || []))
-      .catch(() => setHomeProviders([]));
+    void refreshHomeProviders();
   }, [token]);
 
   async function runHomeAction(capability: string, action: string, target?: string) {
@@ -74,6 +85,41 @@ export function IntegrationsOverlayPanel({
       setHomeMsg(res.message || `Action ${res.status}.`);
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : "Action domotique impossible.");
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function connectHomeAssistant() {
+    if (!token || !haUrl.trim() || !haToken.trim()) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      await postJson(
+        '/api/v1/home/providers/home_assistant/connect',
+        { base_url: haUrl.trim(), access_token: haToken.trim() },
+        token,
+      );
+      setHaToken('');
+      setHomeMsg('Home Assistant connecté.');
+      await refreshHomeProviders();
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Connexion Home Assistant impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function connectPlannedProvider() {
+    if (!token || !providerToConnect) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      await postJson('/api/v1/home/providers/connect', { provider: providerToConnect, status: 'connected' }, token);
+      setHomeMsg('Connecteur marqué comme connecté. Auth fournisseur détaillée à finaliser.');
+      await refreshHomeProviders();
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Connexion provider impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -120,6 +166,74 @@ export function IntegrationsOverlayPanel({
             style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
           >
             Scène soir
+          </button>
+        </div>
+        <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+          <input
+            value={haUrl}
+            onChange={(e) => setHaUrl(e.target.value)}
+            placeholder="URL Home Assistant (ex: https://ha.maison.local)"
+            style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+          />
+          <input
+            value={haToken}
+            onChange={(e) => setHaToken(e.target.value)}
+            placeholder="Token long-lived Home Assistant"
+            style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+          />
+          <button
+            type="button"
+            onClick={() => void connectHomeAssistant()}
+            disabled={homeBusy || !haUrl.trim() || !haToken.trim()}
+            style={{
+              border: 'none',
+              borderRadius: 10,
+              padding: '8px 12px',
+              background: C.lilac,
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: 12,
+              opacity: homeBusy || !haUrl.trim() || !haToken.trim() ? 0.6 : 1,
+            }}
+          >
+            Connecter Home Assistant
+          </button>
+        </div>
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <select
+            value={providerToConnect}
+            onChange={(e) => setProviderToConnect(e.target.value)}
+            style={{
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: '8px 10px',
+              fontSize: 12,
+              background: C.white,
+            }}
+          >
+            <option value="google_home">Google Home</option>
+            <option value="legrand_control">Legrand Home + Control</option>
+            <option value="tahoma">TaHoma</option>
+            <option value="sharkclean">SharkClean</option>
+            <option value="ezviz">Ezviz</option>
+            <option value="verisure">Verisure</option>
+            <option value="lsc_smart_connect">LSC Smart Connect</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void connectPlannedProvider()}
+            disabled={homeBusy}
+            style={{
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: '8px 12px',
+              background: C.white,
+              color: C.text,
+              fontWeight: 700,
+              fontSize: 12,
+            }}
+          >
+            Marquer connecté
           </button>
         </div>
         {homeMsg ? <div style={{ marginTop: 8, fontSize: 11, color: C.text2 }}>{homeMsg}</div> : null}

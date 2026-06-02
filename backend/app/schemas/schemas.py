@@ -299,8 +299,31 @@ class HouseholdMemberCreate(BaseModel):
 
 
 class ConnectedAccountCreate(BaseModel):
-    provider: Literal["google_calendar", "microsoft_calendar", "apple_calendar", "home_assistant"]
+    provider: Literal[
+        "google_calendar",
+        "microsoft_calendar",
+        "apple_calendar",
+        "home_assistant",
+        "google_home",
+        "legrand_control",
+        "tahoma",
+        "sharkclean",
+        "ezviz",
+        "verisure",
+        "lsc_smart_connect",
+    ]
     external_account_id: str | None = None
+    status: Literal["connected", "reauth_required", "disconnected"] = "connected"
+
+
+class HomeAssistantConnectRequest(BaseModel):
+    base_url: str = Field(min_length=8, max_length=255)
+    access_token: str = Field(min_length=20, max_length=2048)
+
+
+class HomeProviderConnectRequest(BaseModel):
+    provider: str = Field(min_length=2, max_length=64)
+    external_account_id: str | None = Field(default=None, max_length=255)
     status: Literal["connected", "reauth_required", "disconnected"] = "connected"
 
 
