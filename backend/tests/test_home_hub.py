@@ -1,7 +1,15 @@
+import json
 from unittest.mock import MagicMock, patch
 
 from app.services import agent as agent_service
-from app.services.home import execute_device_control, get_home_providers
+from app.services.home import (
+    delete_device_group,
+    execute_device_control,
+    get_home_providers,
+    rename_device_group,
+    update_device_group_members,
+    upsert_device_group,
+)
 
 
 def test_interpret_command_home_control():
@@ -35,3 +43,74 @@ def test_execute_device_control_home_assistant_mock(_account):
     )
     assert out["status"] in {"executed_mock", "executed"}
     assert "Action" in out["message"]
+
+
+def _mock_tahoma_account(scopes: dict) -> MagicMock:
+    account = MagicMock()
+    account.scopes_json = json.dumps(scopes)
+    return account
+
+
+@patch("app.services.home._load_provider_account")
+def test_upsert_and_delete_device_group(mock_load):
+    db = MagicMock()
+    account = _mock_tahoma_account({"device_groups": []})
+    mock_load.return_value = account
+
+    out = upsert_device_group(
+        db,
+        user_id=1,
+        group_name="nuit",
+        provider="tahoma",
+        device_ids=["dev-1", "dev-2"],
+    )
+    assert any(g["name"] == "nuit" for g in out["groups"])
+    assert db.commit.called
+
+    out_del = delete_device_group(db, user_id=1, group_name="nuit")
+    assert not any(g["name"] == "nuit" for g in out_del["groups"])
+
+
+@patch("app.services.home._load_provider_account")
+def test_update_device_group_members_add_remove(mock_load):
+    db = MagicMock()
+    account = _mock_tahoma_account(
+        {"device_groups": [{"name": "matin", "provider": "tahoma", "device_ids": ["dev-1"]}]}
+    )
+    mock_load.return_value = account
+
+    out_add = update_device_group_members(
+        db,
+        user_id=1,
+        group_name="matin",
+        operation="add",
+        provider="tahoma",
+        device_ids=["dev-2"],
+    )
+    matin = next(g for g in out_add["groups"] if g["name"] == "matin")
+    assert "dev-1" in matin["device_ids"]
+    assert "dev-2" in matin["device_ids"]
+
+    out_remove = update_device_group_members(
+        db,
+        user_id=1,
+        group_name="matin",
+        operation="remove",
+        provider="tahoma",
+        device_ids=["dev-1"],
+    )
+    matin2 = next(g for g in out_remove["groups"] if g["name"] == "matin")
+    assert matin2["device_ids"] == ["dev-2"]
+
+
+@patch("app.services.home._load_provider_account")
+def test_rename_device_group(mock_load):
+    db = MagicMock()
+    account = _mock_tahoma_account(
+        {"device_groups": [{"name": "rdc", "provider": "tahoma", "device_ids": ["dev-a"]}]}
+    )
+    mock_load.return_value = account
+
+    out = rename_device_group(db, user_id=1, group_name="rdc", new_name="rez")
+    assert any(g["name"] == "rez" for g in out["groups"])
+    assert not any(g["name"] == "rdc" for g in out["groups"])

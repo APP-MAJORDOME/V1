@@ -7,7 +7,7 @@ import {
   integrationConfigured,
   isCalendarConnected,
 } from '../lib/calendarIntegrations';
-import { deleteJson, getJson, postJson } from '../lib/api';
+import { deleteJson, getJson, postJson, putJson } from '../lib/api';
 import { GlassCard } from './GlassCard';
 
 export type IntegrationsOverlayPanelProps = {
@@ -84,6 +84,14 @@ export function IntegrationsOverlayPanel({
     if (!token) return;
     void refreshHomeProviders();
   }, [token]);
+
+  useEffect(() => {
+    if (!selectedGroupName) return;
+    const group = savedGroups.find((g) => g.name === selectedGroupName);
+    if (!group) return;
+    setGroupName(group.name);
+    setSelectedGroupDeviceIds(group.device_ids.slice(0, 120));
+  }, [selectedGroupName, savedGroups]);
 
   async function runHomeAction(capability: string, action: string, target?: string) {
     if (!token) return;
@@ -241,7 +249,7 @@ export function IntegrationsOverlayPanel({
     try {
       const subset = selectedGroupDeviceIds.filter((id) => id.trim());
       const ids = (subset.length > 0 ? subset : tahomaDevices.map((d) => d.id)).slice(0, 120);
-      const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+      const res = await putJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
         `/api/v1/home/device-groups/${encodeURIComponent(groupName.trim().toLowerCase())}`,
         { provider: 'tahoma', device_ids: ids },
         token,
@@ -270,12 +278,32 @@ export function IntegrationsOverlayPanel({
     setSelectedGroupDeviceIds([]);
   }
 
+  async function updateSelectedGroupFromCheckboxes() {
+    if (!token || !selectedGroupName || selectedGroupDeviceIds.length === 0) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const ids = selectedGroupDeviceIds.filter((id) => id.trim()).slice(0, 120);
+      const res = await putJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(selectedGroupName)}`,
+        { provider: 'tahoma', device_ids: ids },
+        token,
+      );
+      setSavedGroups(res.groups || []);
+      setHomeMsg(`Groupe « ${selectedGroupName} » mis à jour (${ids.length} appareils).`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Mise à jour du groupe impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
   async function saveGroupFromCurrentSelection() {
     if (!token || !groupName.trim() || !selectedTahomaDeviceId) return;
     setHomeBusy(true);
     setHomeMsg('');
     try {
-      const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+      const res = await putJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
         `/api/v1/home/device-groups/${encodeURIComponent(groupName.trim().toLowerCase())}`,
         { provider: 'tahoma', device_ids: [selectedTahomaDeviceId] },
         token,
@@ -696,6 +724,14 @@ export function IntegrationsOverlayPanel({
                 style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
               >
                 Sauver avec appareil sélectionné
+              </button>
+              <button
+                type="button"
+                onClick={() => void updateSelectedGroupFromCheckboxes()}
+                disabled={homeBusy || !selectedGroupName || selectedGroupDeviceIds.length === 0}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.lilac, color: '#fff', fontWeight: 700, fontSize: 12 }}
+              >
+                Mettre à jour groupe sélectionné
               </button>
             </div>
             {savedGroups.length > 0 ? (
