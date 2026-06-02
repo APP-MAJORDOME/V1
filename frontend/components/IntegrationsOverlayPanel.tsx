@@ -54,6 +54,7 @@ export function IntegrationsOverlayPanel({
   const [credBaseUrl, setCredBaseUrl] = useState('');
   const [tahomaDevices, setTahomaDevices] = useState<{ id: string; name: string; device_type?: string }[]>([]);
   const [selectedTahomaDeviceId, setSelectedTahomaDeviceId] = useState('');
+  const [selectedGroupDeviceIds, setSelectedGroupDeviceIds] = useState<string[]>([]);
   const [selectedTahomaAction, setSelectedTahomaAction] = useState('toggle');
   const [groupName, setGroupName] = useState('');
   const [renameGroupName, setRenameGroupName] = useState('');
@@ -191,6 +192,7 @@ export function IntegrationsOverlayPanel({
       const rows = Array.isArray(res.devices) ? res.devices : [];
       setTahomaDevices(rows);
       setSelectedTahomaDeviceId(rows[0]?.id ?? '');
+      setSelectedGroupDeviceIds(rows.slice(0, 1).map((d) => d.id));
       setHomeMsg(rows.length > 0 ? `${rows.length} appareil(s) TaHoma chargés.` : 'Aucun appareil TaHoma trouvé.');
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Impossible de charger les appareils TaHoma.');
@@ -237,7 +239,8 @@ export function IntegrationsOverlayPanel({
     setHomeBusy(true);
     setHomeMsg('');
     try {
-      const ids = tahomaDevices.map((d) => d.id).slice(0, 120);
+      const subset = selectedGroupDeviceIds.filter((id) => id.trim());
+      const ids = (subset.length > 0 ? subset : tahomaDevices.map((d) => d.id)).slice(0, 120);
       const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
         `/api/v1/home/device-groups/${encodeURIComponent(groupName.trim().toLowerCase())}`,
         { provider: 'tahoma', device_ids: ids },
@@ -245,12 +248,26 @@ export function IntegrationsOverlayPanel({
       );
       setSavedGroups(res.groups || []);
       setSelectedGroupName(groupName.trim().toLowerCase());
-      setHomeMsg(`Groupe « ${groupName.trim()} » enregistré (${ids.length} appareils).`);
+      setHomeMsg(`Groupe « ${groupName.trim()} » enregistré (${ids.length} appareils sélectionnés).`);
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Enregistrement du groupe impossible.');
     } finally {
       setHomeBusy(false);
     }
+  }
+
+  function toggleGroupDeviceSelection(deviceId: string) {
+    setSelectedGroupDeviceIds((prev) =>
+      prev.includes(deviceId) ? prev.filter((id) => id !== deviceId) : [...prev, deviceId].slice(0, 120),
+    );
+  }
+
+  function selectAllGroupDevices() {
+    setSelectedGroupDeviceIds(tahomaDevices.map((d) => d.id).slice(0, 120));
+  }
+
+  function clearGroupDeviceSelection() {
+    setSelectedGroupDeviceIds([]);
   }
 
   async function saveGroupFromCurrentSelection() {
@@ -613,6 +630,45 @@ export function IntegrationsOverlayPanel({
                 >
                   Exécuter action TaHoma
                 </button>
+              </div>
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', background: C.white }}>
+                <div style={{ fontSize: 11, color: C.text2, marginBottom: 6 }}>
+                  Sélection appareils pour groupe ({selectedGroupDeviceIds.length}/{tahomaDevices.length})
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                  <button
+                    type="button"
+                    onClick={selectAllGroupDevices}
+                    disabled={homeBusy || tahomaDevices.length === 0}
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '4px 8px', background: C.white, color: C.text, fontWeight: 700, fontSize: 11 }}
+                  >
+                    Tout sélectionner
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearGroupDeviceSelection}
+                    disabled={homeBusy || selectedGroupDeviceIds.length === 0}
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '4px 8px', background: C.white, color: C.text, fontWeight: 700, fontSize: 11 }}
+                  >
+                    Vider sélection
+                  </button>
+                </div>
+                <div style={{ maxHeight: 140, overflow: 'auto', display: 'grid', gap: 4 }}>
+                  {tahomaDevices.map((d) => (
+                    <label key={`group-select-${d.id}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedGroupDeviceIds.includes(d.id)}
+                        onChange={() => toggleGroupDeviceSelection(d.id)}
+                        disabled={homeBusy}
+                      />
+                      <span>
+                        {d.name}
+                        {d.device_type ? ` (${d.device_type})` : ''}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
           ) : null}
