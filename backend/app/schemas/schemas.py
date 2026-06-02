@@ -237,6 +237,33 @@ class HomeProviderDeviceActionResponse(BaseModel):
     message: str
 
 
+class HomeDeviceGroupRead(BaseModel):
+    name: str
+    provider: str
+    device_ids: list[str]
+
+
+class HomeDeviceGroupsResponse(BaseModel):
+    groups: list[HomeDeviceGroupRead]
+
+
+class HomeDeviceGroupUpsertRequest(BaseModel):
+    provider: str = Field(default="tahoma", max_length=64)
+    device_ids: list[str] = Field(default_factory=list, max_length=120)
+
+
+class HomeDeviceGroupActionRequest(BaseModel):
+    action: str = Field(min_length=2, max_length=64)
+
+
+class HomeDeviceGroupActionResponse(BaseModel):
+    group_name: str
+    provider: str
+    action: str
+    status: str
+    message: str
+
+
 class GoogleOAuthStartResponse(BaseModel):
     authorization_url: str
     state: str

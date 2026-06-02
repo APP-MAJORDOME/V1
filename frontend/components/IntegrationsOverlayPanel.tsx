@@ -55,6 +55,9 @@ export function IntegrationsOverlayPanel({
   const [tahomaDevices, setTahomaDevices] = useState<{ id: string; name: string; device_type?: string }[]>([]);
   const [selectedTahomaDeviceId, setSelectedTahomaDeviceId] = useState('');
   const [selectedTahomaAction, setSelectedTahomaAction] = useState('toggle');
+  const [groupName, setGroupName] = useState('');
+  const [savedGroups, setSavedGroups] = useState<{ name: string; provider: string; device_ids: string[] }[]>([]);
+  const [selectedGroupName, setSelectedGroupName] = useState('');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
   const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
   const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
@@ -208,6 +211,60 @@ export function IntegrationsOverlayPanel({
       setHomeMsg(res.message || `Action ${res.status}`);
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Action TaHoma impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function refreshGroups() {
+    if (!token) return;
+    try {
+      const res = await getJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        '/api/v1/home/device-groups',
+        token,
+      );
+      const rows = Array.isArray(res.groups) ? res.groups : [];
+      setSavedGroups(rows);
+      if (rows.length > 0 && !selectedGroupName) setSelectedGroupName(rows[0].name);
+    } catch {
+      setSavedGroups([]);
+    }
+  }
+
+  async function saveGroupFromLoadedDevices() {
+    if (!token || !groupName.trim() || tahomaDevices.length === 0) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const ids = tahomaDevices.map((d) => d.id).slice(0, 120);
+      const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(groupName.trim().toLowerCase())}`,
+        { provider: 'tahoma', device_ids: ids },
+        token,
+      );
+      setSavedGroups(res.groups || []);
+      setSelectedGroupName(groupName.trim().toLowerCase());
+      setHomeMsg(`Groupe « ${groupName.trim()} » enregistré (${ids.length} appareils).`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Enregistrement du groupe impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function runGroupAction() {
+    if (!token || !selectedGroupName) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ message: string; status: string }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(selectedGroupName)}/action`,
+        { action: selectedTahomaAction },
+        token,
+      );
+      setHomeMsg(res.message || `Groupe ${res.status}`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Action groupe impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -424,6 +481,14 @@ export function IntegrationsOverlayPanel({
             >
               Charger appareils TaHoma
             </button>
+            <button
+              type="button"
+              onClick={() => void refreshGroups()}
+              disabled={homeBusy}
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+            >
+              Charger groupes
+            </button>
           </div>
           {tahomaDevices.length > 0 ? (
             <div style={{ display: 'grid', gap: 6 }}>
@@ -462,6 +527,48 @@ export function IntegrationsOverlayPanel({
               </div>
             </div>
           ) : null}
+          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            <div style={{ fontSize: 11, color: C.text2 }}>Groupes favoris (ex: nuit, matin, rdc)</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder="Nom du groupe"
+                style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+              />
+              <button
+                type="button"
+                onClick={() => void saveGroupFromLoadedDevices()}
+                disabled={homeBusy || !groupName.trim() || tahomaDevices.length === 0}
+                style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.lilac, color: '#fff', fontWeight: 700, fontSize: 12 }}
+              >
+                Sauver groupe
+              </button>
+            </div>
+            {savedGroups.length > 0 ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <select
+                  value={selectedGroupName}
+                  onChange={(e) => setSelectedGroupName(e.target.value)}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+                >
+                  {savedGroups.map((g) => (
+                    <option key={g.name} value={g.name}>
+                      {g.name} ({g.device_ids.length})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void runGroupAction()}
+                  disabled={homeBusy || !selectedGroupName}
+                  style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.terra, color: '#fff', fontWeight: 700, fontSize: 12 }}
+                >
+                  Exécuter action groupe
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
         {homeMsg ? <div style={{ marginTop: 8, fontSize: 11, color: C.text2 }}>{homeMsg}</div> : null}
         {homeProviders.length > 0 ? (

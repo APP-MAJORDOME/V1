@@ -511,6 +511,118 @@ def execute_provider_device_action(
         client.close()
 
 
+def _read_groups_from_account(account: ConnectedAccount | None) -> list[dict]:
+    if account is None:
+        return []
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        return []
+    groups = scoped.get("device_groups")
+    if not isinstance(groups, list):
+        return []
+    out: list[dict] = []
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        name = str(g.get("name") or "").strip().lower()
+        provider = str(g.get("provider") or "tahoma").strip().lower()
+        device_ids = g.get("device_ids")
+        if not name or not isinstance(device_ids, list):
+            continue
+        clean_ids = [str(x).strip() for x in device_ids if str(x).strip()][:120]
+        if not clean_ids:
+            continue
+        out.append({"name": name, "provider": provider, "device_ids": clean_ids})
+    return out
+
+
+def list_device_groups(db: Session, user_id: int) -> dict:
+    account = _load_provider_account(db, user_id, "tahoma")
+    groups = _read_groups_from_account(account)
+    return {"groups": groups}
+
+
+def upsert_device_group(
+    db: Session,
+    user_id: int,
+    group_name: str,
+    provider: str,
+    device_ids: list[str],
+) -> dict:
+    name = (group_name or "").strip().lower()
+    provider_id = (provider or "tahoma").strip().lower()
+    if not name:
+        return {"groups": []}
+    account = _load_provider_account(db, user_id, provider_id)
+    if account is None:
+        account = ConnectedAccount(
+            user_id=user_id,
+            provider=provider_id,
+            status="connected",
+            scopes_json=json.dumps({}),
+        )
+        db.add(account)
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        scoped = {}
+    groups = _read_groups_from_account(account)
+    clean_ids = [str(x).strip() for x in device_ids if str(x).strip()][:120]
+    updated = False
+    for g in groups:
+        if g["name"] == name:
+            g["provider"] = provider_id
+            g["device_ids"] = clean_ids
+            updated = True
+            break
+    if not updated and clean_ids:
+        groups.append({"name": name, "provider": provider_id, "device_ids": clean_ids})
+    scoped["device_groups"] = groups
+    account.scopes_json = json.dumps(scoped)
+    db.commit()
+    return {"groups": groups}
+
+
+def execute_device_group_action(
+    db: Session,
+    user_id: int,
+    group_name: str,
+    action: str,
+) -> dict:
+    name = (group_name or "").strip().lower()
+    groups = list_device_groups(db, user_id).get("groups") or []
+    group = next((g for g in groups if str(g.get("name") or "") == name), None)
+    if not group:
+        return {
+            "group_name": name,
+            "provider": "tahoma",
+            "action": action,
+            "status": "group_not_found",
+            "message": "Groupe domotique introuvable.",
+        }
+    provider = str(group.get("provider") or "tahoma")
+    ids = group.get("device_ids") if isinstance(group.get("device_ids"), list) else []
+    ok = 0
+    for did in ids:
+        out = execute_provider_device_action(
+            db=db,
+            user_id=user_id,
+            provider=provider,
+            device_id=str(did),
+            action=action,
+        )
+        if str(out.get("status")) == "executed":
+            ok += 1
+    return {
+        "group_name": name,
+        "provider": provider,
+        "action": action,
+        "status": "executed" if ok > 0 else "failed",
+        "message": f"Action appliquée sur {ok}/{len(ids)} appareil(s) du groupe « {name} ».",
+    }
+
+
 def get_home_status(db: Session, user_id: int) -> dict:
     account = _load_home_assistant_account(db=db, user_id=user_id)
     creds = _parse_home_assistant_credentials(account)
@@ -645,6 +757,25 @@ def infer_and_execute_device_control(command: str, db: Session, user_id: int) ->
         }
     # Priorité TaHoma sur les demandes de volets/stores ou mention explicite.
     if any(k in lowered for k in ("tahoma", "volet", "volets", "store", "stores")):
+        m_group = re.search(r"groupe\s+([a-z0-9_-]{2,40})", lowered)
+        if m_group:
+            group_name = m_group.group(1)
+            request_confirm = "confirme" in lowered
+            if not request_confirm:
+                return {
+                    "provider": "tahoma",
+                    "capability": parsed["capability"],
+                    "action": parsed["action"],
+                    "target": group_name,
+                    "status": "requires_mass_confirm",
+                    "message": f"Confirme pour exécuter sur le groupe « {group_name} » : « confirme groupe {group_name} ».",
+                }
+            return execute_device_group_action(
+                db=db,
+                user_id=user_id,
+                group_name=group_name,
+                action=parsed["action"],
+            )
         rows = list_provider_devices(db=db, user_id=user_id, provider="tahoma").get("devices") or []
         if not isinstance(rows, list) or len(rows) == 0:
             return {

@@ -135,6 +135,10 @@ from app.schemas.schemas import (
     HomeProviderDevicesResponse,
     HomeProviderDeviceActionRequest,
     HomeProviderDeviceActionResponse,
+    HomeDeviceGroupsResponse,
+    HomeDeviceGroupUpsertRequest,
+    HomeDeviceGroupActionRequest,
+    HomeDeviceGroupActionResponse,
     HomeAssistantConnectRequest,
     HomeProviderConnectRequest,
     HomeProviderCredentialsUpsertRequest,
@@ -180,6 +184,9 @@ from app.services.home import (
     test_home_provider_connection,
     list_provider_devices,
     execute_provider_device_action,
+    list_device_groups,
+    upsert_device_group,
+    execute_device_group_action,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -2606,6 +2613,45 @@ def home_provider_device_action(
         user_id=auth.user_id,
         provider=provider,
         device_id=device_id,
+        action=payload.action,
+    )
+
+
+@router.get("/home/device-groups", response_model=HomeDeviceGroupsResponse)
+def home_device_groups(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return list_device_groups(db=db, user_id=auth.user_id)
+
+
+@router.put("/home/device-groups/{group_name}", response_model=HomeDeviceGroupsResponse)
+def home_device_group_upsert(
+    group_name: str,
+    payload: HomeDeviceGroupUpsertRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return upsert_device_group(
+        db=db,
+        user_id=auth.user_id,
+        group_name=group_name,
+        provider=payload.provider,
+        device_ids=payload.device_ids,
+    )
+
+
+@router.post("/home/device-groups/{group_name}/action", response_model=HomeDeviceGroupActionResponse)
+def home_device_group_action(
+    group_name: str,
+    payload: HomeDeviceGroupActionRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return execute_device_group_action(
+        db=db,
+        user_id=auth.user_id,
+        group_name=group_name,
         action=payload.action,
     )
 
