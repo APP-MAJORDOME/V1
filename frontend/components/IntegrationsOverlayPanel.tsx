@@ -48,6 +48,10 @@ export function IntegrationsOverlayPanel({
   const [haToken, setHaToken] = useState('');
   const [providerToConnect, setProviderToConnect] = useState('google_home');
   const [providerToTest, setProviderToTest] = useState('home_assistant');
+  const [credProvider, setCredProvider] = useState('tahoma');
+  const [credUsername, setCredUsername] = useState('');
+  const [credPassword, setCredPassword] = useState('');
+  const [credBaseUrl, setCredBaseUrl] = useState('');
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
   const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
   const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
@@ -138,6 +142,31 @@ export function IntegrationsOverlayPanel({
       setHomeMsg(res.message || `Test ${res.status}`);
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Test de connexion impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function saveProviderCredentials() {
+    if (!token || !credProvider) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      await postJson(
+        '/api/v1/home/providers/credentials',
+        {
+          provider: credProvider,
+          username: credUsername.trim() || null,
+          password: credPassword.trim() || null,
+          base_url: credBaseUrl.trim() || null,
+        },
+        token,
+      );
+      setCredPassword('');
+      setHomeMsg(`Identifiants ${credProvider} enregistrés.`);
+      await refreshHomeProviders();
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Sauvegarde des identifiants impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -291,6 +320,57 @@ export function IntegrationsOverlayPanel({
           >
             Tester connexion
           </button>
+        </div>
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: `1px dashed ${C.border}`, background: C.white }}>
+          <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Credentials provider (TaHoma en priorité)</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <select
+              value={credProvider}
+              onChange={(e) => setCredProvider(e.target.value)}
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+            >
+              <option value="tahoma">TaHoma</option>
+              <option value="legrand_control">Legrand Home + Control</option>
+              <option value="verisure">Verisure</option>
+              <option value="ezviz">Ezviz</option>
+              <option value="sharkclean">SharkClean</option>
+            </select>
+            <input
+              value={credUsername}
+              onChange={(e) => setCredUsername(e.target.value)}
+              placeholder="Login / email provider"
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+            />
+            <input
+              value={credPassword}
+              onChange={(e) => setCredPassword(e.target.value)}
+              placeholder="Mot de passe provider"
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+            />
+            <input
+              value={credBaseUrl}
+              onChange={(e) => setCredBaseUrl(e.target.value)}
+              placeholder="Base URL API (optionnel)"
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+            />
+            <button
+              type="button"
+              onClick={() => void saveProviderCredentials()}
+              disabled={homeBusy || !credUsername.trim() || !credPassword.trim()}
+              style={{
+                border: 'none',
+                borderRadius: 10,
+                padding: '8px 12px',
+                background: C.terra,
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 12,
+                opacity: homeBusy || !credUsername.trim() || !credPassword.trim() ? 0.6 : 1,
+              }}
+            >
+              Enregistrer credentials
+            </button>
+          </div>
         </div>
         {homeMsg ? <div style={{ marginTop: 8, fontSize: 11, color: C.text2 }}>{homeMsg}</div> : null}
         {homeProviders.length > 0 ? (

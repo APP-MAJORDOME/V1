@@ -333,6 +333,15 @@ class HomeProviderConnectRequest(BaseModel):
     status: Literal["connected", "reauth_required", "disconnected"] = "connected"
 
 
+class HomeProviderCredentialsUpsertRequest(BaseModel):
+    provider: str = Field(min_length=2, max_length=64)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, max_length=255)
+    access_token: str | None = Field(default=None, max_length=2048)
+    base_url: str | None = Field(default=None, max_length=255)
+    external_account_id: str | None = Field(default=None, max_length=255)
+
+
 class EventCreate(BaseModel):
     household_id: int | None = None
     member_id: int | None = None

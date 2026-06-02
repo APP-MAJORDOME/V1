@@ -171,6 +171,56 @@ def connect_home_provider(
     return account
 
 
+def upsert_home_provider_credentials(
+    db: Session,
+    user_id: int,
+    provider: str,
+    *,
+    username: str | None = None,
+    password: str | None = None,
+    access_token: str | None = None,
+    base_url: str | None = None,
+    external_account_id: str | None = None,
+) -> ConnectedAccount | None:
+    pid = (provider or "").strip().lower()
+    allowed = {p["id"] for p in _SUPPORTED_PROVIDERS}
+    if pid not in allowed:
+        return None
+
+    account = _load_provider_account(db, user_id, pid)
+    try:
+        scoped = json.loads(account.scopes_json or "{}") if account else {}
+    except Exception:
+        scoped = {}
+
+    if username is not None:
+        scoped["username"] = username.strip()
+    if password is not None:
+        scoped["password"] = password.strip()
+    if access_token is not None:
+        scoped["access_token"] = access_token.strip()
+    if base_url is not None:
+        scoped["base_url"] = base_url.strip().rstrip("/")
+
+    if account is None:
+        account = ConnectedAccount(
+            user_id=user_id,
+            provider=pid,
+            external_account_id=(external_account_id or "").strip() or None,
+            status="connected",
+            scopes_json=json.dumps(scoped),
+        )
+        db.add(account)
+    else:
+        account.status = "connected"
+        if external_account_id is not None:
+            account.external_account_id = external_account_id.strip() or account.external_account_id
+        account.scopes_json = json.dumps(scoped)
+    db.commit()
+    db.refresh(account)
+    return account
+
+
 def test_home_provider_connection(db: Session, user_id: int, provider: str) -> dict:
     provider_id = (provider or "").strip().lower()
     if provider_id == "home_assistant":
@@ -205,6 +255,45 @@ def test_home_provider_connection(db: Session, user_id: int, provider: str) -> d
             "status": "not_connected",
             "message": "Provider non connecté.",
         }
+    if provider_id == "tahoma":
+        try:
+            scoped = json.loads(account.scopes_json or "{}")
+        except Exception:
+            scoped = {}
+        username = str(scoped.get("username") or "").strip()
+        password = str(scoped.get("password") or "").strip()
+        base_url = str(scoped.get("base_url") or "https://ha101-1.overkiz.com").strip().rstrip("/")
+        if not username or not password:
+            return {
+                "provider": provider_id,
+                "status": "missing_credentials",
+                "message": "Renseigne email + mot de passe TaHoma pour tester.",
+            }
+        try:
+            with httpx.Client(timeout=12) as client:
+                response = client.post(
+                    f"{base_url}/enduser-mobile-web/enduserAPI/login",
+                    data={"userId": username, "userPassword": password},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+            if response.status_code in {200, 204}:
+                return {
+                    "provider": provider_id,
+                    "status": "ok",
+                    "message": "Connexion TaHoma valide.",
+                }
+            return {
+                "provider": provider_id,
+                "status": "failed",
+                "message": f"Connexion TaHoma refusée (HTTP {response.status_code}).",
+            }
+        except Exception:
+            return {
+                "provider": provider_id,
+                "status": "failed",
+                "message": "Connexion TaHoma échouée (réseau ou identifiants).",
+            }
+
     return {
         "provider": provider_id,
         "status": "pending_api",

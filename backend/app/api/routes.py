@@ -134,6 +134,7 @@ from app.schemas.schemas import (
     HomeProviderTestResponse,
     HomeAssistantConnectRequest,
     HomeProviderConnectRequest,
+    HomeProviderCredentialsUpsertRequest,
     GoogleOAuthStartResponse,
     GoogleOAuthCallbackResponse,
     IntegrationCapabilitiesResponse,
@@ -172,6 +173,7 @@ from app.services.home import (
     execute_device_control,
     connect_home_assistant,
     connect_home_provider,
+    upsert_home_provider_credentials,
     test_home_provider_connection,
 )
 
@@ -2538,6 +2540,27 @@ def home_provider_connect(
         provider=payload.provider,
         external_account_id=payload.external_account_id,
         status=payload.status,
+    )
+    if account is None:
+        raise api_error("provider_not_supported", "Provider domotique non supporté.", 400)
+    return account
+
+
+@router.post("/home/providers/credentials", response_model=ConnectedAccountRead)
+def home_provider_credentials(
+    payload: HomeProviderCredentialsUpsertRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    account = upsert_home_provider_credentials(
+        db=db,
+        user_id=auth.user_id,
+        provider=payload.provider,
+        username=payload.username,
+        password=payload.password,
+        access_token=payload.access_token,
+        base_url=payload.base_url,
+        external_account_id=payload.external_account_id,
     )
     if account is None:
         raise api_error("provider_not_supported", "Provider domotique non supporté.", 400)
