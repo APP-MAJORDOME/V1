@@ -309,6 +309,32 @@ export function IntegrationsOverlayPanel({
     }
   }
 
+  async function updateSelectedGroupMembers(operation: 'add' | 'remove') {
+    if (!token || !selectedGroupName || !selectedTahomaDeviceId) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ groups: { name: string; provider: string; device_ids: string[] }[] }>(
+        `/api/v1/home/device-groups/${encodeURIComponent(selectedGroupName)}/members`,
+        { operation, provider: 'tahoma', device_ids: [selectedTahomaDeviceId] },
+        token,
+      );
+      const rows = res.groups || [];
+      setSavedGroups(rows);
+      const stillThere = rows.find((g) => g.name === selectedGroupName);
+      setSelectedGroupName(stillThere?.name ?? rows[0]?.name ?? '');
+      setHomeMsg(
+        operation === 'add'
+          ? `Appareil ajouté au groupe « ${selectedGroupName} ».`
+          : `Appareil retiré du groupe « ${selectedGroupName} ».`,
+      );
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Mise à jour des membres du groupe impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
   return (
     <div>
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: '#EEF5FF' }}>
@@ -620,6 +646,22 @@ export function IntegrationsOverlayPanel({
                   style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
                 >
                   Supprimer groupe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void updateSelectedGroupMembers('add')}
+                  disabled={homeBusy || !selectedGroupName || !selectedTahomaDeviceId}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+                >
+                  Ajouter appareil sélectionné
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void updateSelectedGroupMembers('remove')}
+                  disabled={homeBusy || !selectedGroupName || !selectedTahomaDeviceId}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+                >
+                  Retirer appareil sélectionné
                 </button>
               </div>
             ) : null}

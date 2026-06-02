@@ -256,6 +256,12 @@ class HomeDeviceGroupActionRequest(BaseModel):
     action: str = Field(min_length=2, max_length=64)
 
 
+class HomeDeviceGroupMembersUpdateRequest(BaseModel):
+    operation: str = Field(min_length=3, max_length=16)
+    provider: str = Field(default="tahoma", max_length=64)
+    device_ids: list[str] = Field(default_factory=list, max_length=120)
+
+
 class HomeDeviceGroupActionResponse(BaseModel):
     group_name: str
     provider: str

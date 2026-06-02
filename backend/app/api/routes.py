@@ -137,6 +137,7 @@ from app.schemas.schemas import (
     HomeProviderDeviceActionResponse,
     HomeDeviceGroupsResponse,
     HomeDeviceGroupUpsertRequest,
+    HomeDeviceGroupMembersUpdateRequest,
     HomeDeviceGroupActionRequest,
     HomeDeviceGroupActionResponse,
     HomeAssistantConnectRequest,
@@ -187,6 +188,7 @@ from app.services.home import (
     list_device_groups,
     upsert_device_group,
     delete_device_group,
+    update_device_group_members,
     execute_device_group_action,
 )
 
@@ -2649,6 +2651,23 @@ def home_device_group_delete(
     db: Session = Depends(get_db),
 ):
     return delete_device_group(db=db, user_id=auth.user_id, group_name=group_name)
+
+
+@router.post("/home/device-groups/{group_name}/members", response_model=HomeDeviceGroupsResponse)
+def home_device_group_members_update(
+    group_name: str,
+    payload: HomeDeviceGroupMembersUpdateRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return update_device_group_members(
+        db=db,
+        user_id=auth.user_id,
+        group_name=group_name,
+        operation=payload.operation,
+        provider=payload.provider,
+        device_ids=payload.device_ids,
+    )
 
 
 @router.post("/home/device-groups/{group_name}/action", response_model=HomeDeviceGroupActionResponse)

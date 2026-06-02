@@ -603,6 +603,57 @@ def delete_device_group(db: Session, user_id: int, group_name: str) -> dict:
     return {"groups": groups}
 
 
+def update_device_group_members(
+    db: Session,
+    user_id: int,
+    group_name: str,
+    operation: str,
+    provider: str,
+    device_ids: list[str],
+) -> dict:
+    name = (group_name or "").strip().lower()
+    op = (operation or "").strip().lower()
+    provider_id = (provider or "tahoma").strip().lower()
+    clean_ids = [str(x).strip() for x in (device_ids or []) if str(x).strip()][:120]
+    if not name:
+        return {"groups": []}
+    if op not in {"add", "remove"}:
+        return {"groups": list_device_groups(db, user_id).get("groups") or []}
+
+    account = _load_provider_account(db, user_id, provider_id)
+    if account is None:
+        account = ConnectedAccount(
+            user_id=user_id,
+            provider=provider_id,
+            status="connected",
+            scopes_json=json.dumps({}),
+        )
+        db.add(account)
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        scoped = {}
+    groups = _read_groups_from_account(account)
+    group = next((g for g in groups if g.get("name") == name), None)
+    if group is None:
+        group = {"name": name, "provider": provider_id, "device_ids": []}
+        groups.append(group)
+    existing = [str(x).strip() for x in group.get("device_ids") or [] if str(x).strip()]
+    if op == "add":
+        merged = list(dict.fromkeys([*existing, *clean_ids]))
+        group["device_ids"] = merged[:120]
+    else:
+        to_remove = set(clean_ids)
+        group["device_ids"] = [x for x in existing if x not in to_remove][:120]
+    if not group.get("device_ids"):
+        groups = [g for g in groups if g.get("name") != name]
+
+    scoped["device_groups"] = groups
+    account.scopes_json = json.dumps(scoped)
+    db.commit()
+    return {"groups": groups}
+
+
 def execute_device_group_action(
     db: Session,
     user_id: int,
