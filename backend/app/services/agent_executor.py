@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -19,8 +20,17 @@ from app.models.models import (
 )
 from app.services.agent import interpret_command
 from app.services.alfred_household import build_household_answer, command_wants_household_answer
+from app.services.grocery_intent import (
+    extract_grocery_label,
+    looks_like_grocery_add,
+    looks_like_grocery_correction,
+)
 from app.services.home import infer_and_execute_device_control
-from app.services.shopping_advisor import build_shopping_plan_response, command_wants_shopping_plan
+from app.services.drive_integration import build_drive_prepare_response, command_wants_drive_prepare
+from app.services.shopping_advisor import (
+    build_shopping_plan_response,
+    command_wants_shopping_plan,
+)
 
 _CONSULTATION_INTENTS = frozenset({"household_answer", "web_search", "document_analyze"})
 _CONFIRM_INTENTS = frozenset({"email_draft", "call_prepare", "event_create"})
@@ -33,6 +43,8 @@ def interpret_for_act(
     user_id: int,
     memory_lines: list[str] | None,
 ) -> dict[str, Any]:
+    if command_wants_drive_prepare(command):
+        return build_drive_prepare_response(command, db, user_id, household_id=household_id)
     if command_wants_shopping_plan(command):
         return build_shopping_plan_response(
             command,
@@ -52,6 +64,57 @@ def _proposal_str(proposal: dict[str, Any], *keys: str) -> str:
         if isinstance(val, str) and val.strip():
             return val.strip()
     return ""
+
+
+def _grocery_label_from_command(command: str) -> str:
+    return extract_grocery_label(command)
+
+
+def _rescue_label_from_recent_task(db: Session, household_id: int) -> tuple[str | None, Task | None]:
+    """Si l’utilisateur dit « en courses pas en tâche », récupère la dernière tâche ouverte suspecte."""
+    recent = (
+        db.query(Task)
+        .filter(Task.household_id == household_id, Task.status == "open")
+        .order_by(Task.created_at.desc())
+        .limit(8)
+        .all()
+    )
+    for t in recent:
+        title = (t.title or "").strip()
+        if looks_like_grocery_add(title) or looks_like_grocery_add(f"ajoute {title}"):
+            return extract_grocery_label(f"ajoute {title}") or title, t
+        # titres qui sont juste un produit / phrase d’ajout
+        if re.search(r"(?i)^(ajoute|rajoute|acheter)", title) or len(title.split()) <= 6:
+            label = extract_grocery_label(title) or extract_grocery_label(f"ajoute {title}") or title
+            if label and _norm_simple(label) not in {"le", "la", "les", "en"}:
+                return label[:120], t
+    return None, None
+
+
+def _norm_simple(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def _add_grocery_item(db: Session, auth: AuthContext, label: str) -> dict[str, Any]:
+    label = (label or "").strip()[:120]
+    if len(label) < 2:
+        return {"executed": False, "message": "Libellé de course manquant."}
+    existing = (
+        db.query(GroceryItem)
+        .filter(GroceryItem.household_id == auth.household_id, GroceryItem.done.is_(False))
+        .all()
+    )
+    if any(g.label.strip().lower() == label.lower() for g in existing):
+        return {"executed": True, "message": f"« {label} » est déjà sur ta liste.", "payload": {}}
+    item = GroceryItem(household_id=auth.household_id, label=label, done=False)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {
+        "executed": True,
+        "message": f"« {label} » ajouté à ta liste de courses.",
+        "payload": {"grocery_item_id": item.id},
+    }
 
 
 def _execute_intent(
@@ -77,11 +140,27 @@ def _execute_intent(
     if intent == "home_control":
         result = infer_and_execute_device_control(command, db=db, user_id=auth.user_id)
         status = str(result.get("status") or "")
-        ok = status in {"executed", "executed_mock", "planned_integration", "connector_pending"}
+        ok = status in {
+            "executed",
+            "executed_mock",
+            "planned_integration",
+            "connector_pending",
+        }
         return {
             "executed": ok,
             "message": str(result.get("message") or "Action domotique traitée."),
             "payload": result,
+        }
+
+    if intent == "drive_prepare":
+        prep = proposal.get("drive_prepare") if isinstance(proposal.get("drive_prepare"), dict) else {}
+        open_url = str(prep.get("open_url") or "").strip()
+        status = str(prep.get("status") or "")
+        ok = (status == "ready" and bool(open_url)) or bool(prep.get("logged_in"))
+        return {
+            "executed": ok,
+            "message": str(prep.get("message") or "Préparation Drive."),
+            "payload": {"drive_prepare": prep, "open_url": open_url if ok else None},
         }
 
     if intent == "shopping_plan":
@@ -121,36 +200,53 @@ def _execute_intent(
             "payload": {"added_count": len(added), "labels": added},
         }
 
-    is_grocery = intent == "grocery_add" or (
-        "courses" in lowered and any(k in lowered for k in ("ajoute", "rajoute", "liste"))
+    is_grocery = (
+        intent == "grocery_add"
+        or looks_like_grocery_add(command)
+        or looks_like_grocery_correction(command)
     )
     if is_grocery:
-        label = _proposal_str(proposal, "label", "title") or command[:80]
-        if len(label) < 2:
-            return {"executed": False, "message": "Libellé de course manquant."}
-        existing = (
-            db.query(GroceryItem)
-            .filter(
-                GroceryItem.household_id == auth.household_id,
-                GroceryItem.done.is_(False),
-            )
-            .all()
-        )
-        if any(g.label.strip().lower() == label.lower() for g in existing):
-            return {"executed": True, "message": f"« {label} » est déjà sur ta liste.", "payload": {}}
-        item = GroceryItem(household_id=auth.household_id, label=label[:120], done=False)
-        db.add(item)
-        db.commit()
-        db.refresh(item)
-        return {
-            "executed": True,
-            "message": f"« {label} » ajouté à ta liste de courses.",
-            "payload": {"grocery_item_id": item.id},
-        }
+        label = _proposal_str(proposal, "label", "title") or _grocery_label_from_command(command)
+        rescued_task = None
+        if looks_like_grocery_correction(command) or len(label) < 2 or _norm_simple(label) in {
+            "le",
+            "la",
+            "les",
+            "en",
+            "y",
+        }:
+            rescued_label, rescued_task = _rescue_label_from_recent_task(db, auth.household_id)
+            if rescued_label:
+                label = rescued_label
+        if label.lower().startswith(("acheter ", "achète ", "achete ", "prendre ", "ajoute ", "rajoute ")):
+            label = _grocery_label_from_command(label) or _grocery_label_from_command(command) or label
+        out = _add_grocery_item(db, auth, label)
+        if out.get("executed") and rescued_task is not None:
+            removed_id = rescued_task.id
+            try:
+                db.delete(rescued_task)
+                db.commit()
+                out["message"] = (
+                    f"« {label} » est sur ta liste de courses "
+                    f"(j’ai retiré la tâche créée par erreur)."
+                )
+                payload = dict(out.get("payload") or {})
+                payload["removed_task_id"] = removed_id
+                out["payload"] = payload
+            except Exception:
+                pass
+        return out
 
     if intent == "task_create" or (
         any(k in lowered for k in ("ajoute", "rajoute", "crée", "cree")) and not is_grocery
     ):
+        # Ne jamais créer une tâche pour une course mal classée
+        if looks_like_grocery_add(command):
+            return _add_grocery_item(
+                db,
+                auth,
+                _proposal_str(proposal, "label", "title") or _grocery_label_from_command(command),
+            )
         title = _proposal_str(proposal, "title") or command[:120]
         task = Task(
             household_id=auth.household_id,
@@ -298,6 +394,8 @@ def execute_agent_act(
     db: Session,
     auth: AuthContext,
     memory_lines: list[str] | None,
+    *,
+    force_execute: bool = False,
 ) -> dict[str, Any]:
     interpreted = interpret_for_act(command, db, auth.household_id, auth.user_id, memory_lines)
     intent = str(interpreted.get("intent") or "")
@@ -310,14 +408,7 @@ def execute_agent_act(
             "message": interpreted.get("explanation"),
             "result": None,
         }
-    if mode in ("confirm", "suggest") or intent in _CONFIRM_INTENTS:
-        return {
-            "status": "preview_only",
-            "preview": interpreted,
-            "message": interpreted.get("explanation"),
-            "result": None,
-        }
-    if intent == "unknown":
+    if not force_execute and (mode in ("confirm", "suggest") or intent in _CONFIRM_INTENTS):
         return {
             "status": "preview_only",
             "preview": interpreted,
@@ -325,12 +416,20 @@ def execute_agent_act(
             "result": None,
         }
 
+    # unknown / suggest : tenter quand même les heuristiques (ex. « acheter des alloco »)
     outcome = _execute_intent(db, auth, command, interpreted)
     if outcome.get("executed"):
         return {
             "status": "completed",
             "preview": interpreted,
             "message": outcome.get("message"),
+            "result": outcome.get("payload"),
+        }
+    if intent == "unknown" and not force_execute:
+        return {
+            "status": "preview_only",
+            "preview": interpreted,
+            "message": interpreted.get("explanation") or outcome.get("message"),
             "result": outcome.get("payload"),
         }
     return {

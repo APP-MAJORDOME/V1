@@ -9,6 +9,7 @@ import {
   extractVaultDocuments,
   extractWebSources,
   extractShoppingPlan,
+  extractDrivePrepare,
   isAlfredConsultationIntent,
   runServerAgentAct,
   tryExtractAlfredMemory,
@@ -34,10 +35,11 @@ const ASSISTANT_HISTORY_KEY = 'majordome_assistant_history';
 
 function alfredReplyMeta(
   res: AgentInterpretResponse,
-): Pick<AlfredMessage, 'webSources' | 'openVault' | 'vaultDocuments' | 'shoppingPlan'> {
+): Pick<AlfredMessage, 'webSources' | 'openVault' | 'vaultDocuments' | 'shoppingPlan' | 'drivePrepare'> {
   const webSources = extractWebSources(res.proposal);
   const vaultDocuments = extractVaultDocuments(res.proposal);
   const shoppingPlan = extractShoppingPlan(res.proposal) ?? undefined;
+  const drivePrepare = extractDrivePrepare(res.proposal) ?? undefined;
   const openVault =
     res.intent === 'household_answer' && vaultDocuments.length === 0 ? true : undefined;
   return {
@@ -45,6 +47,7 @@ function alfredReplyMeta(
     openVault,
     vaultDocuments: vaultDocuments.length > 0 ? vaultDocuments : undefined,
     shoppingPlan,
+    drivePrepare,
   };
 }
 
@@ -77,7 +80,7 @@ export function useAlfredAssistant({
   const [assistantTyping, setAssistantTyping] = useState(false);
   const [fileUploadBusy, setFileUploadBusy] = useState(false);
   const [assistantHistory, setAssistantHistory] = useState<AlfredMessage[]>([
-    { who: 'ai', text: `Coucou, je suis ${aiName}. Dis-moi ce que je dois gérer pour toi.` },
+    { who: 'ai', text: `Bonjour. Je suis ${aiName} — dis-moi ce que je dois gérer pour toi.` },
   ]);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -85,6 +88,7 @@ export function useAlfredAssistant({
   const [openAiRealtimeOn, setOpenAiRealtimeOn] = useState(false);
   const [openAiRealtimeBusy, setOpenAiRealtimeBusy] = useState(false);
   const [realtimeVoiceOk, setRealtimeVoiceOk] = useState<boolean | null>(null);
+  const [realtimeConfigured, setRealtimeConfigured] = useState<boolean | null>(null);
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const alfredInputRef = useRef<HTMLInputElement | null>(null);
@@ -105,6 +109,20 @@ export function useAlfredAssistant({
   useEffect(() => {
     openAiRealtimeOnRef.current = openAiRealtimeOn;
   }, [openAiRealtimeOn]);
+
+  useEffect(() => {
+    if (!token || !overlayActive) return;
+    void getJson<{ configured: boolean }>('/api/v1/agent/realtime/status', token)
+      .then((s) => {
+        const ok = Boolean(s.configured);
+        setRealtimeConfigured(ok);
+        setRealtimeVoiceOk(ok);
+      })
+      .catch(() => {
+        setRealtimeConfigured(false);
+        setRealtimeVoiceOk(false);
+      });
+  }, [token, overlayActive]);
 
   const cleanupRealtimeMedia = useCallback(() => {
     try {
@@ -497,11 +515,17 @@ export function useAlfredAssistant({
         if (
           res.proposal &&
           typeof res.proposal === 'object' &&
-          'title' in res.proposal &&
-          !isAlfredConsultationIntent(res.intent)
+          !isAlfredConsultationIntent(res.intent) &&
+          !agentNeedsConfirm(res)
         ) {
-          const t = (res.proposal as { title?: string }).title;
-          if (t && !agentNeedsConfirm(res)) aiText = `${aiText}\n\nTâche proposée : ${t}`.trim();
+          if (res.intent === 'task_create') {
+            const t = (res.proposal as { title?: string }).title;
+            if (t) aiText = `${aiText}\n\nTâche : ${t}`.trim();
+          } else if (res.intent === 'grocery_add') {
+            const label =
+              (res.proposal as { label?: string }).label || (res.proposal as { title?: string }).title;
+            if (label) aiText = `${aiText}\n\nCourse : ${label}`.trim();
+          }
         }
         if (agentNeedsConfirm(res)) {
           if (!aiText.trim()) aiText = 'Je peux faire ça pour toi si tu confirmes.';
@@ -613,7 +637,7 @@ export function useAlfredAssistant({
         };
         let execution = await onExecuteIntent(command, res);
         if (!execution.done && res.mode === 'auto' && !isAlfredConsultationIntent(res.intent)) {
-          const server = await runServerAgentAct(token, command).catch(() => null);
+          const server = await runServerAgentAct(token, command, true).catch(() => null);
           if (server?.completed) {
             execution = { done: true, message: server.message };
           }
@@ -634,7 +658,7 @@ export function useAlfredAssistant({
 
   const clearAlfredMemoryAll = useCallback(async () => {
     if (!token) return;
-    if (!window.confirm('Effacer toutes les notes mémorisées par Alfred (app + serveur) ?')) return;
+    if (!window.confirm('Effacer toutes les notes mémorisées par Alfred ?')) return;
     try {
       await clearAlfredMemoryServer(token);
     } catch {
@@ -659,6 +683,13 @@ export function useAlfredAssistant({
   const toggleOpenAiRealtimeVoice = useCallback(async () => {
     if (!token) {
       onToast('error', 'Connecte-toi pour utiliser la voix avec Alfred.');
+      return;
+    }
+    if (realtimeConfigured === false) {
+      onToast(
+        'error',
+        'La conversation vocale n’est pas encore disponible sur ton espace.',
+      );
       return;
     }
     if (typeof window === 'undefined' || typeof RTCPeerConnection === 'undefined') {
@@ -762,6 +793,7 @@ export function useAlfredAssistant({
     }
   }, [
     token,
+    realtimeConfigured,
     openAiRealtimeOn,
     aiName,
     alfredMemory,
@@ -770,6 +802,29 @@ export function useAlfredAssistant({
     scheduleVoiceCommandFromTranscript,
     onToast,
   ]);
+
+  const fillDriveCart = useCallback(
+    async (serviceKey: string) => {
+      if (!token) return;
+      try {
+        const res = await postJson<{
+          status: string;
+          message?: string;
+          open_url?: string | null;
+        }>(`/api/v1/vault/drive/${encodeURIComponent(serviceKey)}/fill-cart`, {}, token);
+        if (res.open_url && typeof window !== 'undefined') {
+          window.open(res.open_url, '_blank', 'noopener,noreferrer');
+        }
+        onToast(
+          res.status === 'completed' || res.status === 'partial' ? 'success' : 'info',
+          res.message || 'Remplissage panier terminé',
+        );
+      } catch (e) {
+        onToast('error', e instanceof Error ? e.message : 'Remplissage panier impossible');
+      }
+    },
+    [token, onToast],
+  );
 
   const hydrateHistoryFromStorage = useCallback((name: string) => {
     try {
@@ -796,7 +851,7 @@ export function useAlfredAssistant({
       /* ignore */
     }
     setAssistantHistory([
-      { who: 'ai', text: `Coucou, je suis ${name}. Dis-moi ce que je dois gérer pour toi.` },
+      { who: 'ai', text: `Bonjour. Je suis ${name} — dis-moi ce que je dois gérer pour toi.` },
     ]);
   }, []);
 
@@ -826,6 +881,7 @@ export function useAlfredAssistant({
     toggleOpenAiRealtimeVoice,
     disconnectRealtime,
     hydrateHistoryFromStorage,
+    fillDriveCart,
   };
   return api;
 }

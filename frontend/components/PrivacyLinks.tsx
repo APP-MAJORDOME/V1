@@ -27,7 +27,7 @@ export function PrivacyPolicyLink({
   );
 }
 
-/** Bandeau court : données locales / cache navigateur. */
+/** Bandeau court : données synchronisées pour le foyer. */
 export function LocalDataNotice({
   C,
   compact = false,
@@ -44,8 +44,7 @@ export function LocalDataNotice({
         lineHeight: 1.45,
       }}
     >
-      Certaines données (listes, humeur, mémoire Alfred) peuvent rester sur cet appareil tant que la
-      synchronisation complète n&apos;est pas active — vider le cache du navigateur peut les effacer.{' '}
+      Tes données de foyer sont synchronisées et partagées entre les appareils de ton compte.{' '}
       <PrivacyPolicyLink C={C} />
     </p>
   );

@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { ServiceWorkerRegister } from '../components/ServiceWorkerRegister';
+import { NativeShellSync } from '../components/NativeShellSync';
+import { NATIVE_SHELL_BOOT_SCRIPT } from '../lib/nativeShell';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -44,15 +46,21 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 5,
   viewportFit: 'cover',
   themeColor: '#C96B4A',
+  interactiveWidget: 'resizes-content',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: NATIVE_SHELL_BOOT_SCRIPT }} />
+      </head>
       <body>
         {children}
+        <NativeShellSync />
         <ServiceWorkerRegister />
       </body>
     </html>

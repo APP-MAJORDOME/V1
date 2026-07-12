@@ -1,4 +1,4 @@
-const CACHE = 'majordome-shell-v6';
+const CACHE = 'majordome-shell-v14';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

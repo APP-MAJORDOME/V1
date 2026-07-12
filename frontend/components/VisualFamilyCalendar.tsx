@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { IconCalendar } from './md-icons';
 import { useIsClient } from '../hooks/useIsClient';
+import { formatCountFr } from '../lib/pluralize';
 import {
   addDays,
   formatTimeFr,
@@ -219,7 +220,7 @@ export function VisualFamilyCalendar({
 
       {conflictCount > 0 ? (
         <div style={{ fontSize: 11, color: C.red, background: C.redL, borderRadius: 10, padding: '8px 10px', marginBottom: 10 }}>
-          {conflictCount} chevauchement(s) détecté(s) cette semaine — vérifie les créneaux.
+          {formatCountFr(conflictCount, 'chevauchement détecté cette semaine', 'chevauchements détectés cette semaine')} — vérifie les créneaux.
         </div>
       ) : null}
 

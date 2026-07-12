@@ -1,6 +1,9 @@
 # Matrice d'état du projet
 
-Cette matrice est la vérité de référence sur le dépôt. Elle sert à éviter toute confusion entre la vision produit et l'état réel de l'implémentation.
+> **Attention (juin 2026)** : cette matrice est **largement dépassée** par l’implémentation actuelle (Alfred, OAuth calendriers, TaHoma, Home Assistant, trousseau, Drive manuel, deploy majordom.eu).  
+> **Référence à jour** : [HUB_CONNECTIONS.md](./HUB_CONNECTIONS.md) et `GET /api/v1/integrations/hub`.
+
+Cette matrice historique décrivait le bootstrap initial. Elle est conservée pour contexte.
 
 | Domaine | Élément | Statut | Commentaire |
 |---|---|---:|---|

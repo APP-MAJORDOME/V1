@@ -1,58 +1,62 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { deleteJson, getJson, postJson } from '../lib/api';
 import { useClientCalendar } from '../hooks/useClientCalendar';
+import { t } from '../lib/i18n';
 import { IconGift } from './md-icons';
 
-const LS_KEY = 'majordome.v1.birthdays';
+export type BirthdayRow = { id: number; name: string; date: string; notes?: string };
 
-export type BirthdayRow = { id: string; name: string; date: string; notes?: string };
+type BirthdayApi = { id: number; name: string; birthday_date: string; notes?: string };
 
-function loadBirthdays(): BirthdayRow[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((x): x is BirthdayRow => x && typeof x === 'object' && typeof (x as BirthdayRow).name === 'string' && typeof (x as BirthdayRow).date === 'string');
-  } catch {
-    return [];
-  }
+function mapRow(b: BirthdayApi): BirthdayRow {
+  return { id: b.id, name: b.name, date: b.birthday_date.slice(0, 10), notes: b.notes || undefined };
 }
 
-export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
+export function AnniversairesPanel({ C, token }: { C: Record<string, string>; token?: string }) {
   const cal = useClientCalendar();
   const [rows, setRows] = useState<BirthdayRow[]>([]);
+  const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [notes, setNotes] = useState('');
 
-  useEffect(() => {
-    setRows(loadBirthdays());
-  }, []);
-
-  const persist = useCallback((next: BirthdayRow[]) => {
-    setRows(next);
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore */
+  const refresh = useCallback(async () => {
+    if (!token) {
+      setRows([]);
+      return;
     }
-  }, []);
+    setLoading(true);
+    try {
+      const data = await getJson<BirthdayApi[]>('/api/v1/household/birthdays', token);
+      setRows(data.map(mapRow));
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
-  function addRow() {
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function addRow() {
     const n = name.trim();
     const d = date.trim();
-    if (!n || !d) return;
-    persist([...rows, { id: `${Date.now()}`, name: n, date: d, notes: notes.trim() || undefined }]);
+    if (!n || !d || !token) return;
+    await postJson('/api/v1/household/birthdays', { name: n, birthday_date: d, notes: notes.trim() }, token);
     setName('');
     setDate('');
     setNotes('');
+    await refresh();
   }
 
-  function removeRow(id: string) {
-    persist(rows.filter((r) => r.id !== id));
+  async function removeRow(id: number) {
+    if (!token) return;
+    await deleteJson(`/api/v1/household/birthdays/${id}`, token);
+    await refresh();
   }
 
   function nextBirthdayLabel(isoOrText: string): string {
@@ -84,7 +88,7 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
         <div>
           <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.5 }}>FOYER</p>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: C.text2, lineHeight: 1.45 }}>
-            Les dates sont enregistrées pour ton foyer sur cet appareil.
+            Partagé avec tous les membres du foyer, sur tous les appareils.
           </p>
         </div>
       </div>
@@ -112,7 +116,8 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
         />
         <button
           type="button"
-          onClick={addRow}
+          onClick={() => void addRow()}
+          disabled={!token || loading}
           style={{
             borderRadius: 12,
             border: 'none',
@@ -121,7 +126,8 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
             color: '#fff',
             fontWeight: 800,
             fontSize: 13,
-            cursor: 'pointer',
+            cursor: token ? 'pointer' : 'not-allowed',
+            opacity: token ? 1 : 0.6,
           }}
         >
           Ajouter
@@ -129,7 +135,7 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {rows.length === 0 ? (
-          <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>Aucun anniversaire — ajoute les tiens.</p>
+          <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>{t('empty.birthdays')}</p>
         ) : (
           rows.map((r) => (
             <div
@@ -154,7 +160,7 @@ export function AnniversairesPanel({ C }: { C: Record<string, string> }) {
               </div>
               <button
                 type="button"
-                onClick={() => removeRow(r.id)}
+                onClick={() => void removeRow(r.id)}
                 style={{
                   flexShrink: 0,
                   border: `1px solid ${C.border}`,

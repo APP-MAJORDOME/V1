@@ -51,6 +51,8 @@ export function MaisonTabPanel({
   eveningDone,
   onToggleEvening,
   onOpenAssistant,
+  homeConnected = false,
+  onOpenIntegrations,
 }: {
   C: Record<string, string>;
   aiName: string;
@@ -60,6 +62,8 @@ export function MaisonTabPanel({
   eveningDone: boolean[];
   onToggleEvening: (index: number) => void;
   onOpenAssistant: () => void;
+  homeConnected?: boolean;
+  onOpenIntegrations?: () => void;
 }) {
   const morningPct = Math.round((morningDone.filter(Boolean).length / Math.max(morningDone.length, 1)) * 100);
   const eveningPct = Math.round((eveningDone.filter(Boolean).length / Math.max(eveningDone.length, 1)) * 100);
@@ -91,11 +95,24 @@ export function MaisonTabPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <IconSmartHome size={22} color={C.alex} strokeWidth={1.65} />
           <strong style={{ fontSize: 13, color: C.alex }}>Maison connectée</strong>
+          <span
+            style={{
+              marginLeft: 'auto',
+              fontSize: 10,
+              fontWeight: 800,
+              padding: '3px 8px',
+              borderRadius: 999,
+              background: homeConnected ? C.greenL : C.white,
+              color: homeConnected ? C.green : C.text3,
+            }}
+          >
+            {homeConnected ? 'Connectée' : 'Non connectée'}
+          </span>
         </div>
         <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>
-          Ici vivront les connexions vers tes équipements : éclairage, chauffage, volets, alarme, prises, Matter / Home
-          Assistant, etc. Ce n&apos;est pas encore branché au backend : on définit l&apos;emplacement dans l&apos;app pour
-          que la famille s&apos;y retrouve.
+          {homeConnected
+            ? 'Home Assistant est lié. Pilote tes appareils depuis Intégrations, ou demande à Alfred (« éteins le salon »).'
+            : 'Connecte Home Assistant (ou Tahoma / Ezviz) pour piloter éclairage, chauffage, volets et scénarios.'}
         </p>
         <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {(['Éclairage', 'Chauffage', 'Volets', 'Alarme', 'Prises', 'Scénarios'] as const).map((label) => (
@@ -104,24 +121,44 @@ export function MaisonTabPanel({
             </Pill>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={onOpenAssistant}
-          style={{
-            marginTop: 12,
-            width: '100%',
-            borderRadius: 12,
-            border: `1px solid ${C.alex}`,
-            padding: '10px 12px',
-            background: C.white,
-            color: C.alex,
-            fontSize: 12,
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          En parler avec {aiName}
-        </button>
+        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+          {onOpenIntegrations ? (
+            <button
+              type="button"
+              onClick={onOpenIntegrations}
+              style={{
+                width: '100%',
+                borderRadius: 12,
+                border: 'none',
+                padding: '10px 12px',
+                background: C.alex,
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              {homeConnected ? 'Ouvrir Intégrations →' : 'Connecter la maison →'}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onOpenAssistant}
+            style={{
+              width: '100%',
+              borderRadius: 12,
+              border: `1px solid ${C.alex}`,
+              padding: '10px 12px',
+              background: C.white,
+              color: C.alex,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            En parler avec {aiName}
+          </button>
+        </div>
       </GlassCard>
       <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, letterSpacing: 0.6, margin: '14px 0 8px' }}>
         JARDIN & EXTÉRIEUR
@@ -132,8 +169,7 @@ export function MaisonTabPanel({
           <strong style={{ fontSize: 13, color: C.sage }}>Extérieur</strong>
         </div>
         <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>
-          Arrosage, tonte, compost : zone dédiée pour remplir l&apos;écran « vide » actuel. Prochaine étape : lier des
-          rappels météo et un calendrier d&apos;entretien.
+          Arrosage, plants, outils : zone dédiée. Prochaine étape : rappels météo et calendrier d&apos;entretien.
         </p>
         <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Pill bg={C.white} color={C.sage}>

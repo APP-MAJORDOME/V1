@@ -168,6 +168,9 @@ _ACTION_MARKERS = (
     "marque comme",
     "nouvelle tâche",
     "nouvelle tache",
+    "acheter",
+    "achete",
+    "prendre",
 )
 
 _ACTION_TARGETS = (
@@ -179,6 +182,11 @@ _ACTION_TARGETS = (
     "evenement",
     "rdv",
     "liste de courses",
+    "alloco",
+    "lait",
+    "pain",
+    "oeuf",
+    "œuf",
 )
 
 _CONSULT_TRIGGERS = (
@@ -219,8 +227,6 @@ _CONSULT_TRIGGERS = (
     "peux-je",
     "peux je",
     "moyens",
-    "acheter",
-    "achat",
     "ferrari",
     "voiture",
     "crédit",
@@ -263,8 +269,41 @@ def _is_clear_action_command(command: str) -> bool:
     return False
 
 
+def _looks_like_grocery_add(command: str) -> bool:
+    """« acheter des alloco », « achète du lait » → courses, pas consultation budget."""
+    lowered = _normalize_text(command)
+    if not lowered.strip():
+        return False
+    # Questions d’affordabilité restent en consultation foyer
+    if "?" in command:
+        return False
+    if any(
+        k in lowered
+        for k in (
+            "puis je",
+            "peux je",
+            "est ce que",
+            "combien",
+            "moyens",
+            "budget",
+            "ferrari",
+            "voiture",
+        )
+    ):
+        return False
+    if re.search(r"\b(acheter|achete|prendre)\b", lowered) and re.search(
+        r"\b(des|du|de la|de l|un|une)\b", lowered
+    ):
+        return True
+    if any(k in lowered for k in ("ajoute", "rajoute")) and "course" in lowered:
+        return True
+    return False
+
+
 def command_wants_household_answer(command: str) -> bool:
     if not (command or "").strip():
+        return False
+    if _looks_like_grocery_add(command):
         return False
     if _is_clear_action_command(command):
         return False

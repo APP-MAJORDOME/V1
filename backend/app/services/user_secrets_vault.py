@@ -213,6 +213,10 @@ def credential_hints_for_stores(hints: list[dict], store_labels: list[str]) -> l
     return out
 
 
+def vault_secret_plain_password(row: UserVaultSecret) -> str:
+    return _decrypt_password(row.password_blob or "")
+
+
 def reveal_user_vault_secret_password(db: Session, user_id: int, secret_id: int) -> dict | None:
     row = (
         db.query(UserVaultSecret)

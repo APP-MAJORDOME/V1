@@ -14,13 +14,14 @@ export function useAppNavigation(options: UseAppNavigationOptions = {}) {
   const [overlay, setOverlay] = useState<OverlayId | null>(null);
 
   const goMainTab = useCallback((t: MainTab) => {
+    if (t === 'modules') {
+      setMainTab('moi');
+      setOverlay(null);
+      return;
+    }
     setMainTab(t);
     if (t === 'alfred') {
       setOverlay('assistant');
-      return;
-    }
-    if (t === 'modules') {
-      setOverlay('plus');
       return;
     }
     setOverlay(null);
@@ -31,13 +32,17 @@ export function useAppNavigation(options: UseAppNavigationOptions = {}) {
   const handleBottomTab = useCallback(
     (tab: AppTabId) => {
       if (tab === 'home') goMainTab('home');
+      else if (tab === 'salon') goMainTab('salon');
       else if (tab === 'agenda') goMainTab('agenda');
       else if (tab === 'alfred') goMainTab('alfred');
-      else if (tab === 'modules') goMainTab('modules');
       else goMainTab('moi');
     },
     [goMainTab],
   );
+
+  const openModulesHub = useCallback(() => {
+    goMainTab('moi');
+  }, [goMainTab]);
 
   const openHubModule = useCallback(
     (hubKey: HubKey) => {
@@ -50,6 +55,11 @@ export function useAppNavigation(options: UseAppNavigationOptions = {}) {
         setOverlay('integrations');
         return;
       }
+      if (hubKey === 'messages') {
+        setMainTab('salon');
+        setOverlay(null);
+        return;
+      }
       setOverlay(hubKey as OverlayId);
     },
     [options],
@@ -57,7 +67,7 @@ export function useAppNavigation(options: UseAppNavigationOptions = {}) {
 
   const bottomTabActive: AppTabId = useMemo(() => {
     if (overlay === 'assistant' || mainTab === 'alfred') return 'alfred';
-    if (overlay === 'plus' || mainTab === 'modules') return 'modules';
+    if (mainTab === 'salon') return 'salon';
     if (mainTab === 'agenda') return 'agenda';
     if (mainTab === 'moi') return 'moi';
     return 'home';
@@ -75,6 +85,7 @@ export function useAppNavigation(options: UseAppNavigationOptions = {}) {
     closeOverlay,
     handleBottomTab,
     openHubModule,
+    openModulesHub,
     bottomTabActive,
   };
 }

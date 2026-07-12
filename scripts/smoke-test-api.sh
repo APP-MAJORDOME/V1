@@ -66,6 +66,31 @@ AGENT_INTERP="$(curl -fsS -X POST "${API_BASE}/api/v1/agent/interpret" \
   -d '{"command":"mail rapide au pédiatre"}')"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p.get("intent"), str) and p["intent"].strip(); assert isinstance(p.get("proposal"), dict)' <<< "${AGENT_INTERP}"
 
+echo "[smoke] agent interpret home_control"
+AGENT_HOME="$(curl -fsS -X POST "${API_BASE}/api/v1/agent/interpret" \
+  -H "${AUTH_HEADER}" -H "Content-Type: application/json" \
+  -d '{"command":"Éteins la lumière du salon"}')"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("intent")=="home_control"; assert p.get("mode")=="confirm"' <<< "${AGENT_HOME}"
+
+echo "[smoke] vault secrets list"
+VAULT_HTTP="$(curl -sS -o /tmp/vault_smoke.json -w "%{http_code}" "${API_BASE}/api/v1/vault/secrets" -H "${AUTH_HEADER}")"
+if [ "${VAULT_HTTP}" = "200" ]; then
+  python3 -c 'import json,sys; p=json.load(open("/tmp/vault_smoke.json")); assert isinstance(p.get("secrets"), list); assert isinstance(p.get("encryption_at_rest"), bool)'
+elif [ "${VAULT_HTTP}" = "403" ]; then
+  echo "[smoke] vault disabled (403) — OK en production"
+else
+  echo "[smoke] vault unexpected HTTP ${VAULT_HTTP}" >&2
+  exit 1
+fi
+
+echo "[smoke] household equity"
+EQUITY="$(curl -fsS "${API_BASE}/api/v1/household/equity" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p.get("shares"), list)' <<< "${EQUITY}"
+
+echo "[smoke] household subscription"
+SUB="$(curl -fsS "${API_BASE}/api/v1/household/subscription" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert "captures_remaining" in p' <<< "${SUB}"
+
 echo "[smoke] agent realtime status"
 REALTIME_ST="$(curl -fsS "${API_BASE}/api/v1/agent/realtime/status" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p.get("configured"), bool); assert isinstance(p.get("voice"), str) and p["voice"].strip(); assert isinstance(p.get("model"), str) and p["model"].strip()' <<< "${REALTIME_ST}"
@@ -88,11 +113,15 @@ python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p
 
 echo "[smoke] integrations capabilities"
 CAPABILITIES="$(curl -fsS "${API_BASE}/api/v1/integrations/capabilities" -H "${AUTH_HEADER}")"
-python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p.get("apple_caldav_available"), bool)' <<< "${CAPABILITIES}"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p.get("apple_caldav_available"), bool); caps=("microsoft_oauth_configured","google_oauth_configured","drive_automation_enabled","home_assistant_auto_when_connected","llm_configured","realtime_configured"); [(_ for _ in ()).throw(AssertionError(k)) for k in caps if k not in p or not isinstance(p[k], bool)]' <<< "${CAPABILITIES}"
 
 echo "[smoke] integrations status"
 INT_STATUS="$(curl -fsS "${API_BASE}/api/v1/integrations/status" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list) and len(p)>=4; prov={x["provider"] for x in p}; assert "apple_calendar" in prov; assert all("configured" in x and "connected" in x for x in p)' <<< "${INT_STATUS}"
+
+echo "[smoke] integrations hub overview"
+HUB="$(curl -fsS "${API_BASE}/api/v1/integrations/hub" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert "summary" in p and "connectors" in p; assert len(p["connectors"])>=10; assert "gaps_priority" in p' <<< "${HUB}"
 
 echo "[smoke] connected accounts"
 ACCOUNTS="$(curl -fsS "${API_BASE}/api/v1/accounts" -H "${AUTH_HEADER}")"
@@ -201,6 +230,26 @@ python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); required=["mode","l
 echo "[smoke] home scene execute (stub)"
 SCENE_EXEC="$(curl -fsS -X POST "${API_BASE}/api/v1/home/scenes/soir/execute" -H "${AUTH_HEADER}")"
 python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("scene_id")=="soir"; assert p.get("status") in ("executed_mock","executed","execution_failed"), p' <<< "${SCENE_EXEC}"
+
+echo "[smoke] home providers"
+HOME_PROVIDERS="$(curl -fsS "${API_BASE}/api/v1/home/providers" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); prov=p.get("providers") or []; assert isinstance(prov,list) and len(prov)>=6; ids={x.get("id") for x in prov}; assert "home_assistant" in ids and "ezviz" in ids' <<< "${HOME_PROVIDERS}"
+
+echo "[smoke] home assistant diagnostic"
+HA_DIAG="$(curl -fsS "${API_BASE}/api/v1/home/providers/home_assistant/diagnostic" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("status") in ("ok","ok_empty","inactive_mode","not_connected","unreachable"); assert isinstance(p.get("message"), str)' <<< "${HA_DIAG}"
+
+echo "[smoke] ezviz devices list"
+EZVIZ_DEV="$(curl -fsS "${API_BASE}/api/v1/home/providers/ezviz/devices" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert p.get("provider")=="ezviz"; assert isinstance(p.get("devices"), list)' <<< "${EZVIZ_DEV}"
+
+echo "[smoke] household salon messages"
+SALON_MSG="$(curl -fsS "${API_BASE}/api/v1/household/salon/messages" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list); assert len(p)>=1; assert "body_text" in p[0]' <<< "${SALON_MSG}"
+
+echo "[smoke] household salon captures"
+SALON_CAP="$(curl -fsS "${API_BASE}/api/v1/household/salon/captures?status=pending" -H "${AUTH_HEADER}")"
+python3 -c 'import json,sys; p=json.loads(sys.stdin.read()); assert isinstance(p,list); (len(p)==0) or ("excerpt" in p[0] and "inferences" in p[0])' <<< "${SALON_CAP}"
 
 echo "[smoke] documents list"
 DOCS_LIST="$(curl -fsS "${API_BASE}/api/v1/documents" -H "${AUTH_HEADER}")"

@@ -1,5 +1,7 @@
 /** Météo mentale & charge — libellés utilisateur (Sprint 2). */
 
+import { formatThingsToFix, formatUrgencies } from './pluralize';
+
 export type MentalWeatherLevel = 'calm' | 'moderate' | 'heavy';
 
 export type MentalWeather = {
@@ -22,7 +24,7 @@ export function computeMentalWeather(input: {
       level: 'heavy',
       message:
         input.urgentCount > 0
-          ? `${input.urgentCount} urgence(s) — Alfred peut t’aider`
+          ? `${formatUrgencies(input.urgentCount)} — Alfred peut t’aider`
           : 'Journée chargée — Alfred peut t’aider',
       bg: '#F5E8E6',
       accent: '#B85450',
@@ -32,7 +34,7 @@ export function computeMentalWeather(input: {
     const n = input.urgentCount + input.fridgeExpiredCount + Math.min(input.openTasksCount, 3);
     return {
       level: 'moderate',
-      message: n > 0 ? `${n} chose(s) à régler ce matin` : 'Quelques points à surveiller',
+      message: n > 0 ? formatThingsToFix(n) : 'Quelques points à surveiller',
       bg: '#FFF4E8',
       accent: '#D4956A',
     };

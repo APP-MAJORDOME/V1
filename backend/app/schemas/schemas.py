@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,7 @@ class HouseholdMemberRead(BaseModel):
     role: str
     birth_year: int | None = None
     preferences_json: str
+    user_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -212,6 +213,18 @@ class HomeProviderTestResponse(BaseModel):
     message: str
 
 
+class HomeAssistantDiagnosticResponse(BaseModel):
+    provider: str = "home_assistant"
+    status: str
+    message: str
+    adapter_mode: str
+    auto_when_connected: bool
+    active_for_user: bool
+    entity_count: int = 0
+    reachable_from_server: bool = False
+    base_url_host: str | None = None
+
+
 class HomeProviderDeviceRead(BaseModel):
     id: str
     name: str
@@ -300,6 +313,59 @@ class IntegrationCapabilitiesResponse(BaseModel):
     """Capacités réelles du serveur (pas les préférences utilisateur)."""
 
     apple_caldav_available: bool
+    microsoft_oauth_configured: bool = False
+    google_oauth_configured: bool = False
+    drive_automation_enabled: bool = False
+    home_assistant_auto_when_connected: bool = True
+    llm_configured: bool = False
+    realtime_configured: bool = False
+    vault_secrets_enabled: bool = False
+    telegram_configured: bool = False
+    whatsapp_configured: bool = False
+
+
+class TelegramLinkCodeResponse(BaseModel):
+    code: str
+    expires_in: int = 600
+    bot_username: str | None = None
+    deep_link: str | None = None
+
+
+class TelegramStatusResponse(BaseModel):
+    configured: bool
+    connected: bool
+    chat_id: str | None = None
+    telegram_username: str | None = None
+
+
+class WhatsAppLinkCodeResponse(BaseModel):
+    code: str
+    expires_in: int = 600
+    deep_link: str | None = None
+
+
+class WhatsAppStatusResponse(BaseModel):
+    configured: bool
+    connected: bool
+    wa_id: str | None = None
+    profile_name: str | None = None
+
+
+class HomeAssistantConnectResponse(BaseModel):
+    id: int
+    provider: str
+    status: str
+    diagnostic: HomeAssistantDiagnosticResponse
+
+
+class HubOverviewResponse(BaseModel):
+    """Vue unifiée du hub : connecteurs, état utilisateur, lacunes."""
+
+    summary: dict
+    connectors: list[dict]
+    home_providers: list[dict]
+    drive: dict
+    gaps_priority: list[dict]
 
 
 class DocumentStorageSummary(BaseModel):
@@ -403,6 +469,7 @@ class HomeProviderCredentialsUpsertRequest(BaseModel):
     provider: str = Field(min_length=2, max_length=64)
     username: str | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, max_length=255)
+    pin: str | None = Field(default=None, max_length=12)
     access_token: str | None = Field(default=None, max_length=2048)
     base_url: str | None = Field(default=None, max_length=255)
     external_account_id: str | None = Field(default=None, max_length=255)
@@ -653,6 +720,12 @@ class OpportunityCreate(BaseModel):
 class AgentCommand(BaseModel):
     command: str = Field(min_length=1, max_length=4000)
     household_id: int | None = None
+    force_execute: bool = False
+
+
+class VerisureAlarmRequest(BaseModel):
+    action: Literal["arm_away", "arm_home", "disarm"]
+    pin: str | None = Field(default=None, max_length=12)
 
 
 class AgentRealtimeWebRtcRequest(BaseModel):
@@ -694,12 +767,18 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     full_name: str = "Utilisateur MajorDome"
     household_id: int | None = None
+    invite_code: str | None = Field(default=None, max_length=32)
 
 
 class RegisterRequest(BaseModel):
     email: str
     password: str = Field(min_length=8, max_length=128)
     full_name: str = "Utilisateur MajorDome"
+    invite_code: str | None = Field(default=None, max_length=32)
+
+
+class JoinHouseholdRequest(BaseModel):
+    invite_code: str = Field(min_length=6, max_length=32)
 
 
 class LoginResponse(BaseModel):
@@ -827,3 +906,129 @@ class UserVaultSecretRevealResponse(BaseModel):
     id: int
     password: str
     encryption_at_rest: bool
+
+
+class DriveCartItemRead(BaseModel):
+    id: int
+    label: str
+
+
+class DrivePrepareResponse(BaseModel):
+    status: str
+    service_key: str
+    store: str
+    open_url: str | None = None
+    automation: str
+    logged_in: bool = False
+    automation_detail: str | None = None
+    secret_id: int | None = None
+    username: str | None = None
+    label: str | None = None
+    steps: list[str] = Field(default_factory=list)
+    message: str
+    cart_items: list[DriveCartItemRead] = Field(default_factory=list)
+    cart_count: int = 0
+    cart_text: str = ""
+    cart_search_links: list[dict] = Field(default_factory=list)
+    cart_search_batch_url: str | None = None
+
+
+class DriveAutomateLoginResponse(BaseModel):
+    status: str
+    service_key: str
+    automation: str
+    logged_in: bool = False
+    message: str
+    open_url: str | None = None
+    final_url: str | None = None
+
+
+class DriveFillCartResponse(BaseModel):
+    status: str
+    service_key: str
+    items_attempted: int = 0
+    items_added: int = 0
+    message: str
+    open_url: str | None = None
+    failed_labels: list[str] = Field(default_factory=list)
+
+
+class DriveStatusListResponse(BaseModel):
+    stores: list[dict]
+    automation: str
+
+
+class HouseholdSalonMessageCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class HouseholdSalonMessageRead(BaseModel):
+    id: int
+    household_id: int
+    author_user_id: int | None = None
+    author_label: str
+    body_text: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class HouseholdCaptureRead(BaseModel):
+    id: int
+    household_id: int
+    kind: str
+    status: str
+    source: str
+    chip: str
+    source_label: str
+    excerpt: str
+    inferences: list[str] = Field(default_factory=list)
+    cta_primary: str | None = None
+    cta_secondary: str | None = None
+    created_label: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class HouseholdCapturePatch(BaseModel):
+    status: Literal["pending", "approved", "rejected"]
+
+
+class HouseholdSalonAnalyzeResponse(BaseModel):
+    captures_created: int
+    message: str
+
+
+class HouseholdCaptureApplyResponse(BaseModel):
+    capture_id: int
+    status: str
+    message: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class HouseholdBirthdayRead(BaseModel):
+    id: int
+    name: str
+    birthday_date: date
+    notes: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class HouseholdBirthdayCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    birthday_date: date
+    notes: str = Field(default="", max_length=2000)
+
+
+class AccountDeletionStatusRead(BaseModel):
+    deletion_requested_at: datetime | None = None
+    grace_ends_at: datetime | None = None
+
+
+class AccountExportResponse(BaseModel):
+    export: dict[str, Any]

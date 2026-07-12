@@ -7,6 +7,7 @@ from app.services.llm import (
     interpret_with_openai,
 )
 from app.services.web_search import build_web_lookup_response, command_wants_web_search
+from app.services.grocery_intent import grocery_interpret, looks_like_grocery_add
 
 
 def _normalize_debordee(raw: dict[str, Any], partner_name: str) -> dict[str, Any]:
@@ -72,9 +73,55 @@ def analyze_debordee(
     }
 
 
+_HOME_CONTROL_KEYWORDS = (
+    "domot",
+    "maison",
+    "lumiere",
+    "lumière",
+    "volet",
+    "store",
+    "radiateur",
+    "chauffage",
+    "ventilation",
+    "google home",
+    "home assistant",
+    "legrand",
+    "tahoma",
+    "verisure",
+    "alarme",
+    "ezviz",
+    "caméra",
+    "camera",
+    "cam ",
+    "lsc",
+    "sharkclean",
+)
+
+
+def _command_wants_home_control(command: str) -> bool:
+    lowered = (command or "").lower()
+    return any(k in lowered for k in _HOME_CONTROL_KEYWORDS)
+
+
+def _home_control_interpret(command: str) -> dict[str, Any]:
+    return {
+        "intent": "home_control",
+        "mode": "confirm",
+        "proposal": {"raw_command": (command or "")[:280]},
+        "explanation": "Je peux piloter cette action domotique si tu confirmes.",
+    }
+
+
 def interpret_command(command: str, memory_lines: list[str] | None = None) -> dict[str, Any]:
     if command_wants_web_search(command):
         return build_web_lookup_response(command, memory_lines)
+
+    if _command_wants_home_control(command):
+        return _home_control_interpret(command)
+
+    # Courses avant le LLM — évite task_create sur « ajoute des carottes »
+    if looks_like_grocery_add(command):
+        return grocery_interpret(command)
 
     llm_result = interpret_with_openai(command, memory_facts=memory_lines)
     if not llm_result:
@@ -83,37 +130,17 @@ def interpret_command(command: str, memory_lines: list[str] | None = None) -> di
         if llm_result.get("intent") == "web_search":
             query = str((llm_result.get("proposal") or {}).get("query") or command).strip()
             return build_web_lookup_response(query or command, memory_lines)
+        # Garde-fou : le modèle confond souvent courses et tâches
+        if looks_like_grocery_add(command) or (
+            str(llm_result.get("intent") or "") == "task_create" and looks_like_grocery_add(command)
+        ):
+            hint = None
+            prop = llm_result.get("proposal") if isinstance(llm_result.get("proposal"), dict) else {}
+            hint = str(prop.get("label") or prop.get("title") or "").strip() or None
+            return grocery_interpret(command, label_hint=hint)
         return llm_result
 
     lowered = command.lower()
-    if any(
-        k in lowered
-        for k in (
-            "domot",
-            "maison",
-            "lumiere",
-            "lumière",
-            "volet",
-            "store",
-            "radiateur",
-            "chauffage",
-            "ventilation",
-            "google home",
-            "home assistant",
-            "legrand",
-            "tahoma",
-            "verisure",
-            "ezviz",
-            "lsc",
-            "sharkclean",
-        )
-    ):
-        return {
-            "intent": "home_control",
-            "mode": "confirm",
-            "proposal": {"raw_command": command[:280]},
-            "explanation": "Je peux piloter cette action domotique si tu confirmes.",
-        }
     if "mail" in lowered or "email" in lowered:
         return {
             "intent": "email_draft",
@@ -145,6 +172,8 @@ def interpret_command(command: str, memory_lines: list[str] | None = None) -> di
             },
             "explanation": "Commande orientée veille/opportunité détectée."
         }
+    if looks_like_grocery_add(command):
+        return grocery_interpret(command)
     if any(
         k in lowered
         for k in ("ajoute", "rajoute", "crée", "cree", "nouvelle tâche", "nouvelle tache", "rappelle")

@@ -319,7 +319,7 @@ export function WelcomeSetupWizard({
                 'Passeports, mutuelle, impôts…',
                 'Scan photo ou PDF',
                 'Courrier IA (école, santé, admin)',
-                'Stockage sécurisé par foyer sur le serveur',
+                'Stockage sécurisé par foyer',
               ]}
             />
           </>

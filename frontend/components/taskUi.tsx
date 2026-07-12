@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { IconCheckSmall } from './md-icons';
+import { formatCountFr, formatTasksDone, formatTasksOpen } from '../lib/pluralize';
 
 export type TaskUiMember = { id: number; display_name: string };
 export type TaskUiItem = {
@@ -167,7 +168,7 @@ export function RecentDoneTasksCard({
       </p>
       {typeof serverDoneTotal === 'number' && serverDoneTotal > sortedDone.length ? (
         <div style={{ fontSize: 10, color: C.text2, margin: '-2px 0 10px', lineHeight: 1.45 }}>
-          {serverDoneTotal} terminée(s) au foyer · {sortedDone.length} affichée(s) ici
+          {formatCountFr(serverDoneTotal, 'tâche terminée au foyer', 'tâches terminées au foyer')} · {formatCountFr(sortedDone.length, 'affichée ici', 'affichées ici')}
         </div>
       ) : null}
       {sortedDone.length === 0 ? (
@@ -261,7 +262,7 @@ export function RecentDoneTasksCard({
             width: '100%',
           }}
         >
-          {refreshDoneBusy ? 'Synchronisation…' : 'Tout recharger depuis le serveur'}
+          {refreshDoneBusy ? 'Synchronisation…' : 'Actualiser'}
         </button>
       ) : null}
     </GlassCard>

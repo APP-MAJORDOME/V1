@@ -82,11 +82,10 @@ import {
   IconHeartOutline,
   IconDotsGrid,
 } from '../components/md-icons';
-import { PlusHub } from '../components/PlusHub';
 import { OverlayChrome } from '../components/OverlayChrome';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 import { BrandLoadingLogo, MajordomeWordmark } from '../components/BrandLogo';
-import { LoginAuthScreen } from '../components/LoginAuthScreen';
+import { LoginAuthScreen, type InvitePreview } from '../components/LoginAuthScreen';
 import { AppMainTabLayers } from '../components/AppMainTabLayers';
 import { AppModuleOverlays, isModuleOverlayLayer } from '../components/AppModuleOverlays';
 import { AlfredAppLayer } from '../components/AlfredAppLayer';
@@ -106,6 +105,11 @@ import {
 } from '../lib/alfredAgent';
 import { useAlfredAssistant } from '../hooks/useAlfredAssistant';
 import { useAppDocumentTitle } from '../hooks/useAppDocumentTitle';
+import { useHouseholdSalon } from '../hooks/useHouseholdSalon';
+import { useSoftSyncPoll } from '../hooks/useSoftSyncPoll';
+import { useHouseholdEquity } from '../hooks/useHouseholdEquity';
+import { GlobalFab } from '../components/GlobalFab';
+import { PaywallSoft, useHouseholdSubscription } from '../components/PaywallSoft';
 import {
   clearDoneGroceryItems,
   createGroceryItem,
@@ -157,10 +161,12 @@ import {
 } from '../lib/moiWellness';
 import { GlobalSearchPalette, type SearchPaletteEntry } from '../components/GlobalSearchPalette';
 import { MAJORDOME_PALETTE, type MainTab, type OverlayId } from '../lib/appNavigation';
+import { DEFAULT_ASSISTANT_NAME, resolveAssistantName } from '../lib/assistantName';
 import { useAppNavigation } from '../hooks/useAppNavigation';
 import type { DocStorageSummary } from '../lib/documentsUi';
 import { HomeLayoutEditor } from '../components/HomeLayoutEditor';
-import { WelcomeSetupWizard } from '../components/WelcomeSetupWizard';
+import { OnboardingV2Wizard } from '../components/OnboardingV2Wizard';
+import { PrivateSpacePanel } from '../components/PrivateSpacePanel';
 import { PLUS_HUB_ITEMS, type HubKey } from '../components/PlusHub';
 import { useAppUiStore } from '../lib/store/appUiStore';
 import {
@@ -277,9 +283,13 @@ const C = MAJORDOME_PALETTE;
 
 function StatusBar({
   onOpenSearch,
+  onOpenPrivateSpace,
+  userInitial,
   headerBg,
 }: {
   onOpenSearch?: () => void;
+  onOpenPrivateSpace?: () => void;
+  userInitial?: string;
   headerBg?: string;
 }) {
   /** null jusqu’au montage client — évite décalage SSR/heure locale (hydratation #425). */
@@ -296,6 +306,7 @@ function StatusBar({
   /** La pastille « encoche » décorative est centrée en haut : ne pas mettre la recherche au centre (elle passerait dessous). */
   return (
     <div
+      className="app-status-bar-shell"
       style={{
         position: 'relative',
         zIndex: 2,
@@ -308,9 +319,38 @@ function StatusBar({
         transition: 'background 0.35s ease',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, minHeight: 22 }}>
+      <div
+        className="app-status-bar-decor"
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, minHeight: 22 }}
+      >
         <span style={{ fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{hh}:{mm}</span>
-        <span style={{ display: 'flex', alignItems: 'flex-end', gap: 5, flexShrink: 0 }} aria-hidden>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {onOpenPrivateSpace ? (
+            <button
+              type="button"
+              onClick={onOpenPrivateSpace}
+              aria-label="Mon espace privé"
+              title="Mon espace privé"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                border: `1.5px solid ${C.border}`,
+                background: C.terraXL,
+                color: C.terra,
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+              }}
+            >
+              {(userInitial || 'M').slice(0, 1).toUpperCase()}
+            </button>
+          ) : null}
+          <span style={{ display: 'flex', alignItems: 'flex-end', gap: 5 }} aria-hidden>
           <svg width={17} height={11} viewBox="0 0 17 11" fill="none">
             <rect x={1} y={7} width={3} height={4} rx={1} fill={dim} />
             <rect x={6} y={5} width={3} height={6} rx={1} fill={dim} />
@@ -325,6 +365,7 @@ function StatusBar({
             <rect x={2} y={2} width={18} height={8} rx={2} stroke={dim} strokeWidth={1.2} />
             <rect x={17} y={4} width={4} height={4} rx={1} fill={ink} />
           </svg>
+        </span>
         </span>
       </div>
       {onOpenSearch ? (
@@ -371,6 +412,7 @@ export default function HomePage() {
     closeOverlay,
     handleBottomTab,
     openHubModule,
+    openModulesHub,
     bottomTabActive,
   } = useAppNavigation({ onBeforeOpenWallet: () => setCoursesTab('wallet') });
   const globalSearchOpen = useAppUiStore((s) => s.globalSearchOpen);
@@ -383,6 +425,8 @@ export default function HomePage() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingInviteCode, setPendingInviteCode] = useState('');
+  const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
   const [homeLayout, setHomeLayout] = useState<HomeLayoutConfig>(() => mergeHomeLayout(null));
   const [homeLayoutEditorOpen, setHomeLayoutEditorOpen] = useState(false);
   const [layoutUserEmail, setLayoutUserEmail] = useState('');
@@ -448,6 +492,11 @@ export default function HomePage() {
     objectif: '',
   });
   const [familyProfile, setFamilyProfile] = useState<FamilyProfile>(() => emptyFamily());
+  const householdSalon = useHouseholdSalon(token, familyProfile.prenom, mainTab === 'salon' || layer === 'salon');
+  const householdEquity = useHouseholdEquity(token);
+  const { status: subscription, busy: billingBusy, startCheckout, refresh: refreshSubscription } =
+    useHouseholdSubscription(token);
+  const [billingJustSucceeded, setBillingJustSucceeded] = useState(false);
   /** Évite mismatch SSR/client tant que localStorage n’est pas lu. */
   const [clientReady, setClientReady] = useState(false);
   /** Toujours false au 1er rendu pour matcher le SSR ; useEffect applique localStorage. */
@@ -461,6 +510,8 @@ export default function HomePage() {
   const [alexDoneIds, setAlexDoneIds] = useState<number[]>([]);
   const [alexNotified, setAlexNotified] = useState(false);
   const [partnerContactDraft, setPartnerContactDraft] = useState('');
+  const [privateSpaceOpen, setPrivateSpaceOpen] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState('');
   const [partnerNotifyLoading, setPartnerNotifyLoading] = useState(false);
   const [courrierImportBusy, setCourrierImportBusy] = useState(false);
   const [modalCoffre, setModalCoffre] = useState(false);
@@ -476,7 +527,7 @@ export default function HomePage() {
   const [docEdit, setDocEdit] = useState<DocEditDraft | null>(null);
   const [docEditSaving, setDocEditSaving] = useState(false);
 
-  const [aiName, setAiName] = useState('Alfred');
+  const [aiName, setAiName] = useState(DEFAULT_ASSISTANT_NAME);
   const [toasts, setToasts] = useState<UiToast[]>([]);
   const [taskAssignBusyId, setTaskAssignBusyId] = useState<number | null>(null);
   const [taskCompleteBusyId, setTaskCompleteBusyId] = useState<number | null>(null);
@@ -614,6 +665,41 @@ export default function HomePage() {
       pushToast('error', 'Nettoyage impossible');
     }
   }
+
+  const softSyncCoursesActive = Boolean(token) && overlay === 'courses';
+  const softSyncTasksActive =
+    Boolean(token) &&
+    (mainTab === 'home' || mainTab === 'agenda' || overlay === 'famille' || overlay === 'courses');
+
+  useSoftSyncPoll(softSyncCoursesActive, async () => {
+    if (!token) return;
+    try {
+      await reloadCoursesFromServer(token);
+    } catch {
+      // silencieux
+    }
+  });
+
+  useSoftSyncPoll(softSyncTasksActive, async () => {
+    if (!token) return;
+    if (taskAssignBusyId != null || taskCompleteBusyId != null || taskReopenBusyId != null) return;
+    try {
+      const [openRows, summary] = await Promise.all([
+        getJson<TaskItem[]>('/api/v1/tasks?status=open', token),
+        getJson<TaskSummaryApi>('/api/v1/tasks/summary', token).catch(() => null),
+      ]);
+      const cleanOpen = filterOutTestTasks(openRows);
+      const openIds = new Set(cleanOpen.map((t) => t.id));
+      setTasks((prev) => {
+        // Conserve les tâches done déjà connues ; ne transforme PAS les absentes en done (suppression ≠ finie)
+        const stillDone = prev.filter((t) => t.status === 'done' && !openIds.has(t.id));
+        return mergeTasksById(cleanOpen, stillDone);
+      });
+      if (summary) setTaskSummary(summary);
+    } catch {
+      // silencieux
+    }
+  });
 
   async function reloadFridgeFromServer(accessToken: string) {
     const rows = await fetchFridgeItems(accessToken);
@@ -796,7 +882,7 @@ export default function HomePage() {
           date_label: new Date().toLocaleDateString('fr-FR'),
           who: familyProfile.prenom,
           urgent: false,
-          notes: `Import fichier (${kb} Ko) — pièce jointe sur le serveur.`,
+          notes: `Import fichier (${kb} Ko) — pièce jointe enregistrée.`,
         },
         token
       );
@@ -805,7 +891,7 @@ export default function HomePage() {
       await postFormData<HouseholdDocumentApi>(`/api/v1/documents/${created.id}/attachment`, fd, token);
       setDocAddedFlash(true);
       window.setTimeout(() => setDocAddedFlash(false), 2400);
-      pushToast('success', 'Fiche créée et fichier enregistré sur le serveur.');
+      pushToast('success', 'Fiche créée et fichier enregistré.');
       await loadData(token);
     } catch (e) {
       pushToast('error', e instanceof Error ? e.message : 'Impossible d’enregistrer la fiche ou le fichier');
@@ -828,7 +914,7 @@ export default function HomePage() {
       const fd = new FormData();
       fd.append('file', file);
       await postFormData<HouseholdDocumentApi>(`/api/v1/documents/${docId}/attachment`, fd, token);
-      pushToast('success', 'Pièce jointe enregistrée sur le serveur');
+      pushToast('success', 'Pièce jointe enregistrée');
       await loadData(token);
     } catch (e) {
       pushToast('error', e instanceof Error ? e.message : 'Envoi impossible');
@@ -837,7 +923,7 @@ export default function HomePage() {
 
   async function removeAttachmentForDoc(docId: number) {
     if (!token) return;
-    if (!window.confirm('Supprimer la pièce jointe du serveur ?')) return;
+    if (!window.confirm('Supprimer la pièce jointe ?')) return;
     try {
       await deleteJson<HouseholdDocumentApi>(`/api/v1/documents/${docId}/attachment`, token);
       pushToast('info', 'Pièce jointe supprimée');
@@ -937,8 +1023,8 @@ export default function HomePage() {
     if (layoutEmail) setLayoutUserEmail(layoutEmail);
     if (layoutEmail) setHomeLayout(loadHomeLayoutForUser(layoutEmail));
     const storedAiName = localStorage.getItem('majordome_ai_name');
-    const cleanName = storedAiName?.trim() || 'Alfred';
-    if (!storedAiName) localStorage.setItem('majordome_ai_name', cleanName);
+    const cleanName = resolveAssistantName(storedAiName);
+    if (cleanName !== storedAiName) localStorage.setItem('majordome_ai_name', cleanName);
     setAiName(cleanName);
     alfred.hydrateHistoryFromStorage(cleanName);
     try {
@@ -961,12 +1047,113 @@ export default function HomePage() {
 
       const pcontact = localStorage.getItem('majordome_partner_contact');
       if (pcontact) setPartnerContactDraft(pcontact);
+
+      const params = new URLSearchParams(window.location.search);
+      const billing = params.get('billing');
+      if (billing === 'success') {
+        params.delete('billing');
+        const qs = params.toString();
+        window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+        setBillingJustSucceeded(true);
+        window.setTimeout(() => {
+          pushToast('success', 'Premium Foyer activé — merci !');
+        }, 400);
+      } else if (billing === 'cancel') {
+        params.delete('billing');
+        const qs = params.toString();
+        window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+      }
+      const joinFromUrl = (params.get('join') || '').trim().toUpperCase();
+      const storedJoin = (sessionStorage.getItem('majordome_pending_invite') || '').trim().toUpperCase();
+      const inviteCode = joinFromUrl || storedJoin;
+      if (inviteCode) {
+        sessionStorage.setItem('majordome_pending_invite', inviteCode);
+        setPendingInviteCode(inviteCode);
+        setAuthMode('register');
+        if (joinFromUrl) {
+          params.delete('join');
+          const qs = params.toString();
+          window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+        }
+      }
     } catch {
       // keep defaults
     } finally {
       setClientReady(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!clientReady || !pendingInviteCode) {
+      setInvitePreview(null);
+      return;
+    }
+    let cancelled = false;
+    void getJson<InvitePreview & { ok: boolean }>(`/api/v1/public/household/invite/${encodeURIComponent(pendingInviteCode)}`)
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok) {
+          setInvitePreview({
+            ok: true,
+            invite_code: data.invite_code || pendingInviteCode,
+            household_name: data.household_name,
+            owner_name: data.owner_name,
+          });
+        } else {
+          setInvitePreview(null);
+          setError("Ce lien d'invitation n'est plus valide.");
+          sessionStorage.removeItem('majordome_pending_invite');
+          setPendingInviteCode('');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setInvitePreview({ ok: true, invite_code: pendingInviteCode });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientReady, pendingInviteCode]);
+
+  useEffect(() => {
+    if (!clientReady || !token || !pendingInviteCode || !postLoginSetupResolved) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await postJson<LoginResponse>(
+          '/api/v1/auth/join',
+          { invite_code: pendingInviteCode },
+          token,
+        );
+        if (cancelled) return;
+        persistAccessToken(res.access_token);
+        setToken(COOKIE_AUTH_SESSION);
+        sessionStorage.removeItem('majordome_pending_invite');
+        setPendingInviteCode('');
+        setInvitePreview(null);
+        pushToast('success', 'Foyer rejoint');
+        void loadDataRef.current(COOKIE_AUTH_SESSION);
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : "Impossible de rejoindre le foyer";
+        pushToast('error', msg);
+        // Conservé sur erreur réseau / 5xx — seulement retiré si invitation définitivement invalide
+        const permanent = /introuvable|invalide|expir|404|not.?found|invite_not/i.test(msg);
+        if (permanent) {
+          sessionStorage.removeItem('majordome_pending_invite');
+          setPendingInviteCode('');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientReady, token, pendingInviteCode, postLoginSetupResolved]);
+
+  useEffect(() => {
+    if (!clientReady || !token || !billingJustSucceeded) return;
+    setBillingJustSucceeded(false);
+    void refreshSubscription();
+  }, [clientReady, token, billingJustSucceeded, refreshSubscription]);
 
   useEffect(() => {
     if (!clientReady || !token || !postLoginSetupDone || typeof window === 'undefined') return;
@@ -978,8 +1165,11 @@ export default function HomePage() {
       setMainTab('agenda');
       setOverlay(null);
     } else if (tab === 'modules') {
-      setMainTab('modules');
-      setOverlay('plus');
+      setMainTab('moi');
+      setOverlay(null);
+    } else if (tab === 'salon') {
+      setMainTab('salon');
+      setOverlay(null);
     } else if (tab === 'moi') {
       setMainTab('moi');
       setOverlay(null);
@@ -988,6 +1178,18 @@ export default function HomePage() {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, [clientReady, token, postLoginSetupDone]);
+
+  useEffect(() => {
+    if (!token || !postLoginSetupDone) return;
+    void postJson('/api/v1/household/proactive/tick', {}, token).catch(() => {});
+  }, [token, postLoginSetupDone]);
+
+  useEffect(() => {
+    if (!token || layer !== 'famille' || inviteUrl) return;
+    void getJson<{ invite_url: string }>('/api/v1/household/invite', token)
+      .then((d) => setInviteUrl(d.invite_url || ''))
+      .catch(() => {});
+  }, [token, layer, inviteUrl]);
 
   useAppDocumentTitle({ clientReady, token, overlay, mainTab, aiName });
 
@@ -1171,7 +1373,13 @@ export default function HomePage() {
         getJson<ConnectedAccount[]>('/api/v1/accounts', accessToken),
         getJson<HouseholdMemberRow[]>('/api/v1/household/members', accessToken).catch(() => []),
         getJson<TaskSummaryApi>('/api/v1/tasks/summary', accessToken).catch(() => null),
-        getJson<{ apple_caldav_available: boolean }>('/api/v1/integrations/capabilities', accessToken).catch(() => null),
+        getJson<{
+          apple_caldav_available: boolean;
+          drive_automation_enabled?: boolean;
+          microsoft_oauth_configured?: boolean;
+          llm_configured?: boolean;
+          realtime_configured?: boolean;
+        }>('/api/v1/integrations/capabilities', accessToken).catch(() => null),
         getJson<{ id: number; fact_text: string }[]>('/api/v1/memory/facts', accessToken).catch(() => []),
         getJson<IntegrationStatus[]>('/api/v1/integrations/status', accessToken).catch(() => []),
       ]);
@@ -1695,11 +1903,33 @@ export default function HomePage() {
     setLoading(true);
     setError('');
     const path = authMode === 'register' ? '/api/v1/auth/register' : '/api/v1/auth/login';
-    const payload = { email, password, full_name: 'Utilisateur MajorDome' };
+    const localName = email.trim().split('@')[0]?.replace(/[._-]+/g, ' ').trim() || 'Nouveau membre';
+    const payload: Record<string, string> = {
+      email,
+      password,
+      full_name: authMode === 'register' ? localName.charAt(0).toUpperCase() + localName.slice(1) : 'Utilisateur MajorDome',
+    };
+    if (pendingInviteCode) payload.invite_code = pendingInviteCode;
     try {
       const res = await postJson<LoginResponse>(path, payload);
+      const joinedViaInvite = Boolean(pendingInviteCode);
+      if (joinedViaInvite) {
+        sessionStorage.removeItem('majordome_pending_invite');
+        setPendingInviteCode('');
+        setInvitePreview(null);
+      }
       applyAuthSession(res);
-      if (authMode === 'register') {
+      if (joinedViaInvite) {
+        const emJoin = email.trim().toLowerCase();
+        if (emJoin) {
+          markWelcomeWizardV2Complete(emJoin);
+          markPostLoginPersonalizationComplete(emJoin);
+        }
+        setPostLoginSetupDone(true);
+        setPostLoginSetupResolved(true);
+        setInfo('Tu as rejoint le foyer. Bienvenue !');
+        pushToast('success', 'Foyer rejoint');
+      } else if (authMode === 'register') {
         const emNew = email.trim().toLowerCase();
         if (emNew) {
           clearWelcomeWizardV2Flag(emNew);
@@ -1707,9 +1937,12 @@ export default function HomePage() {
         }
         setPostLoginSetupDone(false);
         setPostLoginSetupResolved(true);
+        setInfo('Compte créé. Bienvenue !');
+        pushToast('success', 'Compte créé');
+      } else {
+        setInfo('Connexion réussie.');
+        pushToast('success', 'Connexion réussie');
       }
-      setInfo(authMode === 'register' ? 'Compte créé. Bienvenue !' : 'Connexion réussie.');
-      pushToast('success', authMode === 'register' ? 'Compte créé' : 'Connexion réussie');
       void notifySystem('MajorDome', 'Bienvenue dans MajorDome.');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Erreur de connexion';
@@ -1879,6 +2112,12 @@ export default function HomePage() {
     if (t) void loadData(t);
   }
 
+  function completeOnboardingV2(profile: FamilyProfile) {
+    const layout = buildHomeLayoutFromPostLoginChoices([], 'balanced');
+    completeWelcomeWizard(layout, profile);
+    goMainTab('salon');
+  }
+
   function skipWelcomeWizard(profile: FamilyProfile) {
     const em =
       layoutUserEmail || (typeof window !== 'undefined' ? localStorage.getItem(LAYOUT_USER_EMAIL_KEY) : null);
@@ -1922,7 +2161,7 @@ export default function HomePage() {
         },
         token
       );
-      setInfo('Evenement cree et synchronise.');
+      setInfo('Événement créé et synchronisé.');
       pushToast('success', 'Événement ajouté');
       void notifySystem('Agenda', `Événement créé: ${newEventTitle.trim()}`);
       setNewEventTitle('');
@@ -1930,7 +2169,7 @@ export default function HomePage() {
       setNewEventEnd('');
       await loadData(token);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Erreur creation evenement';
+      const msg = e instanceof Error ? e.message : 'Erreur lors de la création de l\'événement';
       setError(msg);
       pushToast('error', msg);
     } finally {
@@ -1943,7 +2182,7 @@ export default function HomePage() {
     setError('');
     try {
       await deleteJson(`/api/v1/events/${eventId}`, token);
-      setInfo('Evenement supprime.');
+      setInfo('Événement supprimé.');
       pushToast('success', 'Événement supprimé');
       void notifySystem('Agenda', 'Événement supprimé');
       await loadData(token);
@@ -1982,7 +2221,7 @@ export default function HomePage() {
         },
         token,
       );
-      setInfo('Evenement modifie et synchronise.');
+      setInfo('Événement modifié et synchronisé.');
       pushToast('success', 'Événement modifié');
       void notifySystem('Agenda', `Événement modifié: ${editTitle.trim()}`);
       setEditingEventId(null);
@@ -2040,7 +2279,10 @@ export default function HomePage() {
   const agendaOpenTasks = useMemo(() => sortAgendaOpenTasks(openTasks), [openTasks]);
   const doneTasks = useMemo(() => selectDoneTasks(tasks), [tasks]);
   const sortedDoneTasks = useMemo(() => sortDoneTasksRecent(doneTasks), [doneTasks]);
-
+  const homeAccount = useMemo(
+    () => accounts.find((a) => a.provider === 'home_assistant' && a.status === 'connected') ?? null,
+    [accounts],
+  );
   const partnerMemberId = useMemo(
     () => resolveHouseholdMemberId(householdMembers, 'partner_adult', familyProfile.partenaire),
     [householdMembers, familyProfile.partenaire]
@@ -2159,45 +2401,134 @@ export default function HomePage() {
     });
     return items.slice(0, 3);
   }, [fridge, conflicts, openTasks, openTaskDetail]);
+
+  const notificationsFeed = useMemo((): TodayUrgency[] => {
+    const items: TodayUrgency[] = [];
+    fridge
+      .filter((f) => isExpired(f.expires_at))
+      .slice(0, 5)
+      .forEach((f) => {
+        items.push({
+          id: `fridge-exp-${f.id}`,
+          label: `${f.label} — périmé`,
+          actionLabel: 'Frigo',
+          tone: 'danger',
+          onAction: () => {
+            setCoursesTab('frigo');
+            setOverlay('courses');
+          },
+        });
+      });
+    fridge
+      .filter((f) => !isExpired(f.expires_at) && fridgeAlerts.some((a) => a.expires_at === f.expires_at))
+      .slice(0, 5)
+      .forEach((f) => {
+        items.push({
+          id: `fridge-soon-${f.id}`,
+          label: `${f.label} — à consommer bientôt`,
+          actionLabel: 'Frigo',
+          tone: 'warning',
+          onAction: () => {
+            setCoursesTab('frigo');
+            setOverlay('courses');
+          },
+        });
+      });
+    conflicts.slice(0, 4).forEach((c, i) => {
+      items.push({
+        id: `conflict-n-${i}`,
+        label: `Conflit agenda : ${c.title_a} / ${c.title_b}`,
+        actionLabel: 'Agenda',
+        tone: c.severity === 'high' ? 'danger' : 'warning',
+        onAction: () => {
+          setMainTab('agenda');
+          setOverlay(null);
+        },
+      });
+    });
+    householdSalon.captures
+      .filter((c) => c.status === 'pending')
+      .slice(0, 6)
+      .forEach((c) => {
+        items.push({
+          id: `cap-${c.id}`,
+          label: c.excerpt || 'Capture Salon à valider',
+          actionLabel: 'Salon',
+          tone: 'warning',
+          onAction: () => goMainTab('salon'),
+        });
+      });
+    openTasks.slice(0, 6).forEach((t) => {
+      items.push({
+        id: `task-n-${t.id}`,
+        label: t.title,
+        actionLabel: 'Tâche',
+        tone: 'warning',
+        onAction: () => openTaskDetail(t.id),
+      });
+    });
+    return items.slice(0, 20);
+  }, [
+    fridge,
+    fridgeAlerts,
+    conflicts,
+    householdSalon.captures,
+    openTasks,
+    openTaskDetail,
+    goMainTab,
+  ]);
+
   const hubModuleBadges = useMemo((): Partial<Record<HubKey, string>> => {
     const badges: Partial<Record<HubKey, string>> = {};
     if (fridgeExpiredCount > 0) badges.courses = `${fridgeExpiredCount} DLC`;
     const docUrgent = docVault.filter((d) => d.urgent).length;
     if (docUrgent > 0) badges.documents = `${docUrgent}`;
+    if (notificationsFeed.length > 0) badges.notifs = `${Math.min(notificationsFeed.length, 9)}`;
+    if (householdSalon.pendingCount > 0) badges.messages = `${householdSalon.pendingCount}`;
     return badges;
-  }, [fridgeExpiredCount, docVault]);
+  }, [fridgeExpiredCount, docVault, notificationsFeed.length, householdSalon.pendingCount]);
   const showDebordeeCta = useMemo(
     () => openTasks.length >= 5 || mentalWeather.level === 'heavy',
     [openTasks.length, mentalWeather.level],
   );
-  const showMorningMoodCard = useMemo(() => {
-    if (homeMood !== null || clientHour === null) return false;
-    return clientHour >= 5 && clientHour < 12;
-  }, [homeMood, clientHour]);
+  const showMorningMoodCard = false;
   const equity = useMemo(
     () =>
-      computeHouseholdEquityShares(
-        [...openTasks, ...doneTasks],
-        {
-          primary: primaryMemberId,
-          partner: partnerMemberId,
-          child: childMemberId,
-        },
-        familyProfile,
-        { terra: C.terra, alex: C.alex, mint: C.mint },
-      ),
-    [openTasks, doneTasks, primaryMemberId, partnerMemberId, childMemberId, familyProfile],
+      householdEquity.shares.length > 0
+        ? householdEquity.shares
+        : computeHouseholdEquityShares(
+            [...openTasks, ...doneTasks],
+            {
+              primary: primaryMemberId,
+              partner: partnerMemberId,
+              child: childMemberId,
+            },
+            familyProfile,
+            { terra: C.terra, alex: C.alex, mint: C.mint },
+          ),
+    [householdEquity.shares, openTasks, doneTasks, primaryMemberId, partnerMemberId, childMemberId, familyProfile, C.terra, C.alex, C.mint],
   );
 
-  const equityWeeks = useMemo(
-    () => [
-      { label: 'Cette semaine', joanne: 68, alex: 22, lea: 10, tasks: { joanne: 34, alex: 11, lea: 5 } },
-      { label: 'Semaine passée', joanne: 72, alex: 20, lea: 8, tasks: { joanne: 36, alex: 10, lea: 4 } },
-      { label: 'Il y a 2 sem.', joanne: 65, alex: 25, lea: 10, tasks: { joanne: 32, alex: 12, lea: 5 } },
-      { label: 'Il y a 3 sem.', joanne: 70, alex: 21, lea: 9, tasks: { joanne: 35, alex: 10, lea: 4 } },
-    ],
-    []
-  );
+  const equityWeeks = useMemo(() => {
+    if (!householdEquity.data?.weeks?.length) {
+      return [
+        { label: 'Cette semaine', joanne: 68, alex: 22, lea: 10, tasks: { joanne: 34, alex: 11, lea: 5 } },
+      ];
+    }
+    return householdEquity.data.weeks.map((w) => {
+      const names = Object.keys(w.members);
+      const first = names[0] ?? 'A';
+      const second = names[1] ?? 'B';
+      const third = names[2] ?? 'C';
+      return {
+        label: w.label,
+        joanne: w.members[first] ?? 0,
+        alex: w.members[second] ?? 0,
+        lea: w.members[third] ?? 0,
+        tasks: { joanne: 0, alex: 0, lea: 0 },
+      };
+    });
+  }, [householdEquity.data]);
   const equityCategories = useMemo(
     () => [
       { label: 'Cuisine & Repas', joanne: 85, alex: 10, lea: 5, glyph: 'kitchen' },
@@ -2211,12 +2542,18 @@ export default function HomePage() {
     [familyProfile.enfant]
   );
   const equitySuggestions = useMemo(
-    () => [
-      { task: 'Préparer les repas du mercredi', from: familyProfile.prenom, to: familyProfile.partenaire, save: '~45 min/sem' },
-      { task: `Gérer les RDV médicaux de ${familyProfile.enfant}`, from: familyProfile.prenom, to: familyProfile.partenaire, save: '~1h/mois' },
-      { task: 'Faire sa chambre', from: familyProfile.prenom, to: familyProfile.enfant, save: '~20 min/sem' },
-    ],
-    [familyProfile.prenom, familyProfile.partenaire, familyProfile.enfant]
+    () =>
+      householdEquity.data?.suggestions?.length
+        ? householdEquity.data.suggestions.map((s) => ({
+            task: s.task,
+            from: s.from,
+            to: s.to,
+            save: s.save,
+          }))
+        : [
+            { task: 'Préparer les repas du mercredi', from: familyProfile.prenom, to: familyProfile.partenaire, save: '~45 min/sem' },
+          ],
+    [householdEquity.data, familyProfile.prenom, familyProfile.partenaire],
   );
 
   const globalSearchEntries = useMemo((): SearchPaletteEntry[] => {
@@ -2335,6 +2672,49 @@ export default function HomePage() {
     }
   }
 
+  async function shareHouseholdInvite() {
+    if (!token) return;
+    try {
+      const data = inviteUrl
+        ? { invite_url: inviteUrl, share_text: `Rejoins notre foyer sur MajorDome : ${inviteUrl}` }
+        : await getJson<{ invite_url: string; share_text: string }>('/api/v1/household/invite', token);
+      if (!inviteUrl && data.invite_url) setInviteUrl(data.invite_url);
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ title: 'MajorDome', text: data.share_text, url: data.invite_url });
+      } else {
+        await navigator.clipboard.writeText(data.share_text || data.invite_url);
+        pushToast('success', "Lien d'invitation copié");
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return;
+      pushToast('error', e instanceof Error ? e.message : 'Partage impossible');
+    }
+  }
+
+  async function handleProposeTransfer(taskId: string) {
+    if (!token) return;
+    const sug = householdEquity.data?.suggestions?.find((s) => s.task_id === taskId);
+    if (!sug) {
+      pushToast('error', 'Suggestion introuvable');
+      return;
+    }
+    const toMember = householdMembers.find(
+      (m) => m.display_name.trim().toLowerCase() === sug.to.trim().toLowerCase(),
+    );
+    if (!toMember) {
+      pushToast('error', 'Membre introuvable');
+      return;
+    }
+    try {
+      await householdEquity.proposeTransfer(taskId, toMember.id);
+      pushToast('success', `Proposition envoyée à ${sug.to}`);
+      void householdSalon.refresh();
+      void householdEquity.refresh();
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Proposition impossible');
+    }
+  }
+
   function renderAppLayer() {
     const sec = (id: HomeSectionId) => homeLayout.sections[id] !== false;
     const wrapOv = (title: string, body: React.ReactNode) => (
@@ -2343,11 +2723,40 @@ export default function HomePage() {
       </OverlayChrome>
     );
 
-    if (layer === 'home' || layer === 'agenda' || layer === 'moi') {
+    if (layer === 'home' || layer === 'salon' || layer === 'agenda' || layer === 'moi') {
       const sec = (id: HomeSectionId) => homeLayout.sections[id] !== false;
+      const capturePreview = Boolean(token);
       return (
         <AppMainTabLayers
           layer={layer}
+          salon={
+            layer === 'salon'
+              ? {
+                  C,
+                  selfName: familyProfile.prenom,
+                  partnerName: familyProfile.partenaire,
+                  aiName,
+                  messages: householdSalon.salonMessages,
+                  onApproveProposal: (id) => {
+                    void householdSalon.approveCapture(id).then((msg) => {
+                      pushToast('success', msg?.includes('agenda') || msg?.includes('Événement') ? '✓ Ajouté à l\'agenda' : msg || '✓ Ajouté');
+                      void householdEquity.refresh();
+                    });
+                  },
+                  onRejectProposal: (id) => {
+                    void householdSalon.rejectCapture(id);
+                    pushToast('info', 'Capture ignorée');
+                  },
+                  onSendPhoto: (file) => {
+                    void householdSalon.sendMessage(`📷 Photo : ${file.name} — ${file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')}`);
+                  },
+                  onOpenCaptures: () => goMainTab('home'),
+                  onSendMessage: (text) => householdSalon.sendMessage(text),
+                  sending: householdSalon.sending,
+                  loadError: householdSalon.error,
+                }
+              : null
+          }
           home={
             layer === 'home'
               ? {
@@ -2355,6 +2764,24 @@ export default function HomePage() {
           token,
           aiName,
           isSectionVisible: sec,
+          capturePreview,
+          capturePendingCount: householdSalon.pendingCount,
+          captureVisible: householdSalon.visibleCaptures,
+          captureChip: householdSalon.captureChip,
+          captureChips: householdSalon.captureChips,
+          onCaptureChipChange: householdSalon.setCaptureChip,
+          onCaptureApprove: (id) => {
+            void householdSalon.approveCapture(id).then((msg) => {
+              pushToast('success', msg || 'Capture validée');
+              void householdSalon.refresh();
+            });
+          },
+          onCaptureReject: (id) => {
+            void householdSalon.rejectCapture(id);
+            pushToast('info', 'Capture ignorée');
+          },
+          onOpenSalon: () => goMainTab('salon'),
+          onOpenModulesHub: openModulesHub,
           clientTodayLabel,
           family: {
             prenom: familyProfile.prenom,
@@ -2377,6 +2804,9 @@ export default function HomePage() {
           budget,
           budgetUsedPct,
           equity,
+          weeklyEquity: equity,
+          onOpenEquity: () => setModalEquite(true),
+          homeV2: true,
           partnerContactDraft,
           partnerNotifyLoading,
           weekEvents,
@@ -2505,37 +2935,15 @@ export default function HomePage() {
           moi={
             layer === 'moi'
               ? {
-          C,
-          token,
-          aiName,
-          openTaskCount: openTasks.length,
-          moiMood,
-          onMoiMoodChange,
-          sleep,
-          onSleepChange,
-          cycleDay,
-          onCycleDayChange,
-          journalEntries,
-          journalLoading,
-          journalSelectedDay: selectedMealDay,
-          onJournalSelectedDayChange: setSelectedMealDay,
-          onJournalRefresh: () => refreshJournalEntries(),
-          onGoAgenda: () => goMainTab('agenda'),
-          selfMoments,
-          onToggleSelfMoment: (id) => {
-            moiDirtyRef.current = true;
-            setSelfMoments((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
-          },
-          selfDoneCount,
-          onAddSelfMomentAsTask: addSelfMomentAsTask,
-          budget,
-          onBudgetChange: setBudget,
-          budgetEditing,
-          onBudgetEditingToggle: () => setBudgetEditing((v) => !v),
-          onSaveBudget: saveBudgetToServer,
-          onLogout: logout,
-          onToast: pushToast,
-              }
+                  C,
+                  aiName,
+                  openTaskCount: openTasks.length,
+                  onLogout: logout,
+                  userFirstName: familyProfile.prenom || undefined,
+                  alfredNoteCount: alfredMemory.length,
+                  onOpenHubModule: openHubModule,
+                  onOpenPrivateSpace: () => setPrivateSpaceOpen(true),
+                }
               : null
           }
         />
@@ -2587,6 +2995,8 @@ export default function HomePage() {
             );
             setOverlay('assistant');
           }}
+          homeConnected={Boolean(homeAccount)}
+          onOpenIntegrations={() => setOverlay('integrations')}
           docVault={docVault}
           docStorageSummary={docStorageSummary}
           onOpenVaultModal={() => setModalCoffre(true)}
@@ -2596,16 +3006,18 @@ export default function HomePage() {
           }}
           onDownloadAttachment={downloadDocAttachment}
           equity={equity}
-          partnerContactDraft={partnerContactDraft}
-          onPartnerContactChange={setPartnerContactDraft}
-          partnerNotifyLoading={partnerNotifyLoading}
+          equityMode={householdEquity.mode}
+          onEquityModeChange={householdEquity.setMode}
+          equitySuggestions={householdEquity.data?.suggestions}
+          onProposeTransfer={(taskId) => void handleProposeTransfer(taskId)}
+          inviteUrl={inviteUrl}
+          onShareInvite={() => void shareHouseholdInvite()}
           onOpenEquiteModal={() => {
             setEquitePlanText('');
             setEquiteTab('semaine');
             setModalEquite(true);
           }}
-          onNotifyPartner={() => void notifyPartnerReal()}
-          onGoMoi={() => goMainTab('moi')}
+          onOpenPrivateSpace={() => setPrivateSpaceOpen(true)}
         />
       );
     }
@@ -2640,17 +3052,15 @@ export default function HomePage() {
           onSyncGoogle={() => void calendarConnections.syncProvider('google_calendar')}
           onSyncMicrosoft={() => void calendarConnections.syncProvider('microsoft_calendar')}
           onAlfredPrompt={(text) => alfred.setAssistantInput(text)}
-        />
-      );
-    }
-
-    if (layer === 'plus') {
-      return (
-        <PlusHub
-          C={C}
-          userFirstName={familyProfile.prenom || undefined}
-          alfredNoteCount={alfredMemory.length}
-          onOpen={openHubModule}
+          aiName={aiName}
+          salonMessages={householdSalon.salonMessages}
+          onOpenSalonTab={() => goMainTab('salon')}
+          onApproveCapture={(id) => {
+            void householdSalon.approveCapture(id).then((msg) => {
+              pushToast('success', msg || 'Capture validée');
+            });
+          }}
+          notificationItems={notificationsFeed}
         />
       );
     }
@@ -2691,17 +3101,22 @@ export default function HomePage() {
       <a href="#main" className="skip-link">
         Aller au contenu principal
       </a>
-      <style>{`*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body{overscroll-behavior-y:none;}::-webkit-scrollbar{display:none;}`}</style>
+      <style>{`*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body{overscroll-behavior-y:none;overflow-x:hidden;max-width:100vw;}::-webkit-scrollbar{display:none;}`}</style>
       <div className="app-outer">
         <div className="app-device" style={{ background: C.bg }}>
           <div style={{ position: 'relative' }}>
             <StatusBar
               headerBg={mainTab === 'home' && token ? mentalWeather.bg : undefined}
+              userInitial={familyProfile.prenom}
+              onOpenPrivateSpace={
+                token && onboardingDone && postLoginSetupDone ? () => setPrivateSpaceOpen(true) : undefined
+              }
               onOpenSearch={
                 token && onboardingDone && postLoginSetupDone ? () => setGlobalSearchOpen(true) : undefined
               }
             />
             <div
+              className="app-device-notch"
               aria-hidden
               style={{
                 position: 'absolute',
@@ -2738,26 +3153,51 @@ export default function HomePage() {
               setInfo={setInfo}
               loading={loading}
               onSubmit={submitAuth}
+              invitePreview={invitePreview}
             />
           ) : !postLoginSetupResolved ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
               <BrandLoadingLogo />
             </div>
           ) : !postLoginSetupDone ? (
-            <WelcomeSetupWizard
+            <OnboardingV2Wizard
               C={C}
+              token={token}
               userEmail={layoutUserEmail || email.trim() || '…'}
               initialProfile={familyProfile}
-              onComplete={completeWelcomeWizard}
-              onSkipAll={skipWelcomeWizard}
+              onComplete={(profile) => completeOnboardingV2(profile)}
               onLogout={logout}
-              Wordmark={MajordomeWordmark}
             />
           ) : (
             <main id="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
               <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
                 {renderAppLayer()}
               </div>
+              <PrivateSpacePanel
+                C={C}
+                open={privateSpaceOpen}
+                onClose={() => setPrivateSpaceOpen(false)}
+                token={token}
+                moiMood={moiMood}
+                onMoiMoodChange={onMoiMoodChange}
+                sleep={sleep}
+                onSleepChange={onSleepChange}
+                cycleDay={cycleDay}
+                onCycleDayChange={onCycleDayChange}
+                journalEntries={journalEntries}
+                journalLoading={journalLoading}
+                journalSelectedDay={selectedMealDay}
+                onJournalSelectedDayChange={setSelectedMealDay}
+                onJournalRefresh={() => refreshJournalEntries()}
+                selfMoments={selfMoments}
+                onToggleSelfMoment={(id) => {
+                  moiDirtyRef.current = true;
+                  setSelfMoments((prev) => prev.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+                }}
+                selfDoneCount={selfDoneCount}
+                onAddSelfMomentAsTask={addSelfMomentAsTask}
+                onToast={pushToast}
+              />
               <AppShellModals
                 C={C}
                 modalDebordee={modalDebordee}
@@ -2839,11 +3279,40 @@ export default function HomePage() {
           )}
 
           {token && onboardingDone && postLoginSetupDone ? (
-            <BottomTabBar active={bottomTabActive} aiName={aiName} C={C} onSelect={handleBottomTab} />
+            <>
+              <PaywallSoft
+                C={C}
+                status={subscription}
+                busy={billingBusy}
+                onUpgrade={() => {
+                  if (subscription?.stripe_configured) {
+                    void startCheckout().catch((e) => {
+                      pushToast('error', e instanceof Error ? e.message : 'Paiement indisponible');
+                    });
+                    return;
+                  }
+                  pushToast(
+                    'info',
+                    'Premium Foyer arrive bientôt — contacte privacy@majordom.eu pour l’offre fondatrice.',
+                  );
+                }}
+              />
+              <GlobalFab
+                C={C}
+                onEvent={() => {
+                  setMainTab('agenda');
+                  setOverlay(null);
+                }}
+                onTask={() => openModulesHub()}
+                onGrocery={() => setOverlay('courses')}
+                onPhoto={() => goMainTab('salon')}
+              />
+              <BottomTabBar active={bottomTabActive} aiName={aiName} C={C} onSelect={handleBottomTab} />
+            </>
           ) : null}
           {error || info ? null : null}
           {toasts.length > 0 ? (
-            <div style={{ position: 'absolute', left: 24, right: 24, top: 54, display: 'grid', gap: 8, pointerEvents: 'none', zIndex: 30 }}>
+            <div className="app-toast-stack" style={{ position: 'absolute', left: 24, right: 24, top: 54, display: 'grid', gap: 8, pointerEvents: 'none', zIndex: 30 }}>
               {toasts.map((t) => (
                 <div
                   key={t.id}

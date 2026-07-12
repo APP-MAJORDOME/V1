@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-export type AppMainTab = 'home' | 'alfred' | 'modules' | 'moi' | 'agenda';
+export type AppMainTab = 'home' | 'salon' | 'alfred' | 'modules' | 'moi' | 'agenda';
 
 export type AppOverlayId =
   | 'plus'
@@ -21,6 +21,33 @@ export type AppOverlayId =
   | 'albums'
   | 'integrations';
 
+const OVERLAY_TITLES: Record<AppOverlayId, string> = {
+  courses: 'Courses & Frigo',
+  documents: 'Coffre famille',
+  assistant: 'Alfred',
+  plus: 'Modules du foyer',
+  routines: 'Routines',
+  recettes: 'Recettes',
+  courrier: 'Courrier IA',
+  famille: 'Famille & équité',
+  integrations: 'Intégrations',
+  maison: 'Maison',
+  anniversaires: 'Anniversaires',
+  poubelles: 'Poubelles',
+  notifs: 'Notifications',
+  messages: 'Salon',
+  albums: 'Souvenirs',
+};
+
+const TAB_TITLES: Record<AppMainTab, string> = {
+  home: "Aujourd'hui",
+  salon: 'Salon',
+  alfred: 'Alfred',
+  modules: 'Modules du foyer',
+  moi: 'Foyer',
+  agenda: 'Agenda',
+};
+
 export function useAppDocumentTitle(opts: {
   clientReady: boolean;
   token: string;
@@ -34,27 +61,12 @@ export function useAppDocumentTitle(opts: {
       document.title = 'Connexion — MajorDome';
       return;
     }
-    const overlayTitles: Partial<Record<AppOverlayId, string>> = {
-      courses: 'Courses & Frigo',
-      documents: 'Coffre famille',
-      assistant: opts.aiName,
-      plus: 'Modules',
-      routines: 'Routines',
-      recettes: 'Recettes',
-      courrier: 'Courrier IA',
-      famille: 'Famille & équité',
-      integrations: 'Intégrations',
-    };
-    const tabTitles: Record<AppMainTab, string> = {
-      home: "Aujourd'hui",
-      alfred: opts.aiName,
-      modules: 'Modules',
-      moi: 'Moi',
-      agenda: 'Agenda',
-    };
-    const title = opts.overlay
-      ? overlayTitles[opts.overlay] ?? 'MajorDome'
-      : tabTitles[opts.mainTab] ?? 'MajorDome';
+    let title: string;
+    if (opts.overlay) {
+      title = opts.overlay === 'assistant' ? opts.aiName : OVERLAY_TITLES[opts.overlay];
+    } else {
+      title = opts.mainTab === 'alfred' ? opts.aiName : TAB_TITLES[opts.mainTab];
+    }
     document.title = `${title} — MajorDome`;
   }, [opts.clientReady, opts.token, opts.overlay, opts.mainTab, opts.aiName]);
 }

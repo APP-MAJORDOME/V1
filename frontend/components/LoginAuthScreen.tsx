@@ -1,8 +1,16 @@
 'use client';
 
 import { BrandLoadingLogo, MajordomeHomeLogo } from './BrandLogo';
+import { EuTrustBanner } from './EuTrustBanner';
 
 type AuthMode = 'login' | 'register';
+
+export type InvitePreview = {
+  ok: boolean;
+  invite_code: string;
+  household_name?: string | null;
+  owner_name?: string | null;
+};
 
 export function LoginAuthScreen({
   C,
@@ -18,6 +26,7 @@ export function LoginAuthScreen({
   setInfo,
   loading,
   onSubmit,
+  invitePreview,
 }: {
   C: Record<string, string>;
   authMode: AuthMode;
@@ -32,7 +41,12 @@ export function LoginAuthScreen({
   setInfo: (v: string) => void;
   loading: boolean;
   onSubmit: () => void | Promise<void>;
+  invitePreview?: InvitePreview | null;
 }) {
+  const inviteOk = Boolean(invitePreview?.ok);
+  const foyerLabel = invitePreview?.household_name?.trim() || 'un foyer Majordome';
+  const ownerLabel = invitePreview?.owner_name?.trim();
+
   return (
     <div
       style={{
@@ -55,6 +69,9 @@ export function LoginAuthScreen({
       >
         <MajordomeHomeLogo maxHeight={40} />
       </div>
+      <div style={{ padding: '0 18px 12px' }}>
+        <EuTrustBanner C={C} compact />
+      </div>
       <div
         style={{
           flex: 1,
@@ -65,12 +82,37 @@ export function LoginAuthScreen({
           touchAction: 'pan-y',
         }}
       >
-        <h2 style={{ margin: 0, color: C.text }}>{authMode === 'register' ? 'Créer un compte' : 'Connexion'}</h2>
+        <h2 style={{ margin: 0, color: C.text }}>
+          {inviteOk
+            ? authMode === 'register'
+              ? 'Rejoindre le foyer'
+              : 'Connexion pour rejoindre'
+            : authMode === 'register'
+              ? 'Créer un compte'
+              : 'Connexion'}
+        </h2>
         <p style={{ color: C.text2, fontSize: 13 }}>
-          {authMode === 'register'
-            ? 'Inscris ton foyer pour commencer avec MajorDome.'
-            : 'Connecte-toi pour utiliser MajorDome.'}
+          {inviteOk
+            ? `Tu as été invité·e à rejoindre ${foyerLabel}${ownerLabel ? ` (${ownerLabel})` : ''}.`
+            : authMode === 'register'
+              ? 'Inscris ton foyer pour commencer avec MajorDome.'
+              : 'Connecte-toi pour utiliser MajorDome.'}
         </p>
+        {inviteOk ? (
+          <p
+            style={{
+              margin: '0 0 12px',
+              padding: '10px 12px',
+              borderRadius: 12,
+              background: C.terraXL,
+              color: C.text,
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Invitation active · code {invitePreview?.invite_code}
+          </p>
+        ) : null}
         {error ? (
           <p
             role="alert"
@@ -146,12 +188,18 @@ export function LoginAuthScreen({
             }}
           >
             {loading
-              ? authMode === 'register'
-                ? 'Création…'
-                : 'Connexion…'
-              : authMode === 'register'
-                ? 'Créer mon compte'
-                : 'Se connecter'}
+              ? inviteOk
+                ? 'Rattachement…'
+                : authMode === 'register'
+                  ? 'Création…'
+                  : 'Connexion…'
+              : inviteOk
+                ? authMode === 'register'
+                  ? 'Créer mon compte et rejoindre'
+                  : 'Se connecter et rejoindre'
+                : authMode === 'register'
+                  ? 'Créer mon compte'
+                  : 'Se connecter'}
           </button>
           <button
             type="button"

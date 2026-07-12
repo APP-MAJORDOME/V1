@@ -24,7 +24,9 @@ export function getAlfredSuggestions(
   if (heavy || open >= 5) {
     contextual.push('Je suis débordée, trie ma liste');
   }
-  if (open > 0 && open < 5) {
+  if (open === 1) {
+    contextual.push('Quelle est ma priorité aujourd’hui ?');
+  } else if (open > 1 && open < 5) {
     contextual.push(`Quelles sont mes ${open} priorités aujourd’hui ?`);
   }
   if (events > 0) {
@@ -32,6 +34,9 @@ export function getAlfredSuggestions(
   }
   if (fridge > 0) {
     contextual.push(fridge === 1 ? 'Un produit frigo expire bientôt — que faire ?' : `${fridge} alertes frigo — que cuisiner ?`);
+  }
+  if (open === 0 && events === 0) {
+    contextual.push('Propose un menu pas cher pour la semaine');
   }
 
   let base: string[];
@@ -45,9 +50,9 @@ export function getAlfredSuggestions(
   } else if (h >= 11 && h < 17) {
     base = [
       `Qu’est-ce qu’on mange ce soir ?`,
+      `Ouvre le drive carrefour avec ma liste`,
+      `Éteins la lumière du salon`,
       `Crée une tâche : rappeler l’école`,
-      `Assigne une tâche à ${p}`,
-      `Je suis débordée, trie ma liste`,
     ];
   } else if (h >= 17 && h < 22) {
     base = [
@@ -93,6 +98,20 @@ export function inferAlfredActions(aiText: string, executionDone: boolean): Alfr
   }
   if (low.includes('délégu') || low.includes('delegu') || low.includes('partenaire')) {
     actions.push({ id: 'famille', label: 'Famille & équité' });
+  }
+  if (low.includes('drive') || low.includes('carrefour') || low.includes('courses')) {
+    actions.push({ id: 'courses', label: 'Voir Courses' });
+  }
+  if (
+    low.includes('domot') ||
+    low.includes('lumière') ||
+    low.includes('lumiere') ||
+    low.includes('verisure') ||
+    low.includes('ezviz') ||
+    low.includes('caméra') ||
+    low.includes('camera')
+  ) {
+    actions.push({ id: 'integrations', label: 'Intégrations' });
   }
   return actions.slice(0, 3);
 }

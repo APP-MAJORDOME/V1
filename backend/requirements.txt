@@ -18,3 +18,6 @@ caldav
 vobject
 alembic==1.14.0
 pytest==8.3.3
+vsure==2.6.9
+playwright==1.49.1
+pyezviz==0.2.2.3

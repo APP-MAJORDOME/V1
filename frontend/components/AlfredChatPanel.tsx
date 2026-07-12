@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { ALFRED_FILE_ACCEPT, type AlfredShoppingPlan } from '../lib/alfredAgent';
+import {
+  ALFRED_FILE_ACCEPT,
+  type AlfredDrivePrepare,
+  type AlfredShoppingPlan,
+} from '../lib/alfredAgent';
 import { IconMic, IconPaperclip, IconSpeaker } from './md-icons';
 import { getAlfredSuggestions, type AlfredAction, type AlfredSuggestionContext } from '../lib/alfredSuggestions';
 
@@ -44,6 +48,8 @@ export type AlfredMessage = {
   vaultDocuments?: AlfredVaultDocument[];
   /** Plan courses / recette avec promos estimées. */
   shoppingPlan?: AlfredShoppingPlan;
+  /** Préparation commande Drive (trousseau). */
+  drivePrepare?: AlfredDrivePrepare;
   attachment?: AlfredMessageAttachment;
 };
 
@@ -75,6 +81,7 @@ export function AlfredChatPanel({
   onSuggestion,
   onAction,
   onConfirmPending,
+  onFillDriveCart,
   onUploadFile,
   onOpenVault,
   onOpenDocument,
@@ -109,6 +116,7 @@ export function AlfredChatPanel({
   onSuggestion: (text: string) => void;
   onAction: (actionId: string) => void;
   onConfirmPending: (command: string, intent: string, proposal?: Record<string, unknown>) => void;
+  onFillDriveCart?: (serviceKey: string) => void;
   onUploadFile: (file: File) => void;
   onOpenVault?: () => void;
   onOpenDocument?: (documentId: number) => void;
@@ -143,7 +151,7 @@ export function AlfredChatPanel({
             borderBottom: `1px solid ${C.border}`,
           }}
         >
-          La conversation vocale avec Alfred n&apos;est pas encore activée sur ton espace. Tu peux toujours écrire ou utiliser le micro du navigateur.
+          La conversation vocale avec Alfred n&apos;est pas encore activée sur ton espace. Tu peux toujours écrire ou utiliser le micro.
         </div>
       ) : null}
       {realtimeStatus ? (
@@ -170,7 +178,7 @@ export function AlfredChatPanel({
         <div>
           <strong style={{ fontSize: 16, color: C.text }}>{aiName}</strong>
           <div style={{ fontSize: 11, color: C.text2 }}>
-            {alfredMemoryCount} note{alfredMemoryCount !== 1 ? 's' : ''} mémorisée{alfredMemoryCount !== 1 ? 's' : ''}
+            {alfredMemoryCount} fait{alfredMemoryCount !== 1 ? 's' : ''} — Mémoire du foyer
           </div>
         </div>
         <div
@@ -374,9 +382,25 @@ export function AlfredChatPanel({
                     <div style={{ marginTop: 8, fontSize: 11, color: C.green, lineHeight: 1.45 }}>
                       <div style={{ fontWeight: 800, marginBottom: 4 }}>Comptes enseignes (trousseau)</div>
                       {m.shoppingPlan.vault_links.map((link) => (
-                        <div key={`${link.store}-${link.service_key}`}>
-                          {link.store} : {link.label || link.service_key}
-                          {link.username ? ` (${link.username})` : ''} — Drive auto bientôt
+                        <div
+                          key={`${link.store}-${link.service_key}`}
+                          style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 4 }}
+                        >
+                          <span>
+                            {link.store} : {link.label || link.service_key}
+                            {link.username ? ` (${link.username})` : ''}
+                            {link.drive_status === 'credentials_ready' ? ' — prêt Drive' : ' — identifiant seul'}
+                          </span>
+                          {link.open_url ? (
+                            <a
+                              href={link.open_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ fontWeight: 800, color: C.terra, textDecoration: 'none' }}
+                            >
+                              Ouvrir Drive
+                            </a>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -386,6 +410,137 @@ export function AlfredChatPanel({
                       {m.shoppingPlan.disclaimer}
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+              {m.who === 'ai' && m.drivePrepare ? (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 10,
+                    background: 'rgba(45,90,61,0.08)',
+                    border: `1px solid ${C.green}33`,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.green, marginBottom: 6 }}>
+                    Drive {m.drivePrepare.store}
+                    {m.drivePrepare.logged_in ? (
+                      <span style={{ marginLeft: 8, fontSize: 10, color: C.green, fontWeight: 700 }}>
+                        · connecté
+                      </span>
+                    ) : null}
+                  </div>
+                  {m.drivePrepare.message ? (
+                    <div style={{ fontSize: 12, color: C.text2, lineHeight: 1.45, marginBottom: 8 }}>
+                      {m.drivePrepare.message}
+                    </div>
+                  ) : null}
+                  {m.drivePrepare.steps && m.drivePrepare.steps.length > 0 ? (
+                    <div style={{ fontSize: 11, color: C.text2, lineHeight: 1.4, marginBottom: 8 }}>
+                      {m.drivePrepare.steps.map((step) => (
+                        <div key={step}>• {step}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {m.drivePrepare.cart_items && m.drivePrepare.cart_items.length > 0 ? (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: C.text, marginBottom: 4 }}>
+                        Liste courses ({m.drivePrepare.cart_count ?? m.drivePrepare.cart_items.length})
+                      </div>
+                      <div style={{ fontSize: 11, color: C.text2, lineHeight: 1.4, maxHeight: 140, overflowY: 'auto' }}>
+                        {(m.drivePrepare.cart_search_links?.length
+                          ? m.drivePrepare.cart_search_links
+                          : m.drivePrepare.cart_items.map((item) => ({
+                              id: item.id,
+                              label: item.label,
+                              search_url: '',
+                            }))
+                        ).slice(0, 12).map((item) => (
+                          <div
+                            key={`${item.id ?? item.label}`}
+                            style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}
+                          >
+                            <span>• {item.label}</span>
+                            {item.search_url ? (
+                              <a
+                                href={item.search_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ fontWeight: 800, color: C.terra, textDecoration: 'none' }}
+                              >
+                                Rechercher
+                              </a>
+                            ) : null}
+                          </div>
+                        ))}
+                        {m.drivePrepare.cart_items.length > 12 ? (
+                          <div style={{ opacity: 0.75 }}>… et {m.drivePrepare.cart_items.length - 12} de plus</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                    {m.drivePrepare.open_url && m.drivePrepare.status === 'ready' ? (
+                      <a
+                        href={m.drivePrepare.open_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'inline-block',
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: C.terra,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        Ouvrir {m.drivePrepare.store} Drive →
+                      </a>
+                    ) : null}
+                    {m.drivePrepare.cart_text ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (navigator.clipboard?.writeText) {
+                            void navigator.clipboard.writeText(m.drivePrepare?.cart_text ?? '');
+                          }
+                        }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: C.green,
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        Copier la liste
+                      </button>
+                    ) : null}
+                    {m.drivePrepare.service_key === 'carrefour' &&
+                    m.drivePrepare.status === 'ready' &&
+                    (m.drivePrepare.cart_count ?? 0) > 0 &&
+                    onFillDriveCart ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const sk = m.drivePrepare?.service_key;
+                          if (sk) onFillDriveCart(sk);
+                        }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: C.terra,
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        Remplir panier auto
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
               {m.who === 'ai' && m.webSources && m.webSources.length > 0 ? (
@@ -545,15 +700,15 @@ export function AlfredChatPanel({
             </button>
           </div>
           <div style={{ fontSize: 10, color: C.text3, lineHeight: 1.4 }}>
-            Photos, PDF, Word (.docx) ou texte — jusqu’à 12 Mo. Ajoute une consigne dans le champ avant d’envoyer.
+            Photo, PDF ou texte — jusqu&apos;à 12 Mo. Ajoute une consigne dans le champ avant d&apos;envoyer.
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={onToggleVoice}
               disabled={!voiceSupported || openAiRealtimeOn}
-              aria-label="Micro navigateur"
-              title="Dictée navigateur"
+              aria-label="Dictée vocale"
+              title="Dictée vocale"
               style={{
                 width: 44,
                 height: 44,
@@ -611,9 +766,9 @@ export function AlfredChatPanel({
                 className="majordome-toggle"
                 checked={autoSpeak}
                 onChange={(e) => setAutoSpeak(e.target.checked)}
-                aria-label="Lire les réponses à voix haute dans le navigateur"
+                aria-label="Écouter la réponse à voix haute"
               />
-              <span>Lire les réponses (navigateur)</span>
+              <span>Écouter la réponse</span>
             </label>
           ) : (
             <span>Conversation vocale — Alfred peut agir dans l&apos;app pendant que tu parles</span>

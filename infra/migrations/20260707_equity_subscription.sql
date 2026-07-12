@@ -1,0 +1,10 @@
+-- F1-1 équité v2 + M3 abonnement foyer
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS weight_minutes INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS equity_category VARCHAR(64) NOT NULL DEFAULT 'autre';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS planned_by_member_id INTEGER REFERENCES household_members(id);
+
+ALTER TABLE households ADD COLUMN IF NOT EXISTS subscription_tier VARCHAR(32) NOT NULL DEFAULT 'free';
+ALTER TABLE households ADD COLUMN IF NOT EXISTS captures_used_month INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE households ADD COLUMN IF NOT EXISTS captures_month_key VARCHAR(7) NOT NULL DEFAULT '';
+ALTER TABLE households ADD COLUMN IF NOT EXISTS equity_council_weekday INTEGER NOT NULL DEFAULT 6;
+ALTER TABLE households ADD COLUMN IF NOT EXISTS equity_council_hour INTEGER NOT NULL DEFAULT 18;

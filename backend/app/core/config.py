@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     llm_realtime_model: str = "gpt-realtime-2"
     llm_realtime_voice: str = "cedar"
     home_adapter_mode: str = "mock"
+    # Si true : utilise le HA connecté dans l’app même quand home_adapter_mode=mock (prod sans redeploy).
+    home_assistant_auto_when_connected: bool = True
     jwt_secret_key: str = "change-me-in-prod"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24
@@ -22,7 +24,7 @@ class Settings(BaseSettings):
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
     google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/integrations/google/oauth/callback"
-    google_oauth_scopes: str = "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+    google_oauth_scopes: str = "openid email profile https://www.googleapis.com/auth/calendar"
     microsoft_oauth_client_id: str = ""
     microsoft_oauth_client_secret: str = ""
     microsoft_oauth_redirect_uri: str = "http://localhost:8000/api/v1/integrations/microsoft/oauth/callback"
@@ -48,6 +50,10 @@ class Settings(BaseSettings):
     # Conseiller courses / promos / recettes Alfred
     shopping_advisor_enabled: bool = True
 
+    # Connexion Drive navigateur (Playwright) — Carrefour uniquement pour l’instant
+    drive_automation_enabled: bool = False
+    drive_automation_timeout_sec: int = 45
+
     # Base URL publique de l’API (liens SMS / accusé de réception). Ex. https://api.majordom.eu
     public_api_base_url: str = "http://localhost:8000"
     delegation_reminder_hours: int = 24
@@ -62,6 +68,31 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from_email: str = ""
+
+    # Trousseau mots de passe enseignes — désactivé par défaut en production (P0-2)
+    vault_secrets_enabled: bool = False
+
+    # Bot Telegram Alfred (webhook → api.majordom.eu)
+    telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
+    telegram_webhook_auto_register: bool = True
+
+    # Bot WhatsApp Alfred (Meta Cloud API → api.majordom.eu)
+    whatsapp_access_token: str = ""
+    whatsapp_phone_number_id: str = ""
+    whatsapp_app_secret: str = ""
+    whatsapp_verify_token: str = ""
+    # Numéro affiché pour wa.me (E.164, ex. +33612345678) — optionnel
+    whatsapp_display_phone: str = ""
+
+    # Stripe Premium Foyer
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id: str = ""
+    stripe_success_url: str = "https://majordom.eu/?billing=success"
+    stripe_cancel_url: str = "https://majordom.eu/?billing=cancel"
+    # Code manuel (fondateurs / tests) — optionnel
+    premium_founder_code: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MAJORDOME_")
 

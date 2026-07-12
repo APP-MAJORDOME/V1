@@ -14,6 +14,7 @@ import {
 } from './md-icons';
 import { DOC_COFFRE_CATEGORIES, formatDocStorageShort, type DocStorageSummary } from '../lib/documentsUi';
 import { VaultEncryptionBadge } from './VaultEncryptionBadge';
+import { EuTrustBanner } from './EuTrustBanner';
 import { LocalDataNotice, PrivacyPolicyLink } from './PrivacyLinks';
 
 export type DocVaultItem = {
@@ -116,16 +117,17 @@ export function CoffreModal({
           <p style={{ fontSize: 11, color: C.text2, margin: 0 }}>{docVault.length} documents</p>
           {token && docStorageSummary ? (
             <div style={{ margin: '6px 0 0', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+              <EuTrustBanner C={C} compact />
               <VaultEncryptionBadge C={C} encryptionAtRest={docStorageSummary.encryption_at_rest} />
               <p style={{ fontSize: 10, color: C.text2, margin: 0, lineHeight: 1.35 }}>
                 {formatDocStorageShort(docStorageSummary.used_bytes, docStorageSummary.quota_bytes)}
               </p>
             </div>
           ) : null}
-          {!token ? <p style={{ fontSize: 10, color: C.terra, margin: '6px 0 0' }}>Connecte-toi pour synchroniser le coffre sur le serveur.</p> : null}
+          {!token ? <p style={{ fontSize: 10, color: C.terra, margin: '6px 0 0' }}>Connecte-toi pour synchroniser le coffre famille.</p> : null}
           <p style={{ fontSize: 10, color: C.text2, margin: '8px 0 0', lineHeight: 1.45 }}>
             Passeports, mutuelle et pièces sensibles : stockage isolé par foyer, HTTPS en transit
-            {docStorageSummary?.encryption_at_rest ? ' et chiffrement des fichiers sur le serveur.' : '.'}{' '}
+            {docStorageSummary?.encryption_at_rest ? ' et chiffrement des fichiers.' : '.'}{' '}
             <PrivacyPolicyLink C={C} style={{ fontSize: 10 }} />
           </p>
           <LocalDataNotice C={C} compact />
@@ -302,7 +304,7 @@ export function CoffreModal({
                       if (f && docEdit && token) void onUploadAttachment(docEdit.id, f);
                     }}
                   />
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.text2 }}>Pièce jointe (serveur)</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.text2 }}>Pièce jointe</div>
                   {(() => {
                     const pj = docVault.find((x) => x.id === docEdit.id);
                     const has = pj?.attachmentSizeBytes != null && pj.attachmentSizeBytes > 0;
@@ -574,7 +576,7 @@ export function CoffreModal({
           </button>
         </div>
         <p style={{ fontSize: 9, color: C.text3, margin: '8px 0 0', lineHeight: 1.35 }}>
-          Image ou PDF : la fiche est créée puis le fichier est enregistré sur le serveur, dans un espace isolé pour ton foyer. La taille maximale dépend des réglages de ton espace.
+          Image ou PDF : la fiche est créée puis le fichier est enregistré dans un espace isolé pour ton foyer. La taille maximale dépend des réglages de ton espace.
         </p>
       </div>
     </div>

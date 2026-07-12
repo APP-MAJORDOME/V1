@@ -12,6 +12,7 @@ import {
   updateJournalEntry,
   type JournalEntry,
 } from '../lib/journalEntries';
+import { formatNotes } from '../lib/pluralize';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -126,7 +127,7 @@ export function IntimateJournalPanel({
   return (
     <CollapsibleSection title="Mon journal intime" C={C} defaultOpen>
       <p style={{ fontSize: 12, color: C.text2, margin: '0 0 10px', lineHeight: 1.45 }}>
-        Chaque note est datée. Consulte-les dans l&apos;onglet Agenda en choisissant le jour.
+        Chaque note est datée et reste dans ton espace privé.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
         <label style={{ fontSize: 11, fontWeight: 700, color: C.text2 }}>
@@ -170,7 +171,7 @@ export function IntimateJournalPanel({
       </div>
       <div style={{ fontSize: 12, fontWeight: 700, color: C.terra, marginBottom: 6 }}>
         {formatJournalDayLabel(selectedDay, client)}
-        {dayEntries.length > 0 ? ` · ${dayEntries.length} note(s)` : ''}
+        {dayEntries.length > 0 ? ` · ${formatNotes(dayEntries.length)}` : ''}
       </div>
       <textarea
         value={draft}
@@ -337,7 +338,7 @@ export function IntimateJournalPanel({
                   cursor: 'pointer',
                 }}
               >
-                {day}
+                {formatJournalDayLabel(day, client)}
               </button>
             ))}
           </div>

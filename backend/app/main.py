@@ -19,6 +19,9 @@ from app.core.rate_limit import check_auth_route_rate_limits, check_rate_limit
 from app.core import database as db_module
 from app.core.database import Base, engine
 from app.api.routes import router
+from app.api.telegram_routes import router as telegram_router
+from app.api.whatsapp_routes import router as whatsapp_router
+from app.api.billing_routes import router as billing_router
 from app.services import document_attachments as doc_attach
 
 if settings.auto_create_tables:
@@ -31,13 +34,28 @@ async def lifespan(_app: FastAPI):
         doc_attach.upload_root().mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         print(json.dumps({"event": "upload_dir_mkdir_failed", "error": str(exc)}), flush=True)
+    if settings.telegram_webhook_auto_register and (settings.telegram_bot_token or "").strip():
+        from app.services.telegram_bot import register_webhook
+
+        result = register_webhook()
+        print(json.dumps({"event": "telegram_webhook_register", "result": result}), flush=True)
     yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 # Hors quota : sondes K8s / LB, schéma OpenAPI et UI Swagger (rafraîchissements fréquents).
-_RATE_LIMIT_SKIP_PATHS = frozenset({"/health", "/live", "/ready", "/openapi.json", "/docs", "/redoc"})
+_RATE_LIMIT_SKIP_PATHS = frozenset({
+    "/health",
+    "/live",
+    "/ready",
+    "/openapi.json",
+    "/docs",
+    "/redoc",
+    "/api/v1/webhooks/telegram",
+    "/api/v1/webhooks/whatsapp",
+    "/api/v1/webhooks/stripe",
+})
 
 cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(
@@ -168,3 +186,6 @@ def ready(response: Response):
 
 
 app.include_router(router)
+app.include_router(telegram_router)
+app.include_router(whatsapp_router)
+app.include_router(billing_router)

@@ -245,7 +245,9 @@ def _gather_shopping_context(
     if user_id:
         hints = list_credential_hints(db, user_id)
         target_stores = stores or ["Carrefour", "Marché U"]
-        vault_links = credential_hints_for_stores(hints, target_stores)
+        from app.services.drive_integration import enrich_vault_links
+
+        vault_links = enrich_vault_links(credential_hints_for_stores(hints, target_stores))
         if hints:
             lines.append(
                 "Trousseau mots de passe MajorDome (identifiants enregistrés, mot de passe jamais envoyé au LLM) :"
@@ -448,7 +450,7 @@ def build_shopping_plan_response(
     }
     if vault_links:
         plan["disclaimer"] += (
-            " Compte enseigne enregistré dans ton trousseau — la commande Drive automatique arrive bientôt."
+            " Compte enseigne dans ton trousseau — utilise « Ouvrir Drive » ou dis à Alfred « ouvre le drive carrefour »."
         )
     if not plan["stores"]:
         plan["stores"] = ["Carrefour", "Marché U"]

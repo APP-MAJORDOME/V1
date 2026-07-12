@@ -1,9 +1,9 @@
 'use client';
 
 import type { ComponentType } from 'react';
-import { IconCalendar, IconDotsGrid, IconHome, IconSparkleAI, IconUserHeart } from './md-icons';
+import { IconCalendar, IconHome, IconMessageBubble, IconSparkleAI, IconUserHeart } from './md-icons';
 
-export type AppTabId = 'home' | 'agenda' | 'alfred' | 'modules' | 'moi';
+export type AppTabId = 'home' | 'salon' | 'agenda' | 'alfred' | 'moi';
 
 const TABS: {
   id: AppTabId;
@@ -11,10 +11,10 @@ const TABS: {
   Icon: ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 }[] = [
   { id: 'home', label: "Aujourd'hui", Icon: IconHome },
+  { id: 'salon', label: 'Salon', Icon: IconMessageBubble },
   { id: 'agenda', label: 'Agenda', Icon: IconCalendar },
   { id: 'alfred', label: (ai) => ai, Icon: IconSparkleAI },
-  { id: 'modules', label: 'Modules', Icon: IconDotsGrid },
-  { id: 'moi', label: 'Moi', Icon: IconUserHeart },
+  { id: 'moi', label: 'Foyer', Icon: IconUserHeart },
 ];
 
 export function BottomTabBar({
@@ -55,7 +55,7 @@ export function BottomTabBar({
               key={tab.id}
               type="button"
               role="tab"
-              className="ui-press"
+              className="ui-press bottom-tab-btn"
               aria-selected={on}
               aria-current={on ? 'page' : undefined}
               onClick={() => onSelect(tab.id)}

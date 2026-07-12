@@ -22,6 +22,8 @@ def test_command_wants_household_answer_skips_clear_actions():
     assert not command_wants_household_answer("Ajoute une tâche : passer à la pharmacie")
     assert not command_wants_household_answer("Crée un événement demain à 10h")
     assert not command_wants_household_answer("mail rapide au pédiatre")
+    assert not command_wants_household_answer("acheter des alloco")
+    assert not command_wants_household_answer("Achète du lait")
 
 
 @patch("app.services.alfred_household.answer_household_question")

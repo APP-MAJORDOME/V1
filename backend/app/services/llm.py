@@ -499,3 +499,53 @@ def compose_shopping_plan(
         text = str(content_items[0].get("text") or "")
     return _extract_json_payload(text)
 
+
+def analyze_salon_with_openai(messages: list[Any]) -> list[dict[str, Any]] | None:
+    """Extrait des captures JSON depuis les derniers messages du salon."""
+    if settings.llm_provider.lower() not in {"openai", "chatgpt"}:
+        return None
+    if not settings.llm_api_key or not messages:
+        return None
+
+    lines = []
+    for m in messages[-20:]:
+        label = getattr(m, "author_label", None) or "Membre"
+        body = getattr(m, "body_text", None) or ""
+        lines.append(f"{label}: {body}")
+    transcript = "\n".join(lines)[:4000]
+    system_prompt = (
+        "Tu analyses UNE conversation familiale en français. "
+        "Retourne UNIQUEMENT un JSON {\"captures\": [...]} (max 2). Chaque capture: "
+        "kind (event_proposal|task_proposal|reminder|suggestion), chip (today|famille|foyer), "
+        "source_label, excerpt (citation EXACTE d'un message), inferences (liste), "
+        "cta_primary, cta_secondary, payload {intent, proposal{title|label, when?, assignee?}, structured{type,title,when?,assignee?}}. "
+        "Règles: 1 capture = 1 message source. Ne mélange jamais un message Toussaint avec un RDV dentiste. "
+        "Pain/courses → grocery_add. Poubelles/ménage → task_create. Vacances/Toussaint → suggestion. "
+        "Ignore les messages Alfred, Proposition, [[cap:…]] et briefings."
+    )
+    body = {
+        "model": settings.llm_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Conversation:\n{transcript}"},
+        ],
+        "temperature": 0.2,
+    }
+    headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+    try:
+        with httpx.Client(timeout=25) as client:
+            response = client.post(f"{settings.llm_base_url}/chat/completions", json=body, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+        choices = payload.get("choices") or []
+        content = (choices[0].get("message") or {}).get("content") if choices else ""
+        parsed = _extract_json_payload(str(content))
+        if not parsed:
+            return None
+        caps = parsed.get("captures")
+        if isinstance(caps, list):
+            return [c for c in caps if isinstance(c, dict)]
+    except Exception as exc:
+        logger.warning("Salon analyze LLM failed: %s", exc)
+    return None
+

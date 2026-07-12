@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import ForeignKey, Index, String, Integer, Boolean, Float, DateTime, Text
+from datetime import datetime, date
+from sqlalchemy import ForeignKey, Index, String, Integer, Boolean, Float, DateTime, Text, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.core.dt import utc_now_naive
@@ -18,6 +18,7 @@ class User(Base, TimestampMixin):
     full_name: Mapped[str] = mapped_column(String(255))
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Paris")
     locale: Mapped[str] = mapped_column(String(16), default="fr-FR")
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Household(Base, TimestampMixin):
@@ -25,6 +26,18 @@ class Household(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    subscription_tier: Mapped[str] = mapped_column(String(32), default="free")
+    captures_used_month: Mapped[int] = mapped_column(Integer, default=0)
+    captures_month_key: Mapped[str] = mapped_column(String(7), default="")
+    equity_council_weekday: Mapped[int] = mapped_column(Integer, default=6)
+    equity_council_hour: Mapped[int] = mapped_column(Integer, default=18)
+    household_type: Mapped[str] = mapped_column(String(64), default="famille")
+    invite_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True, index=True)
+    last_morning_briefing_date: Mapped[str] = mapped_column(String(10), default="")
+    last_equity_council_week: Mapped[str] = mapped_column(String(10), default="")
+    briefing_hour: Mapped[int] = mapped_column(Integer, default=7)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class HouseholdMember(Base, TimestampMixin):
@@ -35,6 +48,8 @@ class HouseholdMember(Base, TimestampMixin):
     role: Mapped[str] = mapped_column(String(64), default="adult_member")
     birth_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     preferences_json: Mapped[str] = mapped_column(Text, default="{}")
+    # Compte connecté (partenaire qui a rejoint via invite) — null pour enfant / fiche sans login
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
 
 
 class ConnectedAccount(Base, TimestampMixin):
@@ -81,6 +96,9 @@ class Task(Base, TimestampMixin):
     recurrence_rule: Mapped[str | None] = mapped_column(String(255), nullable=True)
     context_tags_json: Mapped[str] = mapped_column(Text, default="[]")
     origin: Mapped[str] = mapped_column(String(64), default="manual")
+    weight_minutes: Mapped[int] = mapped_column(Integer, default=15)
+    equity_category: Mapped[str] = mapped_column(String(64), default="autre")
+    planned_by_member_id: Mapped[int | None] = mapped_column(ForeignKey("household_members.id"), nullable=True, index=True)
 
 
 class Routine(Base, TimestampMixin):
@@ -196,11 +214,13 @@ class HouseholdMealPlan(Base, TimestampMixin):
 
 
 class HouseholdMoiWellness(Base, TimestampMixin):
-    """Journal, cycle et moments « pour toi » partagés au niveau du foyer."""
+    """Espace privé par membre (humeur, sommeil, cycle — jamais partagé)."""
 
     __tablename__ = "household_moi_wellness"
+    __table_args__ = (Index("uq_moi_wellness_household_user", "household_id", "user_id", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), unique=True, index=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     journal_text: Mapped[str] = mapped_column(Text, default="")
     cycle_day: Mapped[int] = mapped_column(Integer, default=18)
     moments_json: Mapped[str] = mapped_column(Text, default="[]")
@@ -275,6 +295,50 @@ class UserVaultSecret(Base, TimestampMixin):
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_blob: Mapped[str] = mapped_column(Text, default="")
     login_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class HouseholdSalonMessage(Base, TimestampMixin):
+    """Message du salon foyer (conversation couple / famille)."""
+
+    __tablename__ = "household_salon_messages"
+    __table_args__ = (Index("ix_household_salon_messages_created", "household_id", "created_at"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    author_label: Mapped[str] = mapped_column(String(120), default="")
+    body_text: Mapped[str] = mapped_column(Text)
+
+
+class HouseholdCapture(Base, TimestampMixin):
+    """Proposition Alfred issue d'une conversation ou règle proactive."""
+
+    __tablename__ = "household_captures"
+    __table_args__ = (Index("ix_household_captures_status", "household_id", "status"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="suggestion")
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    source: Mapped[str] = mapped_column(String(32), default="salon")
+    chip: Mapped[str] = mapped_column(String(32), default="foyer")
+    source_label: Mapped[str] = mapped_column(String(255), default="")
+    excerpt: Mapped[str] = mapped_column(Text, default="")
+    inferences_json: Mapped[str] = mapped_column(Text, default="[]")
+    cta_primary: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cta_secondary: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    message_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class HouseholdBirthday(Base, TimestampMixin):
+    """Anniversaires partagés du foyer."""
+
+    __tablename__ = "household_birthdays"
+    __table_args__ = (Index("ix_household_birthdays_household_id", "household_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id"))
+    name: Mapped[str] = mapped_column(String(255))
+    birthday_date: Mapped[date] = mapped_column(Date)
     notes: Mapped[str] = mapped_column(Text, default="")
 
 

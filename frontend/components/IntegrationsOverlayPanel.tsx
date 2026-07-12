@@ -8,6 +8,7 @@ import {
   isCalendarConnected,
 } from '../lib/calendarIntegrations';
 import { deleteJson, getJson, postJson, putJson } from '../lib/api';
+import type { IntegrationCapabilities } from '../lib/integrationCapabilities';
 import { GlassCard } from './GlassCard';
 
 export type IntegrationsOverlayPanelProps = {
@@ -51,8 +52,12 @@ export function IntegrationsOverlayPanel({
   const [credProvider, setCredProvider] = useState('tahoma');
   const [credUsername, setCredUsername] = useState('');
   const [credPassword, setCredPassword] = useState('');
+  const [credPin, setCredPin] = useState('');
   const [credBaseUrl, setCredBaseUrl] = useState('');
   const [tahomaDevices, setTahomaDevices] = useState<{ id: string; name: string; device_type?: string }[]>([]);
+  const [ezvizDevices, setEzvizDevices] = useState<{ id: string; name: string; device_type?: string; state?: string }[]>([]);
+  const [selectedEzvizDeviceId, setSelectedEzvizDeviceId] = useState('');
+  const [selectedEzvizAction, setSelectedEzvizAction] = useState('on');
   const [selectedTahomaDeviceId, setSelectedTahomaDeviceId] = useState('');
   const [selectedGroupDeviceIds, setSelectedGroupDeviceIds] = useState<string[]>([]);
   const [selectedTahomaAction, setSelectedTahomaAction] = useState('toggle');
@@ -61,10 +66,35 @@ export function IntegrationsOverlayPanel({
   const [duplicateGroupName, setDuplicateGroupName] = useState('');
   const [savedGroups, setSavedGroups] = useState<{ name: string; provider: string; device_ids: string[] }[]>([]);
   const [selectedGroupName, setSelectedGroupName] = useState('');
+  const [hubOverview, setHubOverview] = useState<{
+    summary: Record<string, number | boolean>;
+    connectors: {
+      id: string;
+      label: string;
+      category: string;
+      implementation: string;
+      configured: boolean;
+      connected: boolean;
+      user_status: string;
+      status_hint?: string | null;
+      ready_for_alfred?: boolean;
+      api_reference?: string | null;
+      notes?: string;
+    }[];
+    gaps_priority: { id: string; label?: string; reason?: string }[];
+  } | null>(null);
+  const [haDevices, setHaDevices] = useState<{ id: string; name: string; device_type?: string; state?: string }[]>([]);
+  const [selectedHaDeviceId, setSelectedHaDeviceId] = useState('');
+  const [selectedHaAction, setSelectedHaAction] = useState('toggle');
+  const [serverCaps, setServerCaps] = useState<IntegrationCapabilities | null>(null);
   const googleConnected = isCalendarConnected(accounts, 'google_calendar');
   const microsoftConnected = isCalendarConnected(accounts, 'microsoft_calendar');
-  const msConfigured = integrationConfigured(integrationStatuses, 'microsoft_calendar');
-  const googleConfigured = integrationConfigured(integrationStatuses, 'google_calendar');
+  const msConfigured =
+    serverCaps?.microsoft_oauth_configured ??
+    integrationConfigured(integrationStatuses, 'microsoft_calendar');
+  const googleConfigured =
+    serverCaps?.google_oauth_configured ?? integrationConfigured(integrationStatuses, 'google_calendar');
+  const driveAutomationEnabled = Boolean(serverCaps?.drive_automation_enabled);
   const btnRow = { display: 'flex' as const, flexWrap: 'wrap' as const, gap: 8 };
   const homeConnectedCount = homeProviders.filter((p) => p.connected).length;
   const selectedGroup = savedGroups.find((g) => g.name === selectedGroupName) ?? null;
@@ -96,9 +126,31 @@ export function IntegrationsOverlayPanel({
     }
   }
 
+  async function refreshHubOverview() {
+    if (!token) return;
+    try {
+      const res = await getJson<NonNullable<typeof hubOverview>>('/api/v1/integrations/hub', token);
+      setHubOverview(res);
+    } catch {
+      setHubOverview(null);
+    }
+  }
+
+  async function refreshServerCapabilities() {
+    if (!token) return;
+    try {
+      const res = await getJson<IntegrationCapabilities>('/api/v1/integrations/capabilities', token);
+      setServerCaps(res);
+    } catch {
+      setServerCaps(null);
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
     void refreshHomeProviders();
+    void refreshHubOverview();
+    void refreshServerCapabilities();
   }, [token]);
 
   useEffect(() => {
@@ -133,16 +185,40 @@ export function IntegrationsOverlayPanel({
     setHomeBusy(true);
     setHomeMsg('');
     try {
-      await postJson(
+      const res = await postJson<{
+        status: string;
+        diagnostic?: { status: string; message: string };
+      }>(
         '/api/v1/home/providers/home_assistant/connect',
         { base_url: haUrl.trim(), access_token: haToken.trim() },
         token,
       );
       setHaToken('');
-      setHomeMsg('Home Assistant connecté.');
+      setHomeMsg(
+        res.diagnostic?.message ||
+          'Home Assistant connecté — Google Home / Legrand passent par HA.',
+      );
       await refreshHomeProviders();
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Connexion Home Assistant impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function runHaServerDiagnostic() {
+    if (!token) return;
+    setHomeBusy(true);
+    try {
+      const res = await getJson<{
+        status: string;
+        message: string;
+        entity_count?: number;
+        reachable_from_server?: boolean;
+      }>('/api/v1/home/providers/home_assistant/diagnostic', token);
+      setHomeMsg(res.message || `Diagnostic HA : ${res.status}`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Diagnostic Home Assistant impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -180,6 +256,24 @@ export function IntegrationsOverlayPanel({
     }
   }
 
+  async function runVerisureAlarm(action: 'arm_away' | 'arm_home' | 'disarm') {
+    if (!token) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ status: string; message: string }>(
+        '/api/v1/home/providers/verisure/alarm',
+        { action, pin: credPin.trim() || null },
+        token,
+      );
+      setHomeMsg(res.message || `Verisure ${res.status}`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Action Verisure impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
   async function saveProviderCredentials() {
     if (!token || !credProvider) return;
     setHomeBusy(true);
@@ -191,15 +285,55 @@ export function IntegrationsOverlayPanel({
           provider: credProvider,
           username: credUsername.trim() || null,
           password: credPassword.trim() || null,
+          pin: credProvider === 'verisure' && credPin.trim() ? credPin.trim() : null,
           base_url: credBaseUrl.trim() || null,
         },
         token,
       );
       setCredPassword('');
+      setCredPin('');
       setHomeMsg(`Identifiants ${credProvider} enregistrés.`);
       await refreshHomeProviders();
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Sauvegarde des identifiants impossible.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function loadHaDevices() {
+    if (!token) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await getJson<{
+        provider: string;
+        devices: { id: string; name: string; device_type?: string; state?: string }[];
+      }>('/api/v1/home/providers/home_assistant/devices', token);
+      const rows = Array.isArray(res.devices) ? res.devices : [];
+      setHaDevices(rows);
+      setSelectedHaDeviceId(rows[0]?.id ?? '');
+      setHomeMsg(rows.length > 0 ? `${rows.length} entité(s) Home Assistant chargées.` : 'Aucune entité HA.');
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Impossible de charger Home Assistant.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function runHaDeviceAction() {
+    if (!token || !selectedHaDeviceId) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ message: string; status: string }>(
+        `/api/v1/home/providers/home_assistant/devices/${encodeURIComponent(selectedHaDeviceId)}/action`,
+        { action: selectedHaAction },
+        token,
+      );
+      setHomeMsg(res.message || `Action ${res.status}`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Action Home Assistant impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -221,6 +355,51 @@ export function IntegrationsOverlayPanel({
       setHomeMsg(rows.length > 0 ? `${rows.length} appareil(s) TaHoma chargés.` : 'Aucun appareil TaHoma trouvé.');
     } catch (e) {
       setHomeMsg(e instanceof Error ? e.message : 'Impossible de charger les appareils TaHoma.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function loadEzvizCameras() {
+    if (!token) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await getJson<{
+        provider: string;
+        devices: { id: string; name: string; device_type?: string; state?: string }[];
+        error?: string;
+      }>('/api/v1/home/providers/ezviz/devices', token);
+      const rows = Array.isArray(res.devices) ? res.devices : [];
+      setEzvizDevices(rows);
+      setSelectedEzvizDeviceId(rows[0]?.id ?? '');
+      if (rows.length > 0) {
+        setHomeMsg(`${rows.length} caméra(s) Ezviz chargée(s).`);
+      } else if (res.error === 'missing_credentials') {
+        setHomeMsg('Enregistre email + mot de passe Ezviz (identifiants) puis réessaie.');
+      } else {
+        setHomeMsg('Aucune caméra Ezviz trouvée sur ce compte.');
+      }
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Impossible de charger les caméras Ezviz.');
+    } finally {
+      setHomeBusy(false);
+    }
+  }
+
+  async function runEzvizDeviceAction() {
+    if (!token || !selectedEzvizDeviceId) return;
+    setHomeBusy(true);
+    setHomeMsg('');
+    try {
+      const res = await postJson<{ message: string; status: string }>(
+        `/api/v1/home/providers/ezviz/devices/${encodeURIComponent(selectedEzvizDeviceId)}/action`,
+        { action: selectedEzvizAction },
+        token,
+      );
+      setHomeMsg(res.message || `Action ${res.status}`);
+    } catch (e) {
+      setHomeMsg(e instanceof Error ? e.message : 'Action Ezviz impossible.');
     } finally {
       setHomeBusy(false);
     }
@@ -444,8 +623,84 @@ export function IntegrationsOverlayPanel({
     }
   }
 
+  const hubReady = hubOverview?.summary?.user_ready_alfred ?? 0;
+  const hubTotal = hubOverview?.summary?.total_catalog ?? 0;
+  const hubConnected = hubOverview?.summary?.user_connected ?? 0;
+
   return (
     <div>
+      {hubOverview ? (
+        <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6, color: C.terra }}>
+            Hub général MajorDome
+          </div>
+          <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2, lineHeight: 1.45 }}>
+            {hubConnected} connecté(s) · {hubReady} prêt(s) pour Alfred · {hubTotal} connecteurs au catalogue
+          </p>
+          <div style={{ display: 'grid', gap: 4, maxHeight: 160, overflowY: 'auto', marginBottom: 8 }}>
+            {hubOverview.connectors.map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  fontSize: 10,
+                  padding: '4px 6px',
+                  borderRadius: 8,
+                  background: c.connected ? 'rgba(45,90,61,0.08)' : C.surface,
+                }}
+              >
+                <span style={{ fontWeight: 700, color: C.text }}>{c.label}</span>
+                <span style={{ color: C.text2, textAlign: 'right' }}>
+                  {c.connected ? '✓' : '—'} {c.user_status}
+                  {c.implementation === 'planned' ? ' (prévu)' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+          {hubOverview.gaps_priority.length > 0 ? (
+            <div style={{ fontSize: 10, color: C.text2, lineHeight: 1.4 }}>
+              <strong>À connecter :</strong>{' '}
+              {hubOverview.gaps_priority
+                .slice(0, 4)
+                .map((g) => g.label)
+                .filter(Boolean)
+                .join(', ')}
+            </div>
+          ) : null}
+          {!msConfigured ? (
+            <p style={{ margin: '8px 0 0', fontSize: 10, color: C.text2, lineHeight: 1.45 }}>
+              <strong>Outlook :</strong> bientôt disponible sur ton espace.
+            </p>
+          ) : null}
+          <p style={{ margin: '6px 0 0', fontSize: 10, color: C.text2, lineHeight: 1.45 }}>
+            <strong>Google Home / Legrand / Shark :</strong> connecte Home Assistant pour piloter ta maison depuis
+            MajorDome.
+          </p>
+          {driveAutomationEnabled ? (
+            <p style={{ margin: '6px 0 0', fontSize: 10, color: C.text2, lineHeight: 1.45 }}>
+              <strong>Courses :</strong> remplissage automatique du panier disponible pour les enseignes connectées.
+            </p>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void refreshHubOverview()}
+            disabled={homeBusy}
+            style={{
+              marginTop: 8,
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: '6px 10px',
+              background: C.white,
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            Actualiser le hub
+          </button>
+        </GlassCard>
+      ) : null}
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: '#EEF5FF' }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Domotique Home Hub</div>
         <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
@@ -517,6 +772,22 @@ export function IntegrationsOverlayPanel({
           >
             Connecter Home Assistant
           </button>
+          <button
+            type="button"
+            onClick={() => void runHaServerDiagnostic()}
+            disabled={homeBusy}
+            style={{
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: '8px 12px',
+              background: C.white,
+              color: C.text,
+              fontWeight: 700,
+              fontSize: 12,
+            }}
+          >
+            Tester la connexion
+          </button>
         </div>
         <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select
@@ -538,22 +809,7 @@ export function IntegrationsOverlayPanel({
             <option value="verisure">Verisure</option>
             <option value="lsc_smart_connect">LSC Smart Connect</option>
           </select>
-          <button
-            type="button"
-            onClick={() => void connectPlannedProvider()}
-            disabled={homeBusy}
-            style={{
-              border: `1px solid ${C.border}`,
-              borderRadius: 10,
-              padding: '8px 12px',
-              background: C.white,
-              color: C.text,
-              fontWeight: 700,
-              fontSize: 12,
-            }}
-          >
-            Marquer connecté
-          </button>
+          <span style={{ fontSize: 11, color: C.text2, alignSelf: 'center' }}>Bientôt disponible</span>
         </div>
         <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select
@@ -619,6 +875,67 @@ export function IntegrationsOverlayPanel({
               placeholder="Mot de passe provider"
               style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
             />
+            {credProvider === 'verisure' ? (
+              <>
+                <input
+                  value={credPin}
+                  onChange={(e) => setCredPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  placeholder="Code alarme Verisure (4–8 chiffres, optionnel)"
+                  inputMode="numeric"
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12 }}
+                />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <button
+                    type="button"
+                    disabled={homeBusy}
+                    onClick={() => void runVerisureAlarm('arm_away')}
+                    style={{
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: C.white,
+                      cursor: homeBusy ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Armer absent
+                  </button>
+                  <button
+                    type="button"
+                    disabled={homeBusy}
+                    onClick={() => void runVerisureAlarm('arm_home')}
+                    style={{
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: C.white,
+                      cursor: homeBusy ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Mode maison
+                  </button>
+                  <button
+                    type="button"
+                    disabled={homeBusy}
+                    onClick={() => void runVerisureAlarm('disarm')}
+                    style={{
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: C.white,
+                      cursor: homeBusy ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Désarmer
+                  </button>
+                </div>
+              </>
+            ) : null}
             <input
               value={credBaseUrl}
               onChange={(e) => setCredBaseUrl(e.target.value)}
@@ -643,6 +960,110 @@ export function IntegrationsOverlayPanel({
               Enregistrer credentials
             </button>
           </div>
+        </div>
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: `1px dashed ${C.border}`, background: '#F4FFF6' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Contrôle Home Assistant</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => void loadHaDevices()}
+              disabled={homeBusy}
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+            >
+              Charger entités HA
+            </button>
+          </div>
+          {haDevices.length > 0 ? (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <select
+                value={selectedHaDeviceId}
+                onChange={(e) => setSelectedHaDeviceId(e.target.value)}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+              >
+                {haDevices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                    {d.device_type ? ` (${d.device_type})` : ''}
+                    {d.state ? ` — ${d.state}` : ''}
+                  </option>
+                ))}
+              </select>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <select
+                  value={selectedHaAction}
+                  onChange={(e) => setSelectedHaAction(e.target.value)}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+                >
+                  <option value="toggle">toggle</option>
+                  <option value="on">on</option>
+                  <option value="off">off</option>
+                  <option value="open">open</option>
+                  <option value="close">close</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void runHaDeviceAction()}
+                  disabled={homeBusy || !selectedHaDeviceId}
+                  style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.lilac, color: '#fff', fontWeight: 700, fontSize: 12 }}
+                >
+                  Exécuter HA
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: `1px dashed ${C.border}`, background: '#FFF8F5' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Caméras Ezviz</div>
+          <p style={{ fontSize: 10, color: C.text2, margin: '0 0 8px', lineHeight: 1.45 }}>
+            Identifiants Ezviz ci-dessus, puis charge la liste. Actions : réveil (on), veille (off), mode confidentialité.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => void loadEzvizCameras()}
+              disabled={homeBusy}
+              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.white, color: C.text, fontWeight: 700, fontSize: 12 }}
+            >
+              Charger caméras Ezviz
+            </button>
+          </div>
+          {ezvizDevices.length > 0 ? (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <select
+                value={selectedEzvizDeviceId}
+                onChange={(e) => setSelectedEzvizDeviceId(e.target.value)}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+              >
+                {ezvizDevices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                    {d.device_type ? ` (${d.device_type})` : ''}
+                    {d.state ? ` — ${d.state}` : ''}
+                  </option>
+                ))}
+              </select>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <select
+                  value={selectedEzvizAction}
+                  onChange={(e) => setSelectedEzvizAction(e.target.value)}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, background: C.white }}
+                >
+                  <option value="on">Réveil (on)</option>
+                  <option value="off">Veille (off)</option>
+                  <option value="privacy_on">Confidentialité ON</option>
+                  <option value="privacy_off">Confidentialité OFF</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void runEzvizDeviceAction()}
+                  disabled={homeBusy || !selectedEzvizDeviceId}
+                  style={{ border: 'none', borderRadius: 10, padding: '8px 12px', background: C.terra, color: '#fff', fontWeight: 700, fontSize: 12 }}
+                >
+                  Exécuter Ezviz
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
         <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: `1px dashed ${C.border}`, background: '#F7FBFF' }}>
           <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Contrôle TaHoma devices</div>
@@ -883,7 +1304,7 @@ export function IntegrationsOverlayPanel({
             ? 'Connecté — agenda pro synchronisé avec MajorDome.'
             : msConfigured
               ? 'Connecte ton calendrier Outlook ou Microsoft 365.'
-              : 'Connexion Outlook : à activer sur le serveur (clés Azure — voir docs/MICROSOFT_OAUTH_SETUP.md).'}
+              : 'Bientôt disponible sur ton espace.'}
         </p>
         <div style={btnRow}>
           <button
@@ -927,10 +1348,10 @@ export function IntegrationsOverlayPanel({
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Google Calendar</div>
         <p style={{ margin: '0 0 8px', fontSize: 11, color: C.text2 }}>
           {googleConnected
-            ? 'Connecté — tes événements se synchronisent.'
+            ? 'Connecté — sync + création / modification d’événements. Si tu étais déjà lié en lecture seule, reconnecte pour activer l’écriture.'
             : googleConfigured
-              ? 'Connecte ton agenda pour remplir automatiquement ton planning.'
-              : 'Connexion Google : à configurer sur le serveur.'}
+              ? 'Connecte ton agenda Google pour synchroniser et créer des événements depuis Majordome / Alfred.'
+              : 'Bientôt disponible sur ton espace.'}
         </p>
         <div style={btnRow}>
           <button

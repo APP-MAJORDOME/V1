@@ -1,0 +1,39 @@
+/* D2-1 — Design tokens MajorDome v2 */
+:root {
+  --md-primary: #c96b4a;
+  --md-bg: #faf6f2;
+  --md-surface: #ffffff;
+  --md-ink: #2a211c;
+  --md-ink-secondary: #6e5f56;
+  --md-success: #4a8f6d;
+  --md-warning: #d9822b;
+  --md-danger: #c0392b;
+  --md-shadow: 0 2px 12px rgba(42, 33, 28, 0.08);
+  --md-radius-card: 16px;
+  --md-radius-modal: 24px;
+  --md-radius-pill: 999px;
+  --md-space-1: 4px;
+  --md-space-2: 8px;
+  --md-space-3: 12px;
+  --md-space-4: 16px;
+  --md-space-5: 24px;
+  --md-space-6: 32px;
+  --md-font-display: 28px;
+  --md-font-h2: 22px;
+  --md-font-body: 15px;
+  --md-font-small: 13px;
+  --md-font-caption: 11px;
+  --md-member-1: #c96b4a;
+  --md-member-2: #4a7c8f;
+  --md-member-3: #7c8f4a;
+  --md-member-4: #8f4a7c;
+  --md-member-5: #b8860b;
+  --md-member-6: #5d6d7e;
+  --md-font-serif: 'Fraunces', 'Libre Caslon Text', Georgia, serif;
+}
+
+.md-display {
+  font-family: var(--md-font-serif);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}

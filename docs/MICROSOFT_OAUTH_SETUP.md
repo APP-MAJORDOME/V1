@@ -39,6 +39,8 @@ MAJORDOME_MICROSOFT_OAUTH_SCOPES="openid profile offline_access Calendars.ReadWr
 
 Les guillemets autour de `MAJORDOME_MICROSOFT_OAUTH_SCOPES` sont importants (espaces).
 
+Tu peux aussi placer `MAJORDOME_MICROSOFT_OAUTH_CLIENT_ID` et `SECRET` dans le fichier `.env` à la racine du projet : `scripts/deploy-majordom-eu.sh` les copie automatiquement vers la prod si elles sont vides dans `config/.env.ec2`.
+
 ## 5. Déployer
 
 ```bash

@@ -4,13 +4,13 @@ import type { ReactNode } from 'react';
 import type { AppLayerId } from '../lib/appNavigation';
 import { OverlayChrome } from './OverlayChrome';
 import { CoursesPanel, type CourseItem } from './CoursesPanel';
-import { MaisonTabPanel } from './MaisonTabPanel';
 import { DocumentsTabPanel } from './DocumentsTabPanel';
 import { FamilleTabPanel } from './FamilleTabPanel';
+import { MaisonTabPanel } from './MaisonTabPanel';
 import type { DocStorageSummary } from '../lib/documentsUi';
 import type { EquityShare } from '../lib/selectors';
+import type { EquityApiResponse } from '../hooks/useHouseholdEquity';
 import type { Coupon, WalletCard } from '../lib/wallet';
-
 const MODULE_OVERLAY_LAYERS = ['courses', 'maison', 'documents', 'famille'] as const;
 
 export type AppModuleOverlayLayer = (typeof MODULE_OVERLAY_LAYERS)[number];
@@ -62,18 +62,22 @@ export type AppModuleOverlaysProps = {
   eveningDone: boolean[];
   onToggleEvening: (index: number) => void;
   onOpenDomotiqueAssistant: () => void;
+  homeConnected?: boolean;
+  onOpenIntegrations?: () => void;
   docVault: DocVaultPreview[];
   docStorageSummary: DocStorageSummary | null;
   onOpenVaultModal: () => void;
   onOpenDoc: (docId: number) => void;
   onDownloadAttachment: (docId: number) => void | Promise<void>;
   equity: EquityShare[];
-  partnerContactDraft: string;
-  onPartnerContactChange: (value: string) => void;
-  partnerNotifyLoading: boolean;
+  equityMode?: 'execution' | 'planning' | 'combined';
+  onEquityModeChange?: (mode: 'execution' | 'planning' | 'combined') => void;
+  equitySuggestions?: EquityApiResponse['suggestions'];
+  onProposeTransfer?: (taskId: string) => void;
+  inviteUrl?: string;
+  onShareInvite?: () => void;
   onOpenEquiteModal: () => void;
-  onNotifyPartner: () => void;
-  onGoMoi: () => void;
+  onOpenPrivateSpace?: () => void;
 };
 
 export function AppModuleOverlays(props: AppModuleOverlaysProps): ReactNode {
@@ -131,9 +135,10 @@ export function AppModuleOverlays(props: AppModuleOverlaysProps): ReactNode {
           eveningDone={props.eveningDone}
           onToggleEvening={props.onToggleEvening}
           onOpenAssistant={props.onOpenDomotiqueAssistant}
+          homeConnected={props.homeConnected}
+          onOpenIntegrations={props.onOpenIntegrations}
         />,
-      );
-    case 'documents':
+      );    case 'documents':
       return wrapOv(
         'Coffre famille',
         <DocumentsTabPanel
@@ -152,13 +157,15 @@ export function AppModuleOverlays(props: AppModuleOverlaysProps): ReactNode {
         <FamilleTabPanel
           C={props.C}
           equity={props.equity}
+          equityMode={props.equityMode}
+          onEquityModeChange={props.onEquityModeChange}
+          suggestions={props.equitySuggestions}
+          onProposeTransfer={props.onProposeTransfer}
           partenaireName={props.partenaireName}
-          partnerContactDraft={props.partnerContactDraft}
-          onPartnerContactChange={props.onPartnerContactChange}
-          partnerNotifyLoading={props.partnerNotifyLoading}
+          inviteUrl={props.inviteUrl}
+          onShareInvite={props.onShareInvite}
           onOpenEquiteModal={props.onOpenEquiteModal}
-          onNotifyPartner={props.onNotifyPartner}
-          onGoMoi={props.onGoMoi}
+          onOpenPrivateSpace={props.onOpenPrivateSpace}
         />,
       );
     default:

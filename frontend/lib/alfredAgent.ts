@@ -1,4 +1,5 @@
 import { deleteJson, getJson, patchJson, postJson } from './api';
+import { extractGroceryLabel, looksLikeGroceryAdd, looksLikeGroceryCorrection } from './groceryIntent';
 
 export type AgentInterpretResponse = {
   intent: string;
@@ -20,8 +21,13 @@ export type AgentActResponse = {
 export async function runServerAgentAct(
   token: string,
   command: string,
+  forceExecute = false,
 ): Promise<{ completed: boolean; message?: string; preview: AgentInterpretResponse }> {
-  const act = await postJson<AgentActResponse>('/api/v1/agent/act', { command }, token);
+  const act = await postJson<AgentActResponse>(
+    '/api/v1/agent/act',
+    { command, force_execute: forceExecute },
+    token,
+  );
   if (act.status === 'completed' && act.message) {
     return { completed: true, message: act.message, preview: act.preview };
   }
@@ -45,7 +51,40 @@ export type AlfredVaultStoreLink = {
   username?: string | null;
   has_password?: boolean;
   login_url?: string | null;
+  open_url?: string | null;
   drive_status?: string;
+  drive_action?: string;
+};
+
+export type AlfredDriveCartItem = {
+  id: number;
+  label: string;
+};
+
+export type AlfredDriveSearchLink = {
+  id?: number;
+  label: string;
+  search_url: string;
+};
+
+export type AlfredDrivePrepare = {
+  status: string;
+  service_key: string;
+  store: string;
+  open_url?: string | null;
+  automation?: string;
+  secret_id?: number | null;
+  username?: string | null;
+  label?: string | null;
+  steps?: string[];
+  message?: string;
+  cart_items?: AlfredDriveCartItem[];
+  cart_count?: number;
+  cart_text?: string;
+  cart_search_links?: AlfredDriveSearchLink[];
+  cart_search_batch_url?: string | null;
+  logged_in?: boolean;
+  automation_detail?: string;
 };
 
 export type AlfredShoppingPlan = {
@@ -194,7 +233,14 @@ export function extractShoppingPlan(proposal?: Record<string, unknown>): AlfredS
         username: typeof v.username === 'string' ? v.username : null,
         has_password: v.has_password === true,
         login_url: typeof v.login_url === 'string' ? v.login_url : null,
+        open_url:
+          typeof v.open_url === 'string'
+            ? v.open_url
+            : typeof v.login_url === 'string'
+              ? v.login_url
+              : null,
         drive_status: typeof v.drive_status === 'string' ? v.drive_status : undefined,
+        drive_action: typeof v.drive_action === 'string' ? v.drive_action : undefined,
       });
     }
   }
@@ -208,6 +254,65 @@ export function extractShoppingPlan(proposal?: Record<string, unknown>): AlfredS
     promo_tips,
     disclaimer: typeof row.disclaimer === 'string' ? row.disclaimer.trim() : undefined,
     vault_links: vault_links.length > 0 ? vault_links : undefined,
+  };
+}
+
+export function extractDrivePrepare(proposal?: Record<string, unknown>): AlfredDrivePrepare | null {
+  const raw = proposal?.drive_prepare;
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  const store = typeof row.store === 'string' ? row.store.trim() : '';
+  const service_key = typeof row.service_key === 'string' ? row.service_key.trim() : '';
+  const status = typeof row.status === 'string' ? row.status.trim() : '';
+  if (!store || !service_key || !status) return null;
+  const stepsRaw = row.steps;
+  const steps = Array.isArray(stepsRaw)
+    ? stepsRaw.map((s) => String(s).trim()).filter(Boolean).slice(0, 6)
+    : undefined;
+  const cartRaw = row.cart_items;
+  const cart_items: AlfredDriveCartItem[] = [];
+  if (Array.isArray(cartRaw)) {
+    for (const item of cartRaw) {
+      if (!item || typeof item !== 'object') continue;
+      const c = item as Record<string, unknown>;
+      const id = typeof c.id === 'number' ? c.id : parseInt(String(c.id ?? ''), 10);
+      const label = typeof c.label === 'string' ? c.label.trim() : '';
+      if (!Number.isFinite(id) || !label) continue;
+      cart_items.push({ id, label });
+    }
+  }
+  const searchRaw = row.cart_search_links;
+  const cart_search_links: AlfredDriveSearchLink[] = [];
+  if (Array.isArray(searchRaw)) {
+    for (const item of searchRaw) {
+      if (!item || typeof item !== 'object') continue;
+      const s = item as Record<string, unknown>;
+      const label = typeof s.label === 'string' ? s.label.trim() : '';
+      const search_url = typeof s.search_url === 'string' ? s.search_url.trim() : '';
+      if (!label || !search_url) continue;
+      const id = typeof s.id === 'number' ? s.id : undefined;
+      cart_search_links.push({ id, label, search_url });
+    }
+  }
+  return {
+    status,
+    service_key,
+    store,
+    open_url: typeof row.open_url === 'string' ? row.open_url.trim() : null,
+    automation: typeof row.automation === 'string' ? row.automation : undefined,
+    secret_id: typeof row.secret_id === 'number' ? row.secret_id : null,
+    username: typeof row.username === 'string' ? row.username : null,
+    label: typeof row.label === 'string' ? row.label : null,
+    steps,
+    message: typeof row.message === 'string' ? row.message.trim() : undefined,
+    cart_items: cart_items.length > 0 ? cart_items : undefined,
+    cart_count: typeof row.cart_count === 'number' ? row.cart_count : cart_items.length || undefined,
+    cart_text: typeof row.cart_text === 'string' ? row.cart_text : undefined,
+    cart_search_links: cart_search_links.length > 0 ? cart_search_links : undefined,
+    cart_search_batch_url:
+      typeof row.cart_search_batch_url === 'string' ? row.cart_search_batch_url.trim() : null,
+    logged_in: row.logged_in === true,
+    automation_detail: typeof row.automation_detail === 'string' ? row.automation_detail.trim() : undefined,
   };
 }
 
@@ -251,6 +356,7 @@ export function confirmLabelForIntent(intent: string): string {
   if (intent === 'email_draft') return 'Ouvrir le brouillon';
   if (intent === 'call_prepare') return 'Copier le script';
   if (intent === 'shopping_plan') return 'Ajouter à la liste courses';
+  if (intent === 'drive_prepare') return 'Ouvrir le Drive';
   if (intent === 'home_control') return 'Exécuter domotique';
   return 'Confirmer';
 }
@@ -322,6 +428,8 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
 
   const isGrocery =
     interpreted.intent === 'grocery_add' ||
+    looksLikeGroceryAdd(command) ||
+    looksLikeGroceryCorrection(command) ||
     lowered.includes('liste de courses') ||
     lowered.includes('liste courses') ||
     (lowered.includes('courses') && (lowered.includes('ajoute') || lowered.includes('rajoute'))) ||
@@ -340,15 +448,25 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
   }
 
   if (isGrocery) {
-    const itemLabel =
+    let itemLabel =
       toStr((proposal as { label?: unknown }).label) ||
-      titleFromProposal ||
-      (() => {
-        const m = command.match(/ajoute(?:r)?\s+(.+?)(?:\s+(?:à|a)\s+la\s+liste|\s*$)/i);
-        return m?.[1]?.trim() ?? '';
-      })() ||
-      command.replace(/^(ajoute|rajoute)\s+/i, '').trim().slice(0, 80);
-    if (itemLabel.length >= 2) {
+      extractGroceryLabel(command) ||
+      titleFromProposal;
+    if (
+      looksLikeGroceryCorrection(command) ||
+      !itemLabel ||
+      ['le', 'la', 'les', 'en'].includes(normalizeText(itemLabel))
+    ) {
+      const recent = ctx.openTasks[0];
+      if (recent?.title) {
+        itemLabel = extractGroceryLabel(recent.title) || extractGroceryLabel(`ajoute ${recent.title}`) || recent.title;
+        // retire la tâche créée par erreur si on corrige
+        void deleteJson(`/api/v1/tasks/${recent.id}`, token).catch(() => undefined);
+        callbacks.refreshTaskSummary();
+      }
+    }
+    itemLabel = extractGroceryLabel(itemLabel || command) || itemLabel;
+    if (itemLabel && itemLabel.length >= 2) {
       callbacks.onAddCourse(itemLabel);
       return { done: true, message: `« ${itemLabel} » ajouté à ta liste de courses.` };
     }
@@ -356,9 +474,17 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
 
   if (
     interpreted.intent === 'task_create' ||
-    (lowered.startsWith('ajoute ') && !isGrocery) ||
-    (lowered.includes('rajoute') && !isGrocery)
+    ((lowered.startsWith('ajoute ') || lowered.startsWith('ajoute-moi') || lowered.includes('rajoute')) &&
+      !isGrocery)
   ) {
+    if (looksLikeGroceryAdd(command)) {
+      const itemLabel =
+        toStr((proposal as { label?: unknown }).label) || extractGroceryLabel(command) || titleFromProposal;
+      if (itemLabel.length >= 2) {
+        callbacks.onAddCourse(itemLabel);
+        return { done: true, message: `« ${itemLabel} » ajouté à ta liste de courses.` };
+      }
+    }
     const created = await postJson<AlfredTask>('/api/v1/tasks', { title, task_type: 'manual_task' }, token);
     callbacks.onTaskCreated(created);
     callbacks.refreshTaskSummary();
@@ -412,6 +538,76 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
     }
   }
 
+  if (interpreted.intent === 'drive_prepare') {
+    const prep = extractDrivePrepare(proposal);
+    let url = prep?.open_url?.trim();
+    const cartText = prep?.cart_text?.trim();
+    if (
+      prep?.service_key === 'carrefour' &&
+      prep.status === 'ready' &&
+      !prep.logged_in &&
+      token
+    ) {
+      try {
+        const auto = await postJson<{
+          logged_in?: boolean;
+          open_url?: string | null;
+          message?: string;
+        }>(`/api/v1/vault/drive/${encodeURIComponent(prep.service_key)}/automate-login`, {}, token);
+        if (auto.logged_in && auto.open_url) {
+          url = auto.open_url.trim();
+        }
+        if (auto.logged_in && auto.message) {
+          prep.message = auto.message;
+        }
+      } catch {
+        /* ouverture manuelle */
+      }
+    }
+    if (cartText && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(cartText);
+    }
+    if (
+      prep?.service_key === 'carrefour' &&
+      prep.status === 'ready' &&
+      (prep.cart_count ?? 0) > 0 &&
+      token
+    ) {
+      try {
+        const fill = await postJson<{
+          status?: string;
+          message?: string;
+          items_added?: number;
+          open_url?: string | null;
+        }>(`/api/v1/vault/drive/${encodeURIComponent(prep.service_key)}/fill-cart`, {}, token);
+        if (fill.open_url) url = fill.open_url.trim();
+        if (fill.message) prep.message = fill.message;
+      } catch {
+        /* ouverture manuelle */
+      }
+    }
+    if (prep?.status === 'ready' && url && typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      const cartNote =
+        cartText && prep.cart_count
+          ? ` Liste de ${prep.cart_count} article(s) copiée dans le presse-papiers.`
+          : '';
+      const loginNote = prep.logged_in ? ' Connexion Drive auto OK.' : '';
+      return {
+        done: true,
+        message: (prep.message || `Drive ${prep.store} ouvert dans un nouvel onglet.`) + loginNote + cartNote,
+      };
+    }
+    if (prep?.status === 'needs_credentials') {
+      return {
+        done: false,
+        message:
+          prep.message ||
+          'Ajoute ton compte enseigne dans Réglages → Sécurité → Trousseau mots de passe.',
+      };
+    }
+  }
+
   if (interpreted.intent === 'shopping_plan') {
     const plan = extractShoppingPlan(proposal);
     if (plan?.ingredients.length) {
@@ -433,6 +629,17 @@ export async function executeAgentIntent(ctx: AlfredExecuteContext): Promise<Age
         };
       }
     }
+  }
+
+  if (interpreted.intent === 'home_control') {
+    const server = await runServerAgentAct(token, command, true);
+    if (server.completed) {
+      return { done: true, message: server.message || 'Action domotique exécutée.' };
+    }
+    return {
+      done: false,
+      message: server.message || server.preview?.explanation || 'Action domotique non exécutée.',
+    };
   }
 
   if (interpreted.intent === 'email_draft' && typeof window !== 'undefined') {

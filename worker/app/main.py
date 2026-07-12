@@ -17,6 +17,7 @@ from app.connectors.microsoft_calendar import sync_microsoft_events  # noqa: E40
 from app.core.database import SessionLocal  # noqa: E402
 from app.models.models import ConnectedAccount, Household  # noqa: E402
 from app.services.briefing import build_today_briefing  # noqa: E402
+from app.services.household_proactive import run_proactive_household_tick  # noqa: E402
 from app.services.partner_delegation import process_due_reminders  # noqa: E402
 
 INTERVAL_SECONDS = int(os.getenv("MAJORDOME_WORKER_INTERVAL_SECONDS", "30"))
@@ -152,6 +153,7 @@ def run_sync_cycle(cycle_id: str) -> None:
                         status=status,
                     )
 
+            run_proactive_household_tick(db, household.id)
             briefing = build_today_briefing(db, household_id=household.id)
             log(
                 "household_briefing_snapshot",

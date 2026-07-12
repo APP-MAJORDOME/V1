@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>MajorDome — aide Drive</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 520px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+        color: #2c1f1a;
+      }
+      h1 { font-size: 1.25rem; }
+      code { background: #f5ede8; padding: 2px 6px; border-radius: 4px; }
+      ol { padding-left: 1.2rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Commander sur Carrefour Drive</h1>
+    <p>
+      MajorDome peut tenter le remplissage panier côté serveur (Playwright). Si ça échoue, suis ces étapes
+      depuis l’app :
+    </p>
+    <ol>
+      <li>Alfred ou Réglages → ouvre le <strong>Drive Carrefour</strong></li>
+      <li>Utilise les liens <strong>Rechercher</strong> sous chaque article</li>
+      <li>Ou copie la liste depuis Alfred (« Copier la liste »)</li>
+    </ol>
+    <p>
+      Connexion auto : Réglages → Sécurité → Trousseau Carrefour → <strong>Connexion auto</strong> /
+      <strong>Remplir panier</strong>.
+    </p>
+    <p>
+      <a
+        href="javascript:(function(){var t=prompt('Colle ta liste de courses (une ligne par article)');if(!t)return;var q=t.split(/\n+/).map(function(l){return l.trim().split(/\s+/).slice(1).join(' ')||l.trim();}).filter(Boolean);if(!q.length){alert('Liste vide');return;}window.open('https://www.carrefour.fr/s?q='+encodeURIComponent(q[0]),'_blank');for(var i=1;i<Math.min(q.length,8);i++)setTimeout(function(j){return function(){window.open('https://www.carrefour.fr/s?q='+encodeURIComponent(q[j]),'_blank');};}(i),i*400);})();"
+        >Bookmarklet : ouvrir recherches Carrefour</a
+      >
+      — glisse ce lien dans tes favoris, puis utilise-le sur majordom.eu après avoir copié la liste Alfred.
+    </p>
+    <p><a href="https://majordom.eu">Retour à majordom.eu</a></p>
+  </body>
+</html>

@@ -19,6 +19,12 @@ def test_interpret_command_home_control():
     assert out["mode"] == "confirm"
 
 
+def test_interpret_command_ezviz_camera():
+    out = agent_service.interpret_command("Mets la caméra du salon en veille")
+    assert out["intent"] == "home_control"
+    assert out["mode"] == "confirm"
+
+
 def test_get_home_providers_lists_core_connectors():
     db = MagicMock()
     # Aucun compte connecté -> not_connected.

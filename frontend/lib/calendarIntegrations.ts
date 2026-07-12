@@ -107,10 +107,8 @@ export function stripUrlSearchKeys(keys: string[]): void {
 }
 
 const INTEGRATION_ERROR_MESSAGES: Record<string, string> = {
-  google_oauth_not_configured:
-    'Google Calendar n’est pas encore activé sur le serveur (clés OAuth manquantes).',
-  microsoft_oauth_not_configured:
-    'Outlook n’est pas encore activé sur le serveur. Ajoute les clés Azure dans config/.env.ec2 (voir docs/MICROSOFT_OAUTH_SETUP.md).',
+  google_oauth_not_configured: 'La connexion Google Calendar sera bientôt disponible sur ton espace.',
+  microsoft_oauth_not_configured: 'La connexion Outlook sera bientôt disponible sur ton espace.',
 };
 
 /** Message utilisateur à partir d’une erreur API (code FastAPI). */

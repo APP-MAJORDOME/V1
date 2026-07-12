@@ -29,6 +29,10 @@ def test_credential_hints_for_stores_match():
     links = credential_hints_for_stores(hints, ["Carrefour"])
     assert len(links) == 1
     assert links[0]["drive_status"] == "credentials_ready"
+    from app.services.drive_integration import enrich_vault_links
+
+    enriched = enrich_vault_links(links)
+    assert enriched[0].get("open_url")
 
 
 @patch("app.services.shopping_advisor.compose_shopping_plan", return_value=None)

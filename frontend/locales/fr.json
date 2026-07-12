@@ -1,0 +1,79 @@
+{
+  "app": {
+    "name": "MajorDome"
+  },
+  "nav": {
+    "today": "Aujourd'hui",
+    "salon": "Salon",
+    "agenda": "Agenda",
+    "foyer": "Foyer",
+    "modules": "Modules"
+  },
+  "greeting": {
+    "morning": "Bonjour",
+    "evening": "Bonsoir"
+  },
+  "tasks": {
+    "open_one": "1 tâche ouverte",
+    "open_many": "{{count}} tâches ouvertes",
+    "done_one": "1 tâche terminée",
+    "done_many": "{{count}} tâches terminées"
+  },
+  "mental": {
+    "things_one": "1 chose à régler ce matin",
+    "things_many": "{{count}} choses à régler ce matin",
+    "urgency_one": "1 urgence",
+    "urgency_many": "{{count}} urgences"
+  },
+  "agenda": {
+    "create_event": "Créer l'événement",
+    "creating": "Création…",
+    "edit_event": "Modifier l'événement",
+    "generate_groceries": "Générer les courses depuis le repas",
+    "missing_ingredients": "Ingrédients manquants, séparés par des virgules",
+    "no_deadline": "Sans échéance"
+  },
+  "alfred": {
+    "greeting": "Bonjour. Je suis {{name}} — dis-moi ce que je dois gérer pour toi.",
+    "memory_empty": "Mémoire du foyer vide pour l'instant.",
+    "memory_one": "1 fait mémorisé dans la mémoire du foyer.",
+    "memory_many": "{{count}} faits mémorisés dans la mémoire du foyer.",
+    "priority_one": "Quelle est ma priorité aujourd'hui ?",
+    "listen_response": "Écouter la réponse"
+  },
+  "connection": {
+    "connected": "Connecté ✓",
+    "connect": "Connecter",
+    "connect_outlook": "Connecter Outlook",
+    "connect_google": "Connecter Google Calendar",
+    "connect_apple": "Connecter Apple Calendar",
+    "soon": "Bientôt disponible",
+    "syncing": "Synchronisation…",
+    "not_connected": "Non connecté"
+  },
+  "coming_soon": {
+    "title": "Ce module arrive bientôt",
+    "body": "On le prépare pour ton foyer. Tu seras prévenu·e dès qu'il est prêt.",
+    "notify": "Me prévenir",
+    "notified": "C'est noté — on te préviendra"
+  },
+  "trust": {
+    "eu_hosting": "Données hébergées en Union européenne",
+    "privacy": "Politique de confidentialité"
+  },
+  "empty": {
+    "birthdays": "Aucun anniversaire pour l'instant.",
+    "birthdays_action": "Ajouter un anniversaire"
+  },
+  "errors": {
+    "network": "Connexion perdue — tes modifications seront synchronisées dès le retour du réseau.",
+    "generic": "Une erreur est survenue. Réessaie dans un instant."
+  },
+  "gdpr": {
+    "export_data": "Exporter mes données",
+    "export_started": "Export en cours de préparation…",
+    "delete_account": "Supprimer mon compte",
+    "delete_confirm": "Cette action est définitive après 14 jours. Continuer ?",
+    "delete_scheduled": "Suppression programmée — tu peux annuler pendant 14 jours."
+  }
+}

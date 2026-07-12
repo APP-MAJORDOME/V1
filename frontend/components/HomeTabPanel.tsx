@@ -29,6 +29,9 @@ import type { MentalWeather } from '../lib/mentalLoad';
 import type { EquityShare } from '../lib/selectors';
 import { useIsClient } from '../hooks/useIsClient';
 import { formatDateFr, formatDateTimeFr } from '../lib/formatClientDate';
+import { CaptureJournalFeed } from './CaptureJournalFeed';
+import type { CaptureChip, HouseholdCapture } from '../lib/householdCaptures';
+import { formatReferences, formatTasksOpen } from '../lib/pluralize';
 
 function GlassCard({
   C,
@@ -75,6 +78,9 @@ export function HomeTabPanel({
   budget,
   budgetUsedPct,
   equity,
+  weeklyEquity,
+  onOpenEquity,
+  homeV2,
   partnerContactDraft,
   partnerNotifyLoading,
   weekEvents,
@@ -113,6 +119,16 @@ export function HomeTabPanel({
   onReopenTask,
   onRefreshDoneFromServer,
   onLoadMoreDonePage,
+  capturePreview,
+  capturePendingCount,
+  captureVisible,
+  captureChip,
+  captureChips,
+  onCaptureChipChange,
+  onCaptureApprove,
+  onCaptureReject,
+  onOpenSalon,
+  onOpenModulesHub,
 }: {
   C: Record<string, string>;
   token: string;
@@ -136,6 +152,9 @@ export function HomeTabPanel({
   budget: BudgetItem[];
   budgetUsedPct: number;
   equity: EquityShare[];
+  weeklyEquity?: EquityShare[];
+  onOpenEquity?: () => void;
+  homeV2?: boolean;
   partnerContactDraft: string;
   partnerNotifyLoading: boolean;
   weekEvents: { id: number; title: string; starts_at: string }[];
@@ -174,10 +193,39 @@ export function HomeTabPanel({
   onReopenTask: (taskId: number) => void;
   onRefreshDoneFromServer: () => void;
   onLoadMoreDonePage: () => void;
+  capturePreview?: boolean;
+  capturePendingCount?: number;
+  captureVisible?: HouseholdCapture[];
+  captureChip?: CaptureChip;
+  captureChips?: { id: CaptureChip; label: string }[];
+  onCaptureChipChange?: (chip: CaptureChip) => void;
+  onCaptureApprove?: (id: string) => void;
+  onCaptureReject?: (id: string) => void;
+  onOpenSalon?: () => void;
+  onOpenModulesHub?: () => void;
 }) {
   const client = useIsClient();
+  const showCaptureBanner = Boolean(
+    capturePreview && onOpenSalon && (capturePendingCount ?? 0) > 0,
+  );
   return (
     <div style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain', minHeight: 0, touchAction: 'pan-y' }}>
+      {showCaptureBanner ? (
+        <CaptureJournalFeed
+          C={C}
+          firstName={family.prenom}
+          clientTodayLabel={clientTodayLabel}
+          pendingCount={capturePendingCount ?? 0}
+          captures={captureVisible ?? []}
+          chip={captureChip ?? 'all'}
+          chips={captureChips ?? []}
+          onChipChange={onCaptureChipChange ?? (() => {})}
+          onApprove={onCaptureApprove!}
+          onReject={onCaptureReject!}
+          onOpenSalon={onOpenSalon!}
+          variant="banner"
+        />
+      ) : null}
       {isSectionVisible('hero_banner') ? (
         <TodayHome
           C={C}
@@ -198,10 +246,13 @@ export function HomeTabPanel({
           showPersonalize={Boolean(token)}
           showDebordee={isSectionVisible('debordee') && showDebordeeCta}
           onDebordee={onDebordee}
-          showMorningMood={isSectionVisible('mood') && showMorningMoodCard}
+          showMorningMood={!homeV2 && isSectionVisible('mood') && showMorningMoodCard}
           morningMood={homeMood}
           onMorningMood={onMorningMood}
           partenaireName={family.partenaire}
+          weeklyEquity={weeklyEquity ?? equity}
+          onOpenEquity={onOpenEquity}
+          homeV2={homeV2}
         />
       ) : null}
 <div style={{ padding: '0 16px 24px' }}>
@@ -219,18 +270,10 @@ export function HomeTabPanel({
       <IconCheckSmall size={22} color={C.green} strokeWidth={2} />
     </div>
     <div style={{ fontSize: 24, fontWeight: 800, color: C.sage }}>{openTasks.length}</div>
-    <div style={{ fontSize: 11 }}>Tâches ouvertes (app)</div>
+    <div style={{ fontSize: 11 }}>Tâches ouvertes</div>
     {taskSummary != null ? (
-      <div
-        style={{
-          fontSize: 9,
-          color: taskSummary.open_count === openTasks.length ? C.text3 : C.sun,
-          marginTop: 5,
-          lineHeight: 1.35,
-        }}
-      >
-        Foyer : {taskSummary.open_count} ouverte(s)
-        {taskSummary.open_count !== openTasks.length ? ' — recharge si tu vois un décalage.' : ''}
+      <div style={{ fontSize: 9, color: C.text3, marginTop: 5, lineHeight: 1.35 }}>
+        {formatTasksOpen(taskSummary.open_count)} au foyer
       </div>
     ) : null}
   </GlassCard>
@@ -305,7 +348,7 @@ export function HomeTabPanel({
     <div style={{ fontSize: 11, color: C.text2, marginTop: 3, lineHeight: 1.4 }}>
       Contrats, santé, identité : ouvre le <strong>Coffre</strong> (Plus ou raccourci), sans mélange aux courses.
     </div>
-    <div style={{ fontSize: 10, color: C.text3, marginTop: 4 }}>{docVaultCount} référence(s)</div>
+    <div style={{ fontSize: 10, color: C.text3, marginTop: 4 }}>{formatReferences(docVaultCount)}</div>
   </div>
   <span style={{ fontSize: 18, fontWeight: 300, color: C.terra, flexShrink: 0 }} aria-hidden>
     ›
@@ -323,7 +366,7 @@ export function HomeTabPanel({
       <span style={{ fontSize: 10, color: C.text2 }}>
         {taskSummary != null ? (
           <>
-            {taskSummary.open_count} ouv. · {taskSummary.done_count} fait · {tasksCount} chargée(s)
+            {formatTasksOpen(taskSummary.open_count)} · {taskSummary.done_count} faites · {tasksCount} affichées
           </>
         ) : (
           <>{tasksCount} tâches</>
@@ -332,7 +375,7 @@ export function HomeTabPanel({
       <button
         type="button"
         disabled={!token || taskSummaryRefreshing}
-        title="Rafraîchir les compteurs serveur"
+        title="Rafraîchir les compteurs"
         onClick={() => void onRefreshTaskSummary()}
         style={{
           border: `1px solid ${C.border}`,

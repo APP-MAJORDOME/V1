@@ -1,4 +1,4 @@
-export type MainTab = 'home' | 'alfred' | 'modules' | 'moi' | 'agenda';
+export type MainTab = 'home' | 'salon' | 'alfred' | 'modules' | 'moi' | 'agenda';
 
 export type OverlayId =
   | 'plus'
@@ -21,29 +21,29 @@ export type AppLayerId = MainTab | OverlayId;
 
 export function resolveAppLayer(overlay: OverlayId | null, mainTab: MainTab): AppLayerId {
   if (overlay) return overlay;
-  if (mainTab === 'modules') return 'plus';
+  if (mainTab === 'modules') return 'moi';
   if (mainTab === 'alfred') return 'assistant';
   return mainTab;
 }
 
 /** Palette UI partagée (évite import circulaire depuis page.tsx). */
 export const MAJORDOME_PALETTE = {
-  bg: '#FEF9F5',
+  bg: '#FAF6F2',
   white: '#FFFFFF',
-  surface: '#FFF5F0',
+  surface: '#FFF8F4',
   surface2: '#F5EDE8',
   surface3: '#EDE3DE',
-  terra: '#D96B52',
-  terraL: '#F0896E',
-  terraXL: '#FDEAE5',
+  terra: '#C96B4A',
+  terraL: '#D4846A',
+  terraXL: '#F2DDD5',
   sage: '#6BA898',
   sageL: '#EAF4F1',
   blush: '#F2A98F',
   lilac: '#B49BD1',
   lilacL: '#F0EBFA',
   sun: '#F5B942',
-  text: '#2C1F1A',
-  text2: '#9A8882',
+  text: '#2A211C',
+  text2: '#6E5F56',
   text3: '#C8BAB5',
   border: '#EDE3DE',
   green: '#5BAA8A',

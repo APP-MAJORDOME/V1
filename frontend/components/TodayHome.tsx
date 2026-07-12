@@ -5,6 +5,7 @@ import { PLUS_HUB_ITEMS } from './PlusHub';
 import { MajordomeHomeLogo } from './BrandLogo';
 import { hubColor } from '../lib/moduleColors';
 import type { MentalWeather } from '../lib/mentalLoad';
+import { greetingFr } from '../lib/pluralize';
 
 export type TodayUrgency = {
   id: string;
@@ -42,6 +43,8 @@ function ModuleShortcutCard({
         background: C.white,
         cursor: 'pointer',
         minHeight: 88,
+        width: '100%',
+        minWidth: 0,
         position: 'relative',
         boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
         borderLeft: `4px solid ${accent}`,
@@ -107,6 +110,9 @@ export function TodayHome({
   morningMood,
   onMorningMood,
   partenaireName,
+  weeklyEquity,
+  onOpenEquity,
+  homeV2,
 }: {
   C: Record<string, string>;
   clientTodayLabel: string;
@@ -130,6 +136,9 @@ export function TodayHome({
   morningMood: number | null;
   onMorningMood: (index: number) => void;
   partenaireName: string;
+  weeklyEquity?: { name: string; pct: number; color: string }[];
+  onOpenEquity?: () => void;
+  homeV2?: boolean;
 }) {
   const shortcuts = hubShortcuts.slice(0, 4);
   const MOODS = ['😴', '😟', '😐', '🙂', '😄'] as const;
@@ -192,8 +201,8 @@ export function TodayHome({
         <p style={{ fontSize: 12, color: C.text2, margin: '0 0 4px' }} suppressHydrationWarning>
           {clientTodayLabel || '\u00a0'}
         </p>
-        <h1 style={{ fontSize: 28, margin: '0 0 6px', color: C.text, lineHeight: 1.1 }} suppressHydrationWarning>
-          Bonjour {firstName || 'toi'}
+        <h1 className="md-display" style={{ fontSize: 28, margin: '0 0 6px', color: C.text, lineHeight: 1.1 }} suppressHydrationWarning>
+          {greetingFr()} {firstName || 'toi'}
         </h1>
         <p style={{ fontSize: 16, fontWeight: 700, margin: 0, color: weather.accent }}>{weather.message}</p>
       </div>
@@ -302,8 +311,51 @@ export function TodayHome({
         </div>
       ) : null}
 
+      {/* Balance de la semaine (F1-4) */}
+      {weeklyEquity && weeklyEquity.length > 0 ? (
+        <button
+          type="button"
+          onClick={onOpenEquity}
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            marginBottom: 16,
+            padding: '14px 16px',
+            borderRadius: 18,
+            border: `1.5px solid ${C.border}`,
+            background: C.white,
+            cursor: onOpenEquity ? 'pointer' : 'default',
+          }}
+        >
+          <h2
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: C.text2,
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              margin: '0 0 10px',
+            }}
+          >
+            Balance de la semaine
+          </h2>
+          <div style={{ display: 'flex', gap: 4, height: 10, borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+            {weeklyEquity.map((e) => (
+              <div key={e.name} style={{ flex: Math.max(e.pct, 1), background: e.color }} />
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {weeklyEquity.map((e) => (
+              <span key={e.name} style={{ fontSize: 11, fontWeight: 700, color: e.color }}>
+                {e.name} {e.pct}%
+              </span>
+            ))}
+          </div>
+        </button>
+      ) : null}
+
       {/* KPI compact */}
-      {eventsToday + openTasksCount + remindersCount === 0 ? (
+      {!homeV2 && eventsToday + openTasksCount + remindersCount === 0 ? (
         <div
           className="empty-state"
           style={{
@@ -355,22 +407,12 @@ export function TodayHome({
             </button>
           </div>
         </div>
-      ) : (
-        <div
-          role="group"
-          aria-label="Résumé du jour"
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 8,
-            marginBottom: 16,
-          }}
-        >
+      ) : !homeV2 ? (
+        <div className="today-kpi-row" role="group" aria-label="Résumé du jour">
           <button
             type="button"
             onClick={onOpenAgenda}
             style={{
-              flex: '1 1 100px',
               padding: '12px 14px',
               borderRadius: 16,
               border: `1.5px solid ${C.border}`,
@@ -379,6 +421,7 @@ export function TodayHome({
               textAlign: 'left',
               fontSize: 14,
               color: C.text,
+              minWidth: 0,
             }}
           >
             <span style={{ marginRight: 8 }}>🗓</span>
@@ -388,7 +431,6 @@ export function TodayHome({
             type="button"
             onClick={onOpenTasks}
             style={{
-              flex: '1 1 100px',
               padding: '12px 14px',
               borderRadius: 16,
               border: `1.5px solid ${C.border}`,
@@ -397,6 +439,7 @@ export function TodayHome({
               textAlign: 'left',
               fontSize: 14,
               color: C.text,
+              minWidth: 0,
             }}
           >
             <span style={{ marginRight: 8 }}>✓</span>
@@ -407,7 +450,6 @@ export function TodayHome({
               type="button"
               onClick={() => onOpenHub('courses')}
               style={{
-                flex: '1 1 100px',
                 padding: '12px 14px',
                 borderRadius: 16,
                 border: `1.5px solid ${C.red}44`,
@@ -416,6 +458,7 @@ export function TodayHome({
                 textAlign: 'left',
                 fontSize: 14,
                 color: C.text,
+                minWidth: 0,
               }}
             >
               <span style={{ marginRight: 8 }}>🧊</span>
@@ -423,7 +466,7 @@ export function TodayHome({
             </button>
           ) : null}
         </div>
-      )}
+      ) : null}
 
       {/* Modules favoris */}
       {shortcuts.length > 0 ? (
@@ -440,7 +483,7 @@ export function TodayHome({
           >
             Tes modules
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="today-modules-grid">
             {shortcuts.map((hid) => (
               <ModuleShortcutCard
                 key={hid}
@@ -483,7 +526,7 @@ export function TodayHome({
       ) : null}
 
       {/* Débordée — contextuel */}
-      {showDebordee ? (
+      {showDebordee && !homeV2 ? (
         <div
           style={{
             padding: 16,

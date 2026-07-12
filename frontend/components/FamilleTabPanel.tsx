@@ -1,6 +1,7 @@
 'use client';
 
 import type { EquityShare } from '../lib/selectors';
+import type { EquityApiResponse } from '../hooks/useHouseholdEquity';
 
 function Pill({ children, bg, color }: { children: React.ReactNode; bg: string; color: string }) {
   return (
@@ -39,24 +40,29 @@ function GlassCard({
 export function FamilleTabPanel({
   C,
   equity,
+  equityMode,
+  onEquityModeChange,
+  suggestions,
+  onProposeTransfer,
   partenaireName,
-  partnerContactDraft,
-  onPartnerContactChange,
-  partnerNotifyLoading,
+  inviteUrl,
+  onShareInvite,
   onOpenEquiteModal,
-  onNotifyPartner,
-  onGoMoi,
+  onOpenPrivateSpace,
 }: {
   C: Record<string, string>;
   equity: EquityShare[];
+  equityMode?: 'execution' | 'planning' | 'combined';
+  onEquityModeChange?: (mode: 'execution' | 'planning' | 'combined') => void;
+  suggestions?: EquityApiResponse['suggestions'];
+  onProposeTransfer?: (taskId: string) => void;
   partenaireName: string;
-  partnerContactDraft: string;
-  onPartnerContactChange: (value: string) => void;
-  partnerNotifyLoading: boolean;
+  inviteUrl?: string;
+  onShareInvite?: () => void;
   onOpenEquiteModal: () => void;
-  onNotifyPartner: () => void;
-  onGoMoi: () => void;
+  onOpenPrivateSpace?: () => void;
 }) {
+  const mode = equityMode ?? 'combined';
   return (
     <div
       style={{
@@ -68,36 +74,76 @@ export function FamilleTabPanel({
       }}
     >
       <GlassCard C={C} style={{ padding: 14, marginBottom: 12 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, marginBottom: 8 }}>Répartition visible</div>
-        <div style={{ display: 'flex', gap: 4, height: 10, borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: C.text2, marginBottom: 4 }}>La semaine du foyer</div>
+        <p style={{ fontSize: 12, color: C.text2, margin: '0 0 10px', lineHeight: 1.45 }}>
+          Balance coopérative — l&apos;objectif est l&apos;équilibre, pas un classement.
+        </p>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          {(['execution', 'planning', 'combined'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onEquityModeChange?.(m)}
+              style={{
+                border: `1px solid ${mode === m ? C.terra : C.border}`,
+                borderRadius: 999,
+                padding: '6px 10px',
+                fontSize: 10,
+                fontWeight: 700,
+                background: mode === m ? C.terraXL : C.white,
+                color: mode === m ? C.terra : C.text2,
+                cursor: 'pointer',
+              }}
+            >
+              {m === 'execution' ? 'Exécution' : m === 'planning' ? 'Planification' : 'Les deux'}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 4, height: 12, borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
           {equity.map((e) => (
             <div key={e.name} style={{ flex: Math.max(e.pct, 1), background: e.color }} />
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           {equity.map((e) => (
             <Pill key={e.name} bg={`${e.color}20`} color={e.color}>
               {e.name} {e.pct}%
             </Pill>
           ))}
         </div>
-        <input
-          type="text"
-          value={partnerContactDraft}
-          onChange={(e) => onPartnerContactChange(e.target.value)}
-          placeholder={`Mobile ou e-mail de ${partenaireName} (optionnel)`}
-          aria-label={`Contact de ${partenaireName}`}
-          autoComplete="tel email"
-          style={{
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: 12,
-            border: `1.5px solid ${C.border}`,
-            fontSize: 12,
-            background: C.surface,
-            marginBottom: 10,
-          }}
-        />
+        {suggestions && suggestions.length > 0 ? (
+          <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+            {suggestions.map((s) => (
+              <div
+                key={s.task_id}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  background: C.surface,
+                  border: `1px solid ${C.border}`,
+                }}
+              >
+                <p style={{ fontSize: 12, color: C.text, margin: '0 0 8px', lineHeight: 1.45 }}>{s.message}</p>
+                <button
+                  type="button"
+                  onClick={() => onProposeTransfer?.(s.task_id)}
+                  style={{
+                    border: 'none',
+                    borderRadius: 10,
+                    padding: '8px 12px',
+                    background: C.terra,
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Proposer à {s.to}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <button
             type="button"
@@ -112,45 +158,44 @@ export function FamilleTabPanel({
               fontWeight: 700,
             }}
           >
-            Score équité hebdo
+            Voir le détail
           </button>
-          <button
-            type="button"
-            disabled={partnerNotifyLoading}
-            onClick={onNotifyPartner}
-            style={{
-              borderRadius: 10,
-              border: 'none',
-              padding: '8px 10px',
-              background: C.alex,
-              color: '#fff',
-              fontSize: 11,
-              fontWeight: 700,
-              opacity: partnerNotifyLoading ? 0.65 : 1,
-            }}
-          >
-            {partnerNotifyLoading ? 'Envoi…' : `Notifier ${partenaireName}`}
-          </button>
-          <button
-            type="button"
-            onClick={onGoMoi}
-            style={{
-              borderRadius: 10,
-              border: `1px solid ${C.border}`,
-              padding: '8px 10px',
-              background: C.white,
-              fontSize: 11,
-              fontWeight: 700,
-              color: C.text2,
-            }}
-          >
-            Zone « Moi »
-          </button>
+          {inviteUrl && onShareInvite ? (
+            <button
+              type="button"
+              onClick={onShareInvite}
+              style={{
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                padding: '8px 10px',
+                background: C.white,
+                fontSize: 11,
+                fontWeight: 700,
+                color: C.text,
+              }}
+            >
+              Inviter {partenaireName || 'un membre'}
+            </button>
+          ) : null}
+          {onOpenPrivateSpace ? (
+            <button
+              type="button"
+              onClick={onOpenPrivateSpace}
+              style={{
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                padding: '8px 10px',
+                background: C.white,
+                fontSize: 11,
+                fontWeight: 700,
+                color: C.text2,
+              }}
+            >
+              Mon espace privé
+            </button>
+          ) : null}
         </div>
       </GlassCard>
-      <p style={{ fontSize: 11, color: C.text3, lineHeight: 1.45, margin: 0 }}>
-        La carte complète charge mentale reste sur l&apos;accueil ; ici, raccourcis depuis le hub Plus.
-      </p>
     </div>
   );
 }

@@ -6,14 +6,16 @@ import { OverlayChrome } from './OverlayChrome';
 import { RecettesPanel } from './RecettesPanel';
 import { RoutinesPanel } from './RoutinesPanel';
 import { CourrierPanel } from './CourrierPanel';
-import { AlbumsPanel } from './AlbumsPanel';
 import { AnniversairesPanel } from './AnniversairesPanel';
 import { PoubellesPanel } from './PoubellesPanel';
-import { FamilleTempsReelPanel } from './FamilleTempsReelPanel';
-import { NotifsStubPanel } from './NotifsStubPanel';
+import { SalonFoyerPanel } from './SalonFoyerPanel';
 import { IntegrationsOverlayPanel } from './IntegrationsOverlayPanel';
+import { NotificationsCenterPanel } from './NotificationsCenterPanel';
+import { ComingSoonPanel } from './ComingSoonPanel';
+import { IconCamera } from './md-icons';
 import type { ConnectedAccountLike, IntegrationStatus } from '../lib/calendarIntegrations';
-
+import type { TodayUrgency } from './TodayHome';
+import type { SalonMessage } from '../lib/householdCaptures';
 const SECONDARY_OVERLAY_LAYERS = [
   'recettes',
   'routines',
@@ -51,6 +53,11 @@ export type AppSecondaryOverlaysProps = {
   onSyncGoogle: () => void;
   onSyncMicrosoft: () => void;
   onAlfredPrompt: (text: string) => void;
+  onOpenSalonTab?: () => void;
+  onApproveCapture?: (id: string) => void;
+  salonMessages?: SalonMessage[];
+  aiName?: string;
+  notificationItems?: TodayUrgency[];
 };
 
 export function AppSecondaryOverlays(props: AppSecondaryOverlaysProps): ReactNode {
@@ -87,19 +94,29 @@ export function AppSecondaryOverlays(props: AppSecondaryOverlaysProps): ReactNod
         />,
       );
     case 'albums':
-      return wrapOv('Souvenirs', <AlbumsPanel C={props.C} />);
+      return wrapOv('Souvenirs', <ComingSoonPanel C={props.C} title="Souvenirs" Icon={IconCamera} />);
     case 'anniversaires':
-      return wrapOv('Anniversaires', <AnniversairesPanel C={props.C} />);
+      return wrapOv('Anniversaires', <AnniversairesPanel C={props.C} token={props.token ?? undefined} />);
     case 'poubelles':
       return wrapOv('Poubelles & collecte', <PoubellesPanel C={props.C} />);
     case 'messages':
       return wrapOv(
-        'Famille temps réel',
-        <FamilleTempsReelPanel C={props.C} partenaire={props.partenaireName} enfant={props.enfantName} />,
+        'Salon du foyer',
+        <SalonFoyerPanel
+          C={props.C}
+          selfName={props.userFirstName}
+          partnerName={props.partenaireName}
+          aiName={props.aiName || 'Alfred'}
+          messages={props.salonMessages ?? []}
+          onApproveProposal={props.onApproveCapture}
+          onOpenCaptures={props.onOpenSalonTab}
+        />,
       );
     case 'notifs':
-      return wrapOv('Notifications', <NotifsStubPanel C={props.C} />);
-    case 'integrations':
+      return wrapOv(
+        'Notifications',
+        <NotificationsCenterPanel C={props.C} items={props.notificationItems ?? []} />,
+      );    case 'integrations':
       return wrapOv(
         'Intégrations tierces',
         <IntegrationsOverlayPanel

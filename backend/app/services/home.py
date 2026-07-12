@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session
@@ -47,6 +48,19 @@ def _parse_home_assistant_credentials(account: ConnectedAccount | None) -> tuple
     return base_url, token
 
 
+def home_assistant_active_for_user(db: Session, user_id: int) -> bool:
+    creds = _parse_home_assistant_credentials(_load_home_assistant_account(db=db, user_id=user_id))
+    return home_assistant_active_with_creds(creds)
+
+
+def home_assistant_active_with_creds(creds: tuple[str, str] | None) -> bool:
+    if creds is None:
+        return False
+    if (settings.home_adapter_mode or "").strip().lower() == "home_assistant":
+        return True
+    return bool(settings.home_assistant_auto_when_connected)
+
+
 def _mock_home_status() -> dict:
     return {
         "mode": "mock",
@@ -76,7 +90,7 @@ def _parse_home_device_action(command: str) -> dict[str, str] | None:
     lowered = text.lower()
     if not text:
         return None
-    if "lumi" in lowered:
+    if "lumi" in lowered or "lampe" in lowered or "interrupteur" in lowered or "prise" in lowered:
         capability = "lights"
     elif "radiateur" in lowered or "chauff" in lowered:
         capability = "heating"
@@ -89,10 +103,10 @@ def _parse_home_device_action(command: str) -> dict[str, str] | None:
     else:
         return None
 
-    if any(x in lowered for x in ("eteins", "éteins", "off", "arrete", "arrête")):
-        action = "off"
-    elif any(x in lowered for x in ("allume", "on", "active", "demarre", "démarre")):
-        action = "on"
+    if any(x in lowered for x in ("eteins", "éteins", "off", "arrete", "arrête", "ferme")):
+        action = "off" if capability != "opening" else "close"
+    elif any(x in lowered for x in ("allume", "on", "active", "demarre", "démarre", "ouvre")):
+        action = "on" if capability != "opening" else "open"
     elif any(x in lowered for x in ("baisse", "dim", "reduis", "réduis")):
         action = "down"
     elif any(x in lowered for x in ("augmente", "monte", "boost")):
@@ -162,6 +176,61 @@ def get_home_providers(db: Session, user_id: int) -> dict:
     return {"providers": providers}
 
 
+def diagnose_home_assistant(db: Session, user_id: int) -> dict[str, Any]:
+    """Vérifie si le VPS peut joindre l’instance HA de l’utilisateur."""
+    from urllib.parse import urlparse
+
+    account = _load_home_assistant_account(db=db, user_id=user_id)
+    creds = _parse_home_assistant_credentials(account)
+    active = home_assistant_active_with_creds(creds)
+    out: dict[str, Any] = {
+        "provider": "home_assistant",
+        "status": "not_connected",
+        "message": "Home Assistant non configuré — ajoute URL + token dans Intégrations.",
+        "adapter_mode": settings.home_adapter_mode,
+        "auto_when_connected": bool(settings.home_assistant_auto_when_connected),
+        "active_for_user": active,
+        "entity_count": 0,
+        "reachable_from_server": False,
+        "base_url_host": None,
+    }
+    if creds is None:
+        return out
+
+    base_url, token = creds
+    out["base_url_host"] = (urlparse(base_url).netloc or base_url)[:120]
+    try:
+        with httpx.Client(timeout=12) as client:
+            res = client.get(f"{base_url}/api/", headers={"Authorization": f"Bearer {token}"})
+            res.raise_for_status()
+        out["reachable_from_server"] = True
+        listing = _list_home_assistant_devices(db=db, user_id=user_id)
+        devices = listing.get("devices") if isinstance(listing.get("devices"), list) else []
+        out["entity_count"] = len(devices)
+        if not active:
+            out["status"] = "inactive_mode"
+            out["message"] = (
+                f"HA joignable ({out['entity_count']} entité(s)) mais pilotage inactif — "
+                "vérifie MAJORDOME_HOME_ASSISTANT_AUTO_WHEN_CONNECTED."
+            )
+        elif out["entity_count"] == 0:
+            out["status"] = "ok_empty"
+            out["message"] = "HA joignable depuis le serveur mais aucune entité contrôlable chargée."
+        else:
+            out["status"] = "ok"
+            out["message"] = (
+                f"Home Assistant OK depuis le serveur — {out['entity_count']} entité(s) pour Alfred."
+            )
+    except Exception as exc:
+        host = out.get("base_url_host") or "HA"
+        out["status"] = "unreachable"
+        out["message"] = (
+            f"Le serveur majordom.eu ne joint pas {host} ({str(exc).strip()[:100]}). "
+            "Utilise une URL publique, Nabu Casa ou un tunnel vers ton HA local."
+        )
+    return out
+
+
 def connect_home_assistant(db: Session, user_id: int, base_url: str, access_token: str) -> ConnectedAccount:
     cleaned_url = str(base_url or "").strip().rstrip("/")
     cleaned_token = str(access_token or "").strip()
@@ -220,6 +289,7 @@ def upsert_home_provider_credentials(
     *,
     username: str | None = None,
     password: str | None = None,
+    pin: str | None = None,
     access_token: str | None = None,
     base_url: str | None = None,
     external_account_id: str | None = None,
@@ -239,6 +309,8 @@ def upsert_home_provider_credentials(
         scoped["username"] = username.strip()
     if password is not None:
         scoped["password"] = encrypt_credential_field(password.strip())
+    if pin is not None:
+        scoped["pin"] = encrypt_credential_field(pin.strip())
     if access_token is not None:
         scoped["access_token"] = access_token.strip()
     if base_url is not None:
@@ -336,6 +408,108 @@ def test_home_provider_connection(db: Session, user_id: int, provider: str) -> d
                 "message": "Connexion TaHoma échouée (réseau ou identifiants).",
             }
 
+    if provider_id == "verisure":
+        try:
+            scoped = json.loads(account.scopes_json or "{}")
+        except Exception:
+            scoped = {}
+        username = str(scoped.get("username") or "").strip()
+        password = decrypt_credential_field(str(scoped.get("password") or ""))
+        if not username or not password:
+            return {
+                "provider": provider_id,
+                "status": "missing_credentials",
+                "message": "Renseigne email + mot de passe Verisure (My Pages) pour tester.",
+            }
+        try:
+            import verisure  # type: ignore[import-untyped]  # package: vsure
+
+            session = verisure.Session(username, password)
+            session.login()
+            return {
+                "provider": provider_id,
+                "status": "ok",
+                "message": "Connexion Verisure (My Pages) validée.",
+            }
+        except ImportError:
+            return {
+                "provider": provider_id,
+                "status": "missing_dependency",
+                "message": "Installe le paquet vsure sur le serveur (pip install vsure).",
+            }
+        except Exception as exc:
+            msg = str(exc).strip()[:180] or "identifiants ou MFA refusés"
+            return {
+                "provider": provider_id,
+                "status": "failed",
+                "message": f"Connexion Verisure échouée : {msg}",
+            }
+
+    if provider_id == "ezviz":
+        try:
+            scoped = json.loads(account.scopes_json or "{}")
+        except Exception:
+            scoped = {}
+        username = str(scoped.get("username") or "").strip()
+        password = decrypt_credential_field(str(scoped.get("password") or ""))
+        if not username or not password:
+            return {
+                "provider": provider_id,
+                "status": "missing_credentials",
+                "message": "Renseigne email + mot de passe Ezviz pour tester.",
+            }
+        try:
+            from pyezviz import EzvizClient  # type: ignore[import-untyped]
+
+            client = EzvizClient(account=username, password=password)
+            uid = client.get_user_id()
+            try:
+                cams = client.load_cameras() or {}
+                cam_count = len(cams) if isinstance(cams, dict) else 0
+            except Exception:
+                cam_count = 0
+            extra = f", {cam_count} caméra(s)" if cam_count else ""
+            return {
+                "provider": provider_id,
+                "status": "ok",
+                "message": f"Connexion Ezviz validée (compte {uid or 'OK'}{extra}).",
+            }
+        except ImportError:
+            return {
+                "provider": provider_id,
+                "status": "missing_dependency",
+                "message": "Paquet pyezviz manquant sur le serveur.",
+            }
+        except Exception as exc:
+            return {
+                "provider": provider_id,
+                "status": "failed",
+                "message": f"Connexion Ezviz échouée : {str(exc).strip()[:160]}",
+            }
+
+    if provider_id in {"google_home", "legrand_control", "lsc_smart_connect", "sharkclean"}:
+        ha = _load_home_assistant_account(db=db, user_id=user_id)
+        ha_ok = home_assistant_active_with_creds(_parse_home_assistant_credentials(ha))
+        if ha_ok:
+            listing = _list_home_assistant_devices(db=db, user_id=user_id)
+            count = len(listing.get("devices") or [])
+            return {
+                "provider": provider_id,
+                "status": "ok",
+                "message": (
+                    f"Pont Home Assistant actif ({count} entité(s)). "
+                    "Alfred peut piloter via HA — dis par ex. « éteins la lumière du salon »."
+                ),
+            }
+        return {
+            "provider": provider_id,
+            "status": "bridge_ha_required",
+            "message": (
+                "Identifiants enregistrés. Pour actions réelles : connecte Home Assistant "
+                "(URL + token) et définis MAJORDOME_HOME_ADAPTER_MODE=home_assistant sur le serveur."
+            ),
+        }
+
     return {
         "provider": provider_id,
         "status": "pending_api",
@@ -365,8 +539,240 @@ def _tahoma_login_context(scoped: dict[str, str]):
         return None, base_url, "login_failed"
 
 
+_HA_DEVICE_DOMAINS = frozenset({"light", "cover", "switch", "climate", "fan", "lock", "scene"})
+
+_HA_CAPABILITY_DOMAINS: dict[str, frozenset[str]] = {
+    "lights": frozenset({"light", "switch"}),
+    "heating": frozenset({"climate"}),
+    "ventilation": frozenset({"fan"}),
+    "opening": frozenset({"cover"}),
+    "scene": frozenset({"scene"}),
+}
+
+
+def _ha_domains_for_capability(capability_id: str) -> frozenset[str]:
+    return _HA_CAPABILITY_DOMAINS.get(capability_id, frozenset())
+
+
+def _ha_candidates(
+    devices: list[dict],
+    *,
+    lowered_command: str,
+    zone_hint: str,
+    capability_id: str,
+) -> list[dict]:
+    if not devices:
+        return []
+    allowed = _ha_domains_for_capability(capability_id)
+    if not allowed:
+        return []
+    normalized_zone = (zone_hint or "").strip().lower()
+    normalized_command = lowered_command.lower()
+    out: list[dict] = []
+
+    def name_matches(device: dict, token: str) -> bool:
+        if not token:
+            return False
+        name = str(device.get("name") or "").strip().lower()
+        entity = str(device.get("id") or "").strip().lower()
+        return token in name or token in entity.replace("_", " ")
+
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        domain = str(device.get("device_type") or "").strip().lower()
+        if domain not in allowed:
+            continue
+        if normalized_zone and name_matches(device, normalized_zone):
+            out.append(device)
+            continue
+        if not normalized_zone:
+            continue
+        if any(k in normalized_command for k in ("chambres", "chambre")) and "chambre" in str(
+            device.get("name") or ""
+        ).lower():
+            out.append(device)
+            continue
+        if any(k in normalized_command for k in ("rdc", "rez de chaussee", "rez-de-chaussee")) and any(
+            k in str(device.get("name") or "").lower() for k in ("rdc", "rez", "salon", "cuisine", "entree", "entrée")
+        ):
+            out.append(device)
+            continue
+        if any(k in normalized_command for k in ("etage", "étage")) and any(
+            k in str(device.get("name") or "").lower() for k in ("etage", "étage", "chambre", "bureau")
+        ):
+            out.append(device)
+
+    if out:
+        return out
+
+    if not normalized_zone:
+        return [d for d in devices if isinstance(d, dict) and str(d.get("device_type") or "") in allowed]
+
+    tokens = [t for t in re.split(r"[^a-z0-9àâäéèêëïîôùûüç]+", normalized_command) if len(t) >= 4]
+    fuzzy: list[dict] = []
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        if str(device.get("device_type") or "") not in allowed:
+            continue
+        label = str(device.get("name") or "").lower()
+        if any(t in label for t in tokens):
+            fuzzy.append(device)
+    return fuzzy[:12]
+
+
+def _list_home_assistant_devices(db: Session, user_id: int) -> dict:
+    account = _load_home_assistant_account(db=db, user_id=user_id)
+    creds = _parse_home_assistant_credentials(account)
+    if creds is None:
+        return {"provider": "home_assistant", "devices": [], "error": "not_configured"}
+    base_url, token = creds
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        with httpx.Client(timeout=12) as client:
+            response = client.get(f"{base_url}/api/states", headers=headers)
+            response.raise_for_status()
+            states = response.json()
+    except Exception:
+        return {"provider": "home_assistant", "devices": [], "error": "states_failed"}
+
+    devices: list[dict[str, str | bool | None]] = []
+    if isinstance(states, list):
+        for state in states[:200]:
+            if not isinstance(state, dict):
+                continue
+            entity_id = str(state.get("entity_id") or "").strip()
+            if not entity_id or "." not in entity_id:
+                continue
+            domain = entity_id.split(".", 1)[0]
+            if domain not in _HA_DEVICE_DOMAINS:
+                continue
+            attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
+            name = str(attrs.get("friendly_name") or entity_id).strip()[:160]
+            devices.append(
+                {
+                    "id": entity_id,
+                    "name": name,
+                    "provider": "home_assistant",
+                    "device_type": domain,
+                    "controllable": domain != "scene",
+                    "state": str(state.get("state") or "")[:40] or None,
+                }
+            )
+    devices.sort(key=lambda d: str(d.get("name") or "").lower())
+    return {"provider": "home_assistant", "devices": devices[:120]}
+
+
+def _ezviz_credentials_from_scoped(scoped: dict[str, Any]) -> tuple[str, str] | None:
+    username = str(scoped.get("username") or "").strip()
+    password = decrypt_credential_field(str(scoped.get("password") or ""))
+    if not username or not password:
+        return None
+    return username, password
+
+
+def _list_ezviz_devices(db: Session, user_id: int) -> dict:
+    account = _load_provider_account(db, user_id, "ezviz")
+    if account is None:
+        return {"provider": "ezviz", "devices": []}
+    try:
+        scoped = json.loads(account.scopes_json or "{}")
+    except Exception:
+        scoped = {}
+    creds = _ezviz_credentials_from_scoped(scoped)
+    if creds is None:
+        return {"provider": "ezviz", "devices": [], "error": "missing_credentials"}
+    username, password = creds
+    try:
+        from pyezviz import EzvizClient  # type: ignore[import-untyped]
+
+        client = EzvizClient(account=username, password=password)
+        cameras = client.load_cameras() or {}
+    except ImportError:
+        return {"provider": "ezviz", "devices": [], "error": "missing_dependency"}
+    except Exception:
+        return {"provider": "ezviz", "devices": [], "error": "login_failed"}
+
+    devices: list[dict[str, str | bool | None]] = []
+    if isinstance(cameras, dict):
+        for serial, data in list(cameras.items())[:80]:
+            serial_s = str(serial).strip()
+            if not serial_s:
+                continue
+            name = serial_s
+            device_type = "camera"
+            state: str | None = None
+            if isinstance(data, dict):
+                name = str(data.get("name") or serial_s).strip()[:160]
+                device_type = str(data.get("device_sub_category") or data.get("device_category") or "camera")[
+                    :120
+                ]
+                raw_status = data.get("status")
+                if raw_status is not None:
+                    state = str(raw_status)[:40]
+            devices.append(
+                {
+                    "id": serial_s,
+                    "name": name,
+                    "provider": "ezviz",
+                    "device_type": device_type,
+                    "state": state,
+                    "controllable": True,
+                }
+            )
+    return {"provider": "ezviz", "devices": devices}
+
+
+def _home_assistant_service_call(
+    base_url: str,
+    token: str,
+    entity_id: str,
+    action_id: str,
+) -> tuple[str, dict] | None:
+    domain = entity_id.split(".", 1)[0]
+    if domain == "cover":
+        service = {
+            "open": "open",
+            "close": "close",
+            "up": "open",
+            "down": "close",
+            "stop": "stop",
+            "on": "open",
+            "off": "close",
+        }.get(action_id)
+        if service:
+            return f"cover/{service}", {"entity_id": entity_id}
+    if domain in {"light", "switch", "fan"}:
+        service = {
+            "on": "turn_on",
+            "off": "turn_off",
+            "toggle": "toggle",
+            "open": "turn_on",
+            "close": "turn_off",
+        }.get(action_id)
+        if service:
+            return f"{domain}/{service}", {"entity_id": entity_id}
+    if domain == "climate":
+        service = {"on": "turn_on", "off": "turn_off", "toggle": "toggle"}.get(action_id)
+        if service:
+            return f"climate/{service}", {"entity_id": entity_id}
+    if domain == "lock":
+        service = {"on": "open", "off": "lock", "open": "open", "close": "lock"}.get(action_id)
+        if service:
+            return f"lock/{service}", {"entity_id": entity_id}
+    if domain == "scene" and action_id in {"on", "open", "activate", "toggle"}:
+        return "scene/turn_on", {"entity_id": entity_id}
+    return None
+
+
 def list_provider_devices(db: Session, user_id: int, provider: str) -> dict:
     provider_id = (provider or "").strip().lower()
+    if provider_id == "home_assistant":
+        return _list_home_assistant_devices(db=db, user_id=user_id)
+    if provider_id == "ezviz":
+        return _list_ezviz_devices(db=db, user_id=user_id)
+
     account = _load_provider_account(db, user_id, provider_id)
     if account is None:
         return {"provider": provider_id, "devices": []}
@@ -444,6 +850,118 @@ def execute_provider_device_action(
         scoped = json.loads(account.scopes_json or "{}")
     except Exception:
         scoped = {}
+
+    if provider_id == "home_assistant":
+        account = _load_home_assistant_account(db=db, user_id=user_id)
+        creds = _parse_home_assistant_credentials(account)
+        if creds is None:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "not_connected",
+                "message": "Home Assistant non configuré (URL/token).",
+            }
+        base_url, token = creds
+        call = _home_assistant_service_call(base_url, token, device, action_id)
+        if call is None:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "unsupported_action",
+                "message": f"Action « {action_id} » non supportée pour {device}.",
+            }
+        endpoint, payload = call
+        headers = {"Authorization": f"Bearer {token}"}
+        try:
+            with httpx.Client(timeout=12) as client:
+                response = client.post(
+                    f"{base_url}/api/services/{endpoint}",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "executed",
+                "message": "Action exécutée via Home Assistant.",
+            }
+        except Exception:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "failed",
+                "message": "Home Assistant n’a pas accepté la commande.",
+            }
+
+    if provider_id == "ezviz":
+        creds = _ezviz_credentials_from_scoped(scoped)
+        if creds is None:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "missing_credentials",
+                "message": "Identifiants Ezviz manquants.",
+            }
+        if action_id not in {"on", "off", "privacy_on", "privacy_off"}:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "unsupported_action",
+                "message": "Actions Ezviz : on, off, privacy_on, privacy_off.",
+            }
+        try:
+            from pyezviz import EzvizClient  # type: ignore[import-untyped]
+
+            username, password = creds
+            ez_client = EzvizClient(account=username, password=password)
+            ez_client.load_cameras()
+            cam = getattr(ez_client, "_cameras", {}).get(device)
+            if cam is None:
+                return {
+                    "provider": provider_id,
+                    "device_id": device,
+                    "action": action_id,
+                    "status": "device_not_found",
+                    "message": "Caméra introuvable sur le compte Ezviz.",
+                }
+            if action_id == "on":
+                cam.switch_sleep_mode(0)
+            elif action_id == "off":
+                cam.switch_sleep_mode(1)
+            elif action_id == "privacy_on":
+                cam.switch_privacy_mode(1)
+            else:
+                cam.switch_privacy_mode(0)
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "executed",
+                "message": "Commande Ezviz envoyée.",
+            }
+        except ImportError:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "missing_dependency",
+                "message": "Paquet pyezviz manquant sur le serveur.",
+            }
+        except Exception as exc:
+            return {
+                "provider": provider_id,
+                "device_id": device,
+                "action": action_id,
+                "status": "failed",
+                "message": f"Ezviz : {str(exc).strip()[:160]}",
+            }
 
     if provider_id != "tahoma":
         return {
@@ -765,7 +1283,7 @@ def execute_device_group_action(
 def get_home_status(db: Session, user_id: int) -> dict:
     account = _load_home_assistant_account(db=db, user_id=user_id)
     creds = _parse_home_assistant_credentials(account)
-    if settings.home_adapter_mode != "home_assistant" or creds is None:
+    if not home_assistant_active_with_creds(creds):
         return _mock_home_status()
 
     base_url, token = creds
@@ -801,6 +1319,176 @@ def get_home_status(db: Session, user_id: int) -> dict:
     }
 
 
+def _execute_home_assistant_inferred(
+    db: Session,
+    user_id: int,
+    parsed: dict[str, str],
+    lowered: str,
+) -> dict:
+    creds = _parse_home_assistant_credentials(_load_home_assistant_account(db=db, user_id=user_id))
+    if not home_assistant_active_with_creds(creds):
+        return execute_device_control(
+            db=db,
+            user_id=user_id,
+            provider="home_assistant",
+            capability=parsed["capability"],
+            action=parsed["action"],
+            target=parsed.get("zone") or None,
+        )
+
+    listing = _list_home_assistant_devices(db=db, user_id=user_id)
+    devices = listing.get("devices") if isinstance(listing.get("devices"), list) else []
+    capability_id = parsed["capability"]
+    action_id = parsed["action"]
+    zone = (parsed.get("zone") or "").strip().lower()
+
+    if not devices:
+        return {
+            "provider": "home_assistant",
+            "capability": capability_id,
+            "action": action_id,
+            "target": zone or None,
+            "status": "no_device_found",
+            "message": "Home Assistant est connecté mais aucune entité n’a été chargée.",
+        }
+
+    if capability_id == "scene":
+        scenes = [d for d in devices if isinstance(d, dict) and str(d.get("device_type") or "") == "scene"]
+        picked_scene: dict | None = None
+        if zone:
+            matches = [s for s in scenes if zone in str(s.get("name") or "").lower()]
+            if len(matches) == 1:
+                picked_scene = matches[0]
+        if picked_scene is None:
+            for token in ("soir", "nuit", "matin", "jour", "absent"):
+                if token in lowered:
+                    matches = [s for s in scenes if token in str(s.get("name") or "").lower()]
+                    if len(matches) == 1:
+                        picked_scene = matches[0]
+                        break
+        if picked_scene is None and len(scenes) == 1:
+            picked_scene = scenes[0]
+        if picked_scene is not None:
+            out = execute_provider_device_action(
+                db=db,
+                user_id=user_id,
+                provider="home_assistant",
+                device_id=str(picked_scene.get("id") or ""),
+                action="on",
+            )
+            out["message"] = f"Scène « {picked_scene.get('name') or picked_scene.get('id')} » activée."
+            return out
+
+    entity_match = re.search(
+        r"\b(light|switch|cover|climate|fan|lock|scene)\.[a-z0-9_]+\b",
+        lowered,
+    )
+    if entity_match:
+        entity_id = entity_match.group(0)
+        out = execute_provider_device_action(
+            db=db,
+            user_id=user_id,
+            provider="home_assistant",
+            device_id=entity_id,
+            action=action_id,
+        )
+        out["message"] = f"Commande envoyée à {entity_id} via Home Assistant."
+        return out
+
+    request_all = any(k in lowered for k in ("tous", "toutes", "tout ", "all "))
+    candidates = _ha_candidates(
+        [x for x in devices if isinstance(x, dict)],
+        lowered_command=lowered,
+        zone_hint=zone,
+        capability_id=capability_id,
+    )
+
+    mass_confirmed = any(
+        phrase in lowered
+        for phrase in (
+            "confirme toutes les lumieres",
+            "confirme toutes les lumières",
+            "confirme tous les radiateurs",
+            "confirme toutes les prises",
+        )
+    ) or ("confirme" in lowered and "home assistant" in lowered and request_all)
+
+    if mass_confirmed and candidates:
+        ok = 0
+        for device in candidates:
+            out = execute_provider_device_action(
+                db=db,
+                user_id=user_id,
+                provider="home_assistant",
+                device_id=str(device.get("id") or ""),
+                action=action_id,
+            )
+            if str(out.get("status")) == "executed":
+                ok += 1
+        return {
+            "provider": "home_assistant",
+            "capability": capability_id,
+            "action": action_id,
+            "target": zone or None,
+            "status": "executed" if ok > 0 else "failed",
+            "message": f"Action appliquée sur {ok}/{len(candidates)} entité(s) Home Assistant.",
+        }
+
+    if request_all and len(candidates) > 1:
+        labels = ", ".join(str(c.get("name") or c.get("id") or "") for c in candidates[:6])
+        return {
+            "provider": "home_assistant",
+            "capability": capability_id,
+            "action": action_id,
+            "target": zone or None,
+            "status": "requires_mass_confirm",
+            "message": (
+                f"J’ai trouvé {len(candidates)} entités ({labels}). "
+                "Confirme : « confirme toutes les lumières » (ou précise une pièce)."
+            ),
+        }
+
+    if len(candidates) > 1:
+        labels = ", ".join(str(c.get("name") or "") for c in candidates[:5])
+        return {
+            "provider": "home_assistant",
+            "capability": capability_id,
+            "action": action_id,
+            "target": zone or None,
+            "status": "ambiguous",
+            "message": (
+                f"Plusieurs appareils correspondent ({labels}). "
+                "Précise la pièce (ex. salon) ou le nom exact de l’entité."
+            ),
+        }
+
+    if len(candidates) == 1:
+        picked = candidates[0]
+        out = execute_provider_device_action(
+            db=db,
+            user_id=user_id,
+            provider="home_assistant",
+            device_id=str(picked.get("id") or ""),
+            action=action_id,
+        )
+        label = str(picked.get("name") or picked.get("id") or "appareil")
+        if str(out.get("status")) == "executed":
+            out["message"] = f"Action « {action_id} » sur « {label} » via Home Assistant."
+        return out
+
+    return {
+        "provider": "home_assistant",
+        "capability": capability_id,
+        "action": action_id,
+        "target": zone or None,
+        "status": "no_device_found",
+        "message": (
+            "Aucune entité Home Assistant trouvée pour cette commande. "
+            "Recharge les appareils dans Intégrations ou précise le nom (ex. light.salon)."
+        ),
+    }
+
+
 def execute_device_control(
     db: Session,
     user_id: int,
@@ -828,36 +1516,35 @@ def execute_device_control(
     if provider_id == "home_assistant":
         account = _load_home_assistant_account(db=db, user_id=user_id)
         creds = _parse_home_assistant_credentials(account)
-        if settings.home_adapter_mode == "home_assistant" and creds is not None:
-            base_url, token = creds
-            headers = {"Authorization": f"Bearer {token}"}
-            if capability_id == "scene":
-                scene = (target_id or "soir").replace(" ", "_")
-                payload = {"entity_id": f"scene.{scene}"}
-                endpoint = "scene/turn_on"
-            else:
-                domain = "light" if capability_id == "lights" else ("climate" if capability_id == "heating" else "fan")
-                verb = "turn_on" if action_id in {"on", "up"} else "turn_off"
-                payload = {"entity_id": "all"}
-                endpoint = f"{domain}/{verb}"
-            try:
-                with httpx.Client(timeout=10) as client:
-                    response = client.post(
-                        f"{base_url}/api/services/{endpoint}",
-                        headers=headers,
-                        json=payload,
+        if home_assistant_active_with_creds(creds):
+            if target_id:
+                listing = _list_home_assistant_devices(db=db, user_id=user_id)
+                devices = listing.get("devices") if isinstance(listing.get("devices"), list) else []
+                candidates = _ha_candidates(
+                    [x for x in devices if isinstance(x, dict)],
+                    lowered_command=target_id,
+                    zone_hint=target_id,
+                    capability_id=capability_id,
+                )
+                if len(candidates) == 1:
+                    return execute_provider_device_action(
+                        db=db,
+                        user_id=user_id,
+                        provider="home_assistant",
+                        device_id=str(candidates[0].get("id") or ""),
+                        action=action_id,
                     )
-                    response.raise_for_status()
-                return {
-                    "provider": provider_id,
-                    "capability": capability_id,
-                    "action": action_id,
-                    "target": target_id,
-                    "status": "executed",
-                    "message": "Action domotique exécutée via Home Assistant.",
-                }
-            except Exception:
-                pass
+            parsed = {
+                "capability": capability_id,
+                "action": action_id,
+                "zone": target_id or "",
+            }
+            return _execute_home_assistant_inferred(
+                db=db,
+                user_id=user_id,
+                parsed=parsed,
+                lowered=f"{action_id} {capability_id} {target_id or ''}",
+            )
         return {
             "provider": provider_id,
             "capability": capability_id,
@@ -883,6 +1570,22 @@ def execute_device_control(
 
 
 def infer_and_execute_device_control(command: str, db: Session, user_id: int) -> dict:
+    from app.services.ezviz_control import execute_ezviz_camera_action
+    from app.services.home_provider_bridge import home_control_setup_hint, try_home_assistant_bridge
+    from app.services.verisure_control import execute_verisure_alarm_action
+
+    ez = execute_ezviz_camera_action(db, user_id, command)
+    if ez is not None:
+        return ez
+
+    vs = execute_verisure_alarm_action(db, user_id, command)
+    if vs is not None:
+        return vs
+
+    bridge = try_home_assistant_bridge(db, user_id, command)
+    if bridge is not None:
+        return bridge
+
     lowered = (command or "").lower()
     parsed = _parse_home_device_action(command)
     if not parsed:
@@ -892,7 +1595,7 @@ def infer_and_execute_device_control(command: str, db: Session, user_id: int) ->
             "action": "unknown",
             "target": None,
             "status": "unsupported_command",
-            "message": "Commande domotique non reconnue.",
+            "message": "Commande domotique non reconnue. " + home_control_setup_hint(db, user_id),
         }
     # Priorité TaHoma sur les demandes de volets/stores ou mention explicite.
     if any(k in lowered for k in ("tahoma", "volet", "volets", "store", "stores")):
@@ -994,20 +1697,13 @@ def infer_and_execute_device_control(command: str, db: Session, user_id: int) ->
             action=parsed["action"],
         )
 
-    return execute_device_control(
-        db=db,
-        user_id=user_id,
-        provider="home_assistant",
-        capability=parsed["capability"],
-        action=parsed["action"],
-        target=parsed["zone"] or None,
-    )
+    return _execute_home_assistant_inferred(db=db, user_id=user_id, parsed=parsed, lowered=lowered)
 
 
 def execute_scene(scene_id: str, db: Session, user_id: int) -> dict:
     account = _load_home_assistant_account(db=db, user_id=user_id)
     creds = _parse_home_assistant_credentials(account)
-    if settings.home_adapter_mode != "home_assistant" or creds is None:
+    if not home_assistant_active_with_creds(creds):
         return {"scene_id": scene_id, "status": "executed_mock"}
 
     base_url, token = creds

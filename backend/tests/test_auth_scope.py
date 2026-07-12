@@ -60,6 +60,17 @@ def test_integrations_capabilities_returns_apple_caldav_flag():
     data = r.json()
     assert "apple_caldav_available" in data
     assert isinstance(data["apple_caldav_available"], bool)
+    for key in (
+        "microsoft_oauth_configured",
+        "google_oauth_configured",
+        "drive_automation_enabled",
+        "home_assistant_auto_when_connected",
+        "llm_configured",
+        "realtime_configured",
+        "telegram_configured",
+    ):
+        assert key in data
+        assert isinstance(data[key], bool)
 
 
 def test_tasks_summary_returns_counts():

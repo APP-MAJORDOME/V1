@@ -45,12 +45,11 @@ export const PLUS_HUB_ITEMS: {
   Icon: ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 }[] = [
   { id: 'maison', label: 'Maison', hint: 'Domotique · jardin', Icon: IconHouseCare },
-  { id: 'courses', label: 'Courses & Frigo', hint: 'Liste · DLC · wallet', Icon: IconCart },
+  { id: 'courses', label: 'Courses & Frigo', hint: 'Liste · DLC · fidélité', Icon: IconCart },
   { id: 'recettes', label: 'Recettes', hint: 'Boîte famille · liste', Icon: IconKitchen },
   { id: 'routines', label: 'Routines', hint: 'Quotidien · semaine', Icon: IconBoltSoft },
   { id: 'famille', label: 'Famille & équité', hint: 'Foyer · partenaire', Icon: IconPeopleOutline },
-  { id: 'messages', label: 'Famille temps réel', hint: 'Messagerie · lieux partagés', Icon: IconMessageBubble },
-  { id: 'wallet', label: 'Wallet', hint: 'Fidélité · coupons', Icon: IconWallet },
+  { id: 'messages', label: 'Salon foyer', hint: 'Conversation · captures Alfred', Icon: IconMessageBubble },
   { id: 'documents', label: 'Coffre', hint: 'Documents foyer', Icon: IconFolderVault },
   { id: 'courrier', label: 'Courrier IA', hint: 'École · santé · admin', Icon: IconMail },
   { id: 'anniversaires', label: 'Anniversaires', hint: 'Calendrier · cadeaux', Icon: IconGift },
@@ -61,7 +60,7 @@ export const PLUS_HUB_ITEMS: {
 ];
 
 /** Modules affichés dans la section « Bientôt disponible » (non interactifs). */
-export const COMING_SOON_HUB_IDS: HubKey[] = ['messages'];
+export const COMING_SOON_HUB_IDS: HubKey[] = [];
 
 const HUB_CATEGORIES: { title: string; ids: HubKey[] }[] = [
   {
@@ -74,7 +73,7 @@ const HUB_CATEGORIES: { title: string; ids: HubKey[] }[] = [
   },
   {
     title: 'Outils',
-    ids: ['wallet', 'notifs', 'integrations'],
+    ids: ['notifs', 'integrations'],
   },
 ];
 
@@ -85,23 +84,36 @@ export function PlusHub({
   C,
   userFirstName,
   alfredNoteCount = 0,
+  embedded = false,
 }: {
   onOpen: (id: HubKey) => void;
   C: Record<string, string>;
   /** Carte type V9 « Bonjour … » */
   userFirstName?: string;
   alfredNoteCount?: number;
+  /** Intégré dans l’onglet Moi (sans doublon compte / padding plein écran). */
+  embedded?: boolean;
 }) {
   const byId = Object.fromEntries(PLUS_HUB_ITEMS.map((i) => [i.id, i])) as Record<HubKey, (typeof PLUS_HUB_ITEMS)[number]>;
 
   return (
-    <div style={{ padding: '14px 18px 100px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+    <div
+      style={
+        embedded
+          ? { padding: '0 0 8px' }
+          : { padding: '14px 18px 100px', height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }
+      }
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        <IconDotsGrid size={26} color={C.terra} strokeWidth={1.65} />
+        <IconDotsGrid size={embedded ? 22 : 26} color={C.terra} strokeWidth={1.65} />
         <div>
-          <h2 style={{ margin: 0, fontSize: 22, color: C.text }}>Tout l&apos;univers</h2>
+          <h2 style={{ margin: 0, fontSize: embedded ? 18 : 22, color: C.text }}>
+            {embedded ? 'Modules du foyer' : "Tout l'univers"}
+          </h2>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: C.text2, lineHeight: 1.45 }}>
-            Tous les modules du foyer — agenda, courses, documents, bien-être et plus.
+            {embedded
+              ? 'Courses, maison, documents, intégrations — tout le foyer depuis ton espace.'
+              : 'Tous les modules du foyer — agenda, courses, documents, bien-être et plus.'}
           </p>
         </div>
       </div>
@@ -201,37 +213,39 @@ export function PlusHub({
           })}
         </div>
       </section>
-      <section style={{ marginBottom: 12 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: C.text2,
-            letterSpacing: 0.8,
-            textTransform: 'uppercase',
-            marginBottom: 8,
-          }}
-        >
-          Compte
-        </div>
-        <Link
-          href="/settings"
-          style={{
-            display: 'block',
-            padding: 14,
-            borderRadius: 18,
-            border: `1.5px solid ${C.border}`,
-            background: C.surface,
-            textDecoration: 'none',
-            color: C.text,
-            minHeight: 100,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 800 }}>Réglages</div>
-          <div style={{ fontSize: 10, color: C.text3, marginTop: 4 }}>Connexions · compte</div>
-        </Link>
-      </section>
-      {userFirstName ? (
+      {!embedded ? (
+        <section style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: C.text2,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              marginBottom: 8,
+            }}
+          >
+            Compte
+          </div>
+          <Link
+            href="/settings"
+            style={{
+              display: 'block',
+              padding: 14,
+              borderRadius: 18,
+              border: `1.5px solid ${C.border}`,
+              background: C.surface,
+              textDecoration: 'none',
+              color: C.text,
+              minHeight: 100,
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 800 }}>Réglages</div>
+            <div style={{ fontSize: 10, color: C.text3, marginTop: 4 }}>Connexions · compte</div>
+          </Link>
+        </section>
+      ) : null}
+      {!embedded && userFirstName ? (
         <div
           style={{
             marginTop: 4,
@@ -245,10 +259,10 @@ export function PlusHub({
           <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginTop: 6, lineHeight: 1.4 }}>
             Bonjour {userFirstName}.{' '}
             {alfredNoteCount === 0
-              ? 'Aucune note mémorisée par Alfred sur cet appareil.'
+              ? 'Mémoire du foyer vide pour l\'instant.'
               : alfredNoteCount === 1
-                ? '1 note mémorisée par Alfred sur cet appareil.'
-                : `${alfredNoteCount} notes mémorisées par Alfred sur cet appareil.`}
+                ? '1 fait mémorisé dans la mémoire du foyer.'
+                : `${alfredNoteCount} faits mémorisés dans la mémoire du foyer.`}
           </div>
           <LocalDataNotice C={C} compact />
         </div>

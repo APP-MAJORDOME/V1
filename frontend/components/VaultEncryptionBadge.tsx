@@ -27,7 +27,7 @@ export function VaultEncryptionBadge({
         ...style,
       }}
     >
-      Coffre chiffré sur le serveur
+      Coffre chiffré et sécurisé
     </span>
   );
 }

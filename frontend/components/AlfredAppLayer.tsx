@@ -75,6 +75,7 @@ export function AlfredAppLayer({
       onToggleRealtime={() => void alfred.toggleOpenAiRealtimeVoice()}
       onSuggestion={(text) => void alfred.sendAssistant(text)}
       onConfirmPending={(cmd, intent, proposal) => void alfred.confirmAlfredAction(cmd, intent, proposal)}
+      onFillDriveCart={(sk) => void alfred.fillDriveCart(sk)}
       onOpenVault={onOpenVault}
       onOpenDocument={onOpenDocument}
       onAction={(actionId) => {
@@ -92,6 +93,10 @@ export function AlfredAppLayer({
         }
         if (actionId === 'famille') {
           onNavigate({ overlay: 'famille' });
+          return;
+        }
+        if (actionId === 'integrations') {
+          onNavigate({ overlay: 'integrations' });
         }
       }}
     />

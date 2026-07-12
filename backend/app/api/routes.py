@@ -58,6 +58,8 @@ from app.models.models import (
     Opportunity,
     HouseholdDocument,
     HouseholdMemoryFact,
+    HouseholdSalonMessage,
+    HouseholdCapture,
     TaskDelegation,
     GroceryItem,
     HouseholdFridgeItem,
@@ -83,6 +85,7 @@ from app.schemas.schemas import (
     AgentRealtimeStatusResponse,
     LoginRequest,
     RegisterRequest,
+    JoinHouseholdRequest,
     LoginResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
@@ -131,6 +134,7 @@ from app.schemas.schemas import (
     HomeProvidersResponse,
     HomeDeviceControlRequest,
     HomeDeviceControlResponse,
+    HomeAssistantDiagnosticResponse,
     HomeProviderTestResponse,
     HomeProviderDevicesResponse,
     HomeProviderDeviceActionRequest,
@@ -147,7 +151,9 @@ from app.schemas.schemas import (
     HomeProviderCredentialsUpsertRequest,
     GoogleOAuthStartResponse,
     GoogleOAuthCallbackResponse,
+    HomeAssistantConnectResponse,
     IntegrationCapabilitiesResponse,
+    HubOverviewResponse,
     IntegrationStatusResponse,
     HouseholdDocumentRead,
     HouseholdDocumentCreate,
@@ -166,6 +172,21 @@ from app.schemas.schemas import (
     UserVaultSecretCreate,
     UserVaultSecretPatch,
     UserVaultSecretRevealResponse,
+    VerisureAlarmRequest,
+    DriveAutomateLoginResponse,
+    DriveFillCartResponse,
+    DrivePrepareResponse,
+    DriveStatusListResponse,
+    HouseholdSalonMessageCreate,
+    HouseholdSalonMessageRead,
+    HouseholdCaptureRead,
+    HouseholdCapturePatch,
+    HouseholdSalonAnalyzeResponse,
+    HouseholdCaptureApplyResponse,
+    HouseholdBirthdayRead,
+    HouseholdBirthdayCreate,
+    AccountDeletionStatusRead,
+    AccountExportResponse,
 )
 from app.services.briefing import build_today_briefing
 from app.services.agent import analyze_debordee, interpret_command
@@ -179,6 +200,43 @@ from app.services import document_attachments as doc_attach
 from app.services.document_storage_usage import household_attachment_bytes_used
 from app.services.household_documents import default_document_templates
 from app.services.vault_crypto import vault_encryption_enabled
+from app.services.drive_integration import (
+    automate_drive_login,
+    fill_drive_cart,
+    list_drive_status,
+    prepare_drive_session,
+)
+from app.services.verisure_control import execute_verisure_alarm_by_action
+from app.services.hub_registry import build_hub_overview
+from app.services.household_salon import (
+    analyze_salon_conversation,
+    create_salon_message,
+    list_household_captures,
+    list_salon_messages,
+    patch_capture_status,
+    seed_salon_demo,
+)
+from app.services.household_equity import compute_household_equity
+from app.services.household_proactive import get_household_invite_info, run_proactive_household_tick
+from app.services.household_join import (
+    find_household_by_invite_code,
+    join_household_by_code,
+    list_household_ids_for_user,
+    preview_invite,
+    user_has_household_access,
+)
+from app.services.subscription import can_create_capture, get_subscription_status, increment_capture_usage
+from app.services.household_birthdays import (
+    create_household_birthday,
+    delete_household_birthday,
+    list_household_birthdays,
+)
+from app.services.account_privacy import (
+    cancel_account_deletion,
+    deletion_grace_ends_at,
+    export_household_data,
+    request_account_deletion,
+)
 from app.services.user_secrets_vault import (
     create_user_vault_secret,
     delete_user_vault_secret,
@@ -194,6 +252,7 @@ from app.services.home import (
     get_home_providers,
     execute_device_control,
     connect_home_assistant,
+    diagnose_home_assistant,
     connect_home_provider,
     upsert_home_provider_credentials,
     test_home_provider_connection,
@@ -314,6 +373,8 @@ def integrations_status(auth: AuthContext = Depends(get_current_auth_context), d
     microsoft = by_provider.get("microsoft_calendar")
     apple = by_provider.get("apple_calendar")
     home_assistant = by_provider.get("home_assistant")
+    telegram = by_provider.get("telegram")
+    whatsapp = by_provider.get("whatsapp")
 
     _key = (settings.llm_api_key or "").strip()
     _prov = settings.llm_provider.lower()
@@ -347,7 +408,10 @@ def integrations_status(auth: AuthContext = Depends(get_current_auth_context), d
         },
         {
             "provider": "home_assistant",
-            "configured": settings.home_adapter_mode == "home_assistant",
+            "configured": bool(
+                settings.home_assistant_auto_when_connected
+                or settings.home_adapter_mode == "home_assistant"
+            ),
             "connected": home_assistant is not None and home_assistant.status == "connected",
             "status": home_assistant.status if home_assistant else "not_connected",
         },
@@ -357,12 +421,56 @@ def integrations_status(auth: AuthContext = Depends(get_current_auth_context), d
             "connected": _llm_ready,
             "status": _llm_status,
         },
+        {
+            "provider": "telegram",
+            "configured": bool((settings.telegram_bot_token or "").strip()),
+            "connected": telegram is not None and telegram.status == "connected",
+            "status": telegram.status if telegram else "not_connected",
+        },
+        {
+            "provider": "whatsapp",
+            "configured": bool(
+                (settings.whatsapp_access_token or "").strip()
+                and (settings.whatsapp_phone_number_id or "").strip()
+            ),
+            "connected": whatsapp is not None and whatsapp.status == "connected",
+            "status": whatsapp.status if whatsapp else "not_connected",
+        },
     ]
 
 
 @router.get("/integrations/capabilities", response_model=IntegrationCapabilitiesResponse)
 def integrations_capabilities(_auth: AuthContext = Depends(get_current_auth_context)):
-    return IntegrationCapabilitiesResponse(apple_caldav_available=CALDAV_AVAILABLE)
+    key = (settings.llm_api_key or "").strip()
+    prov = (settings.llm_provider or "").lower()
+    llm_ready = prov in {"openai", "chatgpt", "anthropic", "claude"} and bool(key)
+    return IntegrationCapabilitiesResponse(
+        apple_caldav_available=CALDAV_AVAILABLE,
+        microsoft_oauth_configured=bool(
+            settings.microsoft_oauth_client_id and settings.microsoft_oauth_client_secret
+        ),
+        google_oauth_configured=bool(
+            settings.google_oauth_client_id and settings.google_oauth_client_secret
+        ),
+        drive_automation_enabled=bool(settings.drive_automation_enabled),
+        home_assistant_auto_when_connected=bool(settings.home_assistant_auto_when_connected),
+        llm_configured=llm_ready,
+        realtime_configured=llm_ready,
+        vault_secrets_enabled=bool(settings.vault_secrets_enabled),
+        telegram_configured=bool((settings.telegram_bot_token or "").strip()),
+        whatsapp_configured=bool(
+            (settings.whatsapp_access_token or "").strip()
+            and (settings.whatsapp_phone_number_id or "").strip()
+        ),
+    )
+
+
+@router.get("/integrations/hub", response_model=HubOverviewResponse)
+def integrations_hub_overview(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return build_hub_overview(db=db, user_id=auth.user_id)
 
 
 @router.post("/integrations/apple/connect", response_model=ConnectedAccountRead)
@@ -406,40 +514,25 @@ def connect_apple_calendar(
     return account
 
 
-@router.post("/integrations/home-assistant/connect", response_model=ConnectedAccountRead)
-def connect_home_assistant(
-    payload: dict,
+@router.post("/integrations/home-assistant/connect", response_model=HomeAssistantConnectResponse)
+def connect_home_assistant_route(
+    payload: HomeAssistantConnectRequest,
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
-    base_url = str(payload.get("base_url") or "").strip().rstrip("/")
-    access_token = str(payload.get("access_token") or "").strip()
-    if not base_url or not access_token:
-        raise api_error("home_assistant_credentials_required", "Home Assistant base_url and access_token are required.", 400)
-
-    account = (
-        db.query(ConnectedAccount)
-        .filter(
-            ConnectedAccount.user_id == auth.user_id,
-            ConnectedAccount.provider == "home_assistant",
-        )
-        .first()
+    account = connect_home_assistant(
+        db=db,
+        user_id=auth.user_id,
+        base_url=payload.base_url,
+        access_token=payload.access_token,
     )
-    secret_payload = {"base_url": base_url, "access_token": access_token}
-    if account is None:
-        account = ConnectedAccount(
-            user_id=auth.user_id,
-            provider="home_assistant",
-            status="connected",
-            scopes_json=json.dumps(secret_payload),
-        )
-        db.add(account)
-    else:
-        account.scopes_json = json.dumps(secret_payload)
-        account.status = "connected"
-    db.commit()
-    db.refresh(account)
-    return account
+    diag = diagnose_home_assistant(db=db, user_id=auth.user_id)
+    return HomeAssistantConnectResponse(
+        id=account.id,
+        provider=account.provider,
+        status=account.status,
+        diagnostic=diag,
+    )
 
 
 @router.get("/integrations/google/oauth/callback")
@@ -573,16 +666,31 @@ def _resolve_household_for_user(
 ) -> Household:
     if requested_household_id is not None:
         household = db.get(Household, requested_household_id)
-        if household is None or household.owner_user_id != user.id:
+        if household is None or not user_has_household_access(
+            db, user_id=user.id, household_id=requested_household_id
+        ):
             raise api_error("household_forbidden", "You cannot access this household.", 403)
         return household
-    household = db.query(Household).filter(Household.owner_user_id == user.id).order_by(Household.id.asc()).first()
-    if household is None:
-        household = Household(name=f"Foyer de {user.full_name}", owner_user_id=user.id)
-        db.add(household)
-        db.commit()
-        db.refresh(household)
+    ids = list_household_ids_for_user(db, user.id)
+    if ids:
+        household = db.get(Household, ids[0])
+        if household is not None:
+            return household
+    household = Household(name=f"Foyer de {user.full_name}", owner_user_id=user.id)
+    db.add(household)
+    db.commit()
+    db.refresh(household)
     return household
+
+
+def _apply_invite_code(db: Session, *, user: User, invite_code: str | None) -> Household | None:
+    cleaned = (invite_code or "").strip()
+    if not cleaned:
+        return None
+    try:
+        return join_household_by_code(db, user=user, invite_code=cleaned)
+    except ValueError:
+        raise api_error("invite_not_found", "Code d'invitation invalide ou expiré.", 404) from None
 
 
 def _issue_login_tokens(db: Session, *, user: User, household_id: int | None = None) -> LoginResponse:
@@ -595,6 +703,11 @@ def _issue_login_tokens(db: Session, *, user: User, household_id: int | None = N
         user_id=user.id,
         household_id=household.id,
     )
+
+
+@router.get("/public/household/invite/{code}")
+def public_household_invite_preview(code: str, db: Session = Depends(get_db)):
+    return preview_invite(db, code)
 
 
 @router.post("/auth/register", response_model=LoginResponse)
@@ -610,11 +723,19 @@ def register(
     if db.query(User).filter(User.email == email).first() is not None:
         log_event("auth_register", request_id=rid, outcome="failure", reason="email_already_registered", email_fp=fp)
         raise api_error("email_already_registered", "An account with this email already exists.", 409)
+    # Valider l'invitation avant de créer le compte
+    if (payload.invite_code or "").strip():
+        if find_household_by_invite_code(db, payload.invite_code or "") is None:
+            log_event("auth_register", request_id=rid, outcome="failure", reason="invite_not_found", email_fp=fp)
+            raise api_error("invite_not_found", "Code d'invitation invalide ou expiré.", 404)
     user = User(email=email, password_hash=hash_password(payload.password), full_name=payload.full_name)
     db.add(user)
     db.commit()
     db.refresh(user)
-    login_response = _issue_login_tokens(db, user=user)
+    joined = _apply_invite_code(db, user=user, invite_code=payload.invite_code)
+    login_response = _issue_login_tokens(
+        db, user=user, household_id=joined.id if joined is not None else None
+    )
     set_auth_cookies(response, access_token=login_response.access_token, refresh_token=login_response.refresh_token)
     log_event(
         "auth_register",
@@ -623,6 +744,7 @@ def register(
         email_fp=fp,
         user_id=user.id,
         household_id=login_response.household_id,
+        joined_via_invite=bool(joined),
     )
     return login_response
 
@@ -655,8 +777,11 @@ def login(
         )
         raise api_error("invalid_credentials", "Invalid email or password.", 401)
 
+    joined = _apply_invite_code(db, user=user, invite_code=payload.invite_code)
+    target_household_id = joined.id if joined is not None else payload.household_id
+
     try:
-        login_response = _issue_login_tokens(db, user=user, household_id=payload.household_id)
+        login_response = _issue_login_tokens(db, user=user, household_id=target_household_id)
     except HTTPException as exc:
         if exc.detail and isinstance(exc.detail, dict) and exc.detail.get("code") == "household_forbidden":
             log_event(
@@ -677,9 +802,36 @@ def login(
         email_fp=fp,
         user_id=user.id,
         household_id=login_response.household_id,
-        is_new_user=False,
+        joined_via_invite=bool(joined),
     )
     set_auth_cookies(response, access_token=login_response.access_token, refresh_token=login_response.refresh_token)
+    return login_response
+
+
+@router.post("/auth/join", response_model=LoginResponse)
+def join_household(
+    request: Request,
+    payload: JoinHouseholdRequest,
+    response: Response,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    """Compte déjà connecté : rattache au foyer invité et renouvelle les tokens."""
+    rid = getattr(request.state, "request_id", None)
+    user = db.get(User, auth.user_id)
+    if user is None:
+        raise api_error("invalid_credentials", "User not found.", 401)
+    joined = _apply_invite_code(db, user=user, invite_code=payload.invite_code)
+    assert joined is not None
+    login_response = _issue_login_tokens(db, user=user, household_id=joined.id)
+    set_auth_cookies(response, access_token=login_response.access_token, refresh_token=login_response.refresh_token)
+    log_event(
+        "auth_join",
+        request_id=rid,
+        outcome="success",
+        user_id=user.id,
+        household_id=login_response.household_id,
+    )
     return login_response
 
 
@@ -742,7 +894,12 @@ def logout(
 
 @router.get("/households", response_model=list[HouseholdRead])
 def list_households(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
-    return db.query(Household).filter(Household.owner_user_id == auth.user_id).all()
+    ids = list_household_ids_for_user(db, auth.user_id)
+    if not ids:
+        return []
+    rows = db.query(Household).filter(Household.id.in_(ids)).all()
+    by_id = {h.id: h for h in rows}
+    return [by_id[i] for i in ids if i in by_id]
 
 
 @router.post("/households", response_model=HouseholdRead)
@@ -765,7 +922,7 @@ def get_household(
     db: Session = Depends(get_db),
 ):
     item = db.get(Household, household_id)
-    if not item or item.owner_user_id != auth.user_id:
+    if not item or not user_has_household_access(db, user_id=auth.user_id, household_id=household_id):
         raise api_error("household_not_found", "Household not found.", 404)
     return item
 
@@ -778,7 +935,7 @@ def create_member(
     db: Session = Depends(get_db),
 ):
     household = db.get(Household, household_id)
-    if not household or household.owner_user_id != auth.user_id:
+    if not household or not user_has_household_access(db, user_id=auth.user_id, household_id=household_id):
         raise api_error("household_not_found", "Household not found.", 404)
     item = HouseholdMember(household_id=household_id, display_name=payload.display_name, role=payload.role, birth_year=payload.birth_year)
     db.add(item)
@@ -830,6 +987,227 @@ def list_current_household_members(
         .order_by(HouseholdMember.id.asc())
         .all()
     )
+
+
+@router.get("/household/salon/messages", response_model=list[HouseholdSalonMessageRead])
+def household_salon_messages(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+    seed_if_empty: bool = Query(True),
+):
+    if seed_if_empty and not list_salon_messages(db, auth.household_id, limit=1):
+        seed_salon_demo(db, auth)
+    return list_salon_messages(db, auth.household_id)
+
+
+@router.post("/household/salon/messages", response_model=HouseholdSalonMessageRead)
+def household_salon_post_message(
+    payload: HouseholdSalonMessageCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    row = create_salon_message(db, auth, payload.text)
+    analyze_salon_conversation(db, auth.household_id)
+    return row
+
+
+@router.post("/household/salon/analyze", response_model=HouseholdSalonAnalyzeResponse)
+def household_salon_analyze(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    n = analyze_salon_conversation(db, auth.household_id)
+    return HouseholdSalonAnalyzeResponse(
+        captures_created=n,
+        message=f"{n} capture(s) générée(s)." if n else "Aucune nouvelle capture détectée.",
+    )
+
+
+@router.get("/household/salon/captures", response_model=list[HouseholdCaptureRead])
+def household_salon_captures(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+    status: str | None = Query(None),
+):
+    return list_household_captures(db, auth.household_id, status=status)
+
+
+@router.patch("/household/salon/captures/{capture_id}", response_model=HouseholdCaptureApplyResponse)
+def household_salon_capture_patch(
+    capture_id: int,
+    payload: HouseholdCapturePatch,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    out = patch_capture_status(db, auth, capture_id, payload.status)
+    if out is None:
+        raise api_error("capture_not_found", "Capture introuvable.", 404)
+    apply_info = out.get("apply") if isinstance(out.get("apply"), dict) else None
+    msg = "Capture mise à jour."
+    extra: dict = {}
+    if payload.status == "approved" and isinstance(apply_info, dict):
+        msg = str(apply_info.get("message") or msg)
+        extra = apply_info
+    return HouseholdCaptureApplyResponse(
+        capture_id=capture_id,
+        status=payload.status,
+        message=msg,
+        payload=extra,
+    )
+
+
+@router.get("/household/birthdays", response_model=list[HouseholdBirthdayRead])
+def household_birthdays_list(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return list_household_birthdays(db, auth.household_id)
+
+
+@router.post("/household/birthdays", response_model=HouseholdBirthdayRead)
+def household_birthdays_create(
+    payload: HouseholdBirthdayCreate,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return create_household_birthday(
+        db,
+        auth.household_id,
+        name=payload.name,
+        birthday_date=payload.birthday_date,
+        notes=payload.notes,
+    )
+
+
+@router.delete("/household/birthdays/{birthday_id}")
+def household_birthdays_delete(
+    birthday_id: int,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    if not delete_household_birthday(db, auth.household_id, birthday_id):
+        raise api_error("birthday_not_found", "Anniversaire introuvable.", 404)
+    return {"status": "deleted"}
+
+
+@router.get("/household/equity")
+def household_equity(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+    mode: str = Query("combined"),
+):
+    return compute_household_equity(db, auth.household_id, mode=mode)
+
+
+@router.post("/household/equity/propose-transfer")
+def household_equity_propose_transfer(
+    payload: dict,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    task_id = int(payload.get("task_id") or 0)
+    to_member_id = int(payload.get("to_member_id") or 0)
+    task = db.get(Task, task_id)
+    if task is None or task.household_id != auth.household_id:
+        raise api_error("task_not_found", "Tâche introuvable.", 404)
+    to_member = db.get(HouseholdMember, to_member_id)
+    if to_member is None or to_member.household_id != auth.household_id:
+        raise api_error("member_not_found", "Membre introuvable.", 404)
+    task.assigned_member_id = to_member_id
+    db.commit()
+    create_salon_message(
+        db,
+        auth,
+        f"Proposition acceptée : « {task.title} » est maintenant assignée à {to_member.display_name}.",
+    )
+    return {"status": "ok", "task_id": task.id, "assigned_to": to_member.display_name}
+
+
+@router.get("/household/subscription")
+def household_subscription(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    from app.services.stripe_billing import billing_public_status
+
+    return billing_public_status(db, auth.household_id)
+
+
+@router.get("/household/invite")
+def household_invite_link(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return get_household_invite_info(db, auth.household_id)
+
+
+@router.post("/household/proactive/tick")
+def household_proactive_tick(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return run_proactive_household_tick(db, auth.household_id)
+
+
+@router.patch("/household/profile")
+def household_profile_patch(
+    payload: dict,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    hh = db.get(Household, auth.household_id)
+    if hh is None:
+        raise api_error("household_not_found", "Foyer introuvable.", 404)
+    if "household_type" in payload:
+        hh.household_type = str(payload["household_type"])[:64]
+    if "briefing_hour" in payload:
+        hh.briefing_hour = max(5, min(11, int(payload["briefing_hour"])))
+    db.commit()
+    return {"household_type": hh.household_type, "briefing_hour": hh.briefing_hour}
+
+
+@router.get("/account/export", response_model=AccountExportResponse)
+def account_export_data(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return AccountExportResponse(
+        export=export_household_data(db, auth.user_id, auth.household_id),
+    )
+
+
+@router.get("/account/deletion-status", response_model=AccountDeletionStatusRead)
+def account_deletion_status(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, auth.user_id)
+    requested = user.deletion_requested_at if user else None
+    return AccountDeletionStatusRead(
+        deletion_requested_at=requested,
+        grace_ends_at=deletion_grace_ends_at(requested) if requested else None,
+    )
+
+
+@router.post("/account/request-deletion", response_model=AccountDeletionStatusRead)
+def account_request_deletion(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    requested = request_account_deletion(db, auth.user_id)
+    return AccountDeletionStatusRead(
+        deletion_requested_at=requested,
+        grace_ends_at=deletion_grace_ends_at(requested),
+    )
+
+
+@router.post("/account/cancel-deletion", response_model=AccountDeletionStatusRead)
+def account_cancel_deletion(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    cancel_account_deletion(db, auth.user_id)
+    return AccountDeletionStatusRead(deletion_requested_at=None, grace_ends_at=None)
 
 
 @router.get("/accounts", response_model=list[ConnectedAccountRead])
@@ -1344,10 +1722,10 @@ def partner_delegation_notify(
     db: Session = Depends(get_db),
 ):
     household = db.get(Household, auth.household_id)
-    if not household or household.owner_user_id != auth.user_id:
+    if not household or not user_has_household_access(db, user_id=auth.user_id, household_id=auth.household_id):
         raise api_error(
             "delegation_forbidden",
-            "Seul le propriétaire du foyer peut envoyer une notification de délégation.",
+            "Tu n’as pas accès à ce foyer pour envoyer une délégation.",
             403,
         )
 
@@ -1986,12 +2364,27 @@ def _moi_wellness_to_read(row: HouseholdMoiWellness) -> MoiWellnessRead:
     )
 
 
-def _get_or_create_moi_wellness(db: Session, household_id: int) -> HouseholdMoiWellness:
-    row = db.query(HouseholdMoiWellness).filter(HouseholdMoiWellness.household_id == household_id).first()
+def _get_or_create_moi_wellness(db: Session, household_id: int, user_id: int) -> HouseholdMoiWellness:
+    row = (
+        db.query(HouseholdMoiWellness)
+        .filter(HouseholdMoiWellness.household_id == household_id, HouseholdMoiWellness.user_id == user_id)
+        .first()
+    )
     if row:
         return row
+    legacy = (
+        db.query(HouseholdMoiWellness)
+        .filter(HouseholdMoiWellness.household_id == household_id, HouseholdMoiWellness.user_id.is_(None))
+        .first()
+    )
+    if legacy:
+        legacy.user_id = user_id
+        db.commit()
+        db.refresh(legacy)
+        return legacy
     row = HouseholdMoiWellness(
         household_id=household_id,
+        user_id=user_id,
         journal_text="",
         cycle_day=18,
         moments_json=json.dumps(_DEFAULT_MOI_MOMENTS, ensure_ascii=False),
@@ -2007,7 +2400,7 @@ def _get_or_create_moi_wellness(db: Session, household_id: int) -> HouseholdMoiW
 
 @router.get("/moi/wellness", response_model=MoiWellnessRead)
 def get_moi_wellness(auth: AuthContext = Depends(get_current_auth_context), db: Session = Depends(get_db)):
-    row = _get_or_create_moi_wellness(db, auth.household_id)
+    row = _get_or_create_moi_wellness(db, auth.household_id, auth.user_id)
     return _moi_wellness_to_read(row)
 
 
@@ -2017,7 +2410,7 @@ def put_moi_wellness(
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
-    row = _get_or_create_moi_wellness(db, auth.household_id)
+    row = _get_or_create_moi_wellness(db, auth.household_id, auth.user_id)
     moments = _normalize_moments([m.model_dump() for m in payload.moments])
     row.journal_text = payload.journal.strip()
     row.cycle_day = payload.cycle_day
@@ -2496,7 +2889,13 @@ def agent_act(
     db: Session = Depends(get_db),
 ):
     mem = household_memory_lines(db, auth.household_id)
-    return execute_agent_act(payload.command, db, auth, mem)
+    return execute_agent_act(
+        payload.command,
+        db,
+        auth,
+        mem,
+        force_execute=bool(payload.force_execute),
+    )
 
 
 @router.get("/agent/realtime/status", response_model=AgentRealtimeStatusResponse)
@@ -2546,17 +2945,24 @@ def home_providers(auth: AuthContext = Depends(get_current_auth_context), db: Se
     return get_home_providers(db=db, user_id=auth.user_id)
 
 
-@router.post("/home/providers/home_assistant/connect", response_model=ConnectedAccountRead)
+@router.post("/home/providers/home_assistant/connect", response_model=HomeAssistantConnectResponse)
 def home_assistant_connect(
     payload: HomeAssistantConnectRequest,
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
-    return connect_home_assistant(
+    account = connect_home_assistant(
         db=db,
         user_id=auth.user_id,
         base_url=payload.base_url,
         access_token=payload.access_token,
+    )
+    diag = diagnose_home_assistant(db=db, user_id=auth.user_id)
+    return HomeAssistantConnectResponse(
+        id=account.id,
+        provider=account.provider,
+        status=account.status,
+        diagnostic=diag,
     )
 
 
@@ -2590,6 +2996,7 @@ def home_provider_credentials(
         provider=payload.provider,
         username=payload.username,
         password=payload.password,
+        pin=payload.pin,
         access_token=payload.access_token,
         base_url=payload.base_url,
         external_account_id=payload.external_account_id,
@@ -2599,6 +3006,14 @@ def home_provider_credentials(
     return account
 
 
+@router.get("/home/providers/home_assistant/diagnostic", response_model=HomeAssistantDiagnosticResponse)
+def home_assistant_diagnostic(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    return diagnose_home_assistant(db=db, user_id=auth.user_id)
+
+
 @router.get("/home/providers/{provider}/test", response_model=HomeProviderTestResponse)
 def home_provider_test(
     provider: str,
@@ -2606,6 +3021,25 @@ def home_provider_test(
     db: Session = Depends(get_db),
 ):
     return test_home_provider_connection(db=db, user_id=auth.user_id, provider=provider)
+
+
+@router.post("/home/providers/verisure/alarm", response_model=HomeProviderTestResponse)
+def verisure_alarm_action(
+    payload: VerisureAlarmRequest,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    out = execute_verisure_alarm_by_action(
+        db,
+        auth.user_id,
+        payload.action,
+        pin=payload.pin,
+    )
+    return HomeProviderTestResponse(
+        provider="verisure",
+        status=str(out.get("status") or "failed"),
+        message=str(out.get("message") or "Action Verisure terminée."),
+    )
 
 
 @router.get("/home/providers/{provider}/devices", response_model=HomeProviderDevicesResponse)
@@ -2760,6 +3194,8 @@ def vault_secrets_list(
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
     return list_user_vault_secrets(db=db, user_id=auth.user_id)
 
 
@@ -2769,6 +3205,8 @@ def vault_secret_create(
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
     try:
         return create_user_vault_secret(
             db=db,
@@ -2793,6 +3231,8 @@ def vault_secret_patch(
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
     try:
         out = update_user_vault_secret(
             db=db,
@@ -2820,6 +3260,8 @@ def vault_secret_delete(
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
     if not delete_user_vault_secret(db=db, user_id=auth.user_id, secret_id=secret_id):
         raise api_error("secret_not_found", "Secret introuvable.", 404)
     return {"status": "deleted"}
@@ -2831,7 +3273,62 @@ def vault_secret_reveal(
     auth: AuthContext = Depends(get_current_auth_context),
     db: Session = Depends(get_db),
 ):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
     out = reveal_user_vault_secret_password(db=db, user_id=auth.user_id, secret_id=secret_id)
     if out is None:
         raise api_error("secret_not_found", "Secret introuvable.", 404)
     return out
+
+
+@router.get("/vault/drive/status", response_model=DriveStatusListResponse)
+def vault_drive_status(
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
+    return list_drive_status(db=db, user_id=auth.user_id)
+
+
+@router.post("/vault/drive/{service_key}/prepare", response_model=DrivePrepareResponse)
+def vault_drive_prepare(
+    service_key: str,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
+    return prepare_drive_session(
+        db=db,
+        user_id=auth.user_id,
+        service_key=service_key,
+        household_id=auth.household_id,
+    )
+
+
+@router.post("/vault/drive/{service_key}/automate-login", response_model=DriveAutomateLoginResponse)
+def vault_drive_automate_login(
+    service_key: str,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
+    return automate_drive_login(db=db, user_id=auth.user_id, service_key=service_key)
+
+
+@router.post("/vault/drive/{service_key}/fill-cart", response_model=DriveFillCartResponse)
+def vault_drive_fill_cart(
+    service_key: str,
+    auth: AuthContext = Depends(get_current_auth_context),
+    db: Session = Depends(get_db),
+):
+    if not settings.vault_secrets_enabled:
+        raise api_error("vault_disabled", "Cette fonctionnalité n'est pas encore disponible.", 403)
+    return fill_drive_cart(
+        db=db,
+        user_id=auth.user_id,
+        service_key=service_key,
+        household_id=auth.household_id,
+    )

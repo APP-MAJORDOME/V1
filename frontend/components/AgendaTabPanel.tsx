@@ -1,13 +1,14 @@
 'use client';
 
-import { AgendaJournalSection } from './IntimateJournalPanel';
 import { VisualFamilyCalendar } from './VisualFamilyCalendar';
 import { IconAlertOutline, IconCheckSmall, IconMeal } from './md-icons';
 import type { JournalEntry } from '../lib/journalEntries';
+import { formatJournalDayLabel } from '../lib/journalEntries';
 import { RecentDoneTasksCard, TaskAssignSelect, TaskDoneButton, type TaskUiItem, type TaskUiMember } from './taskUi';
 import type { MealPlan } from '../lib/meals';
 import { useIsClient } from '../hooks/useIsClient';
 import { formatDateTimeFr } from '../lib/formatClientDate';
+import { formatConflicts, formatTasksOpen } from '../lib/pluralize';
 
 function GlassCard({
   C,
@@ -197,15 +198,8 @@ export function AgendaTabPanel({
         }}
         onSelectTask={onOpenTask}
       />
-      <AgendaJournalSection
-        C={C}
-        selectedDay={selectedMealDay}
-        entries={journalEntries}
-        loading={journalLoading}
-        onOpenMoi={onOpenMoiJournal}
-      />
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Ajouter depuis l application</div>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Ajouter depuis l&apos;application</div>
         <div style={{ display: 'grid', gap: 6 }}>
           <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
             Titre
@@ -252,8 +246,8 @@ export function AgendaTabPanel({
                 border: `1px solid ${C.border}`,
               }}
             >
-              Apple : synchronisation indisponible sur ce serveur — événements seulement dans l’app (voir Paramètres →
-              Connexions).
+              Apple : synchronisation indisponible pour l&apos;instant — événements seulement dans l&apos;app (voir
+              Paramètres → Connexions).
             </div>
           ) : null}
           <label style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 600, color: C.text2 }}>
@@ -287,20 +281,23 @@ export function AgendaTabPanel({
             disabled={creatingEvent}
             style={{ borderRadius: 10, border: 'none', background: C.terra, color: '#fff', padding: 8, fontWeight: 700 }}
           >
-            {creatingEvent ? 'Creation...' : 'Creer evenement'}
+            {creatingEvent ? 'Création…' : 'Créer l\'événement'}
           </button>
         </div>
       </GlassCard>
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: C.sageL }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
           <IconMeal size={16} color={C.sage} strokeWidth={1.65} />
-          Plan repas (jour)
+          Plan repas
         </div>
+        <p style={{ fontSize: 11, color: C.text2, margin: '0 0 8px' }} suppressHydrationWarning>
+          {formatJournalDayLabel(selectedMealDay, client)}
+        </p>
         <input
           type="date"
           value={selectedMealDay}
           onChange={(e) => onSelectedMealDayChange(e.target.value)}
-          aria-label="Jour affiché (repas et journal)"
+          aria-label="Jour du plan repas"
           style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
         />
         <input
@@ -318,7 +315,7 @@ export function AgendaTabPanel({
           style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8, width: '100%', marginBottom: 6 }}
         />
         <input
-          placeholder="Ingredients manquants (virgules)"
+          placeholder="Ingrédients manquants, séparés par des virgules"
           value={selectedMeal.missing.join(', ')}
           onChange={(e) => onMealMissingChange(e.target.value)}
           aria-label="Ingrédients manquants"
@@ -337,7 +334,7 @@ export function AgendaTabPanel({
             width: '100%',
           }}
         >
-          Generer courses depuis repas
+          Générer les courses depuis le repas
         </button>
       </GlassCard>
       <GlassCard C={C} style={{ padding: 12, marginBottom: 10, background: C.terraXL }}>
@@ -350,7 +347,7 @@ export function AgendaTabPanel({
         </p>
         {taskSummary != null ? (
           <p style={{ fontSize: 10, color: C.text3, margin: '-4px 0 8px', lineHeight: 1.4 }}>
-            Dans l’app : {agendaOpenTasks.length} ouverte(s) · Sur le foyer (serveur) : {taskSummary.open_count}
+            Sur ton foyer : {formatTasksOpen(taskSummary.open_count)} au total
           </p>
         ) : null}
         {agendaOpenTasks.length === 0 ? (
@@ -440,17 +437,17 @@ export function AgendaTabPanel({
           }}
         >
           <IconAlertOutline size={18} color={C.red} strokeWidth={1.65} />
-          {urgentCount} conflit(s) detecte(s)
+          {formatConflicts(urgentCount)}
         </div>
       ) : null}
       {editingEventId !== null ? (
         <GlassCard C={C} style={{ padding: 12, marginTop: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Modifier l evenement</div>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Modifier l&apos;événement</div>
           <div style={{ display: 'grid', gap: 6 }}>
             <input
               value={editTitle}
               onChange={(e) => onEditTitleChange(e.target.value)}
-              placeholder="Titre evenement"
+              placeholder="Titre de l'événement"
               aria-label="Titre de l'événement à modifier"
               style={{ borderRadius: 10, border: `1px solid ${C.border}`, padding: 8 }}
             />
